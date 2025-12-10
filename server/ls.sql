@@ -11,7 +11,7 @@
  Target Server Version : 90300 (9.3.0)
  File Encoding         : 65001
 
- Date: 29/10/2025 20:15:43
+ Date: 10/12/2025 12:22:42
 */
 
 SET NAMES utf8mb4;
@@ -76,6 +76,9 @@ CREATE TABLE `companies` (
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `deleted_at` timestamp NULL DEFAULT NULL,
+  `recovery_blob` blob COMMENT 'DEK encrypted with paper recovery key for disaster recovery',
+  `zk_enabled` tinyint(1) DEFAULT '0' COMMENT 'Whether zero-knowledge encryption is enabled',
+  `encryption_enabled` tinyint(1) DEFAULT '0',
   PRIMARY KEY (`company_id`),
   UNIQUE KEY `company_code` (`company_code`),
   KEY `idx_company_code` (`company_code`),
@@ -83,7 +86,7 @@ CREATE TABLE `companies` (
   KEY `idx_status` (`status_id`),
   CONSTRAINT `companies_ibfk_1` FOREIGN KEY (`parent_company_id`) REFERENCES `companies` (`company_id`),
   CONSTRAINT `companies_ibfk_2` FOREIGN KEY (`status_id`) REFERENCES `status_lookup` (`status_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=12 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Table structure for company_branches
@@ -153,6 +156,24 @@ CREATE TABLE `departments` (
   CONSTRAINT `departments_ibfk_4` FOREIGN KEY (`manager_user_id`) REFERENCES `users` (`user_id`),
   CONSTRAINT `departments_ibfk_5` FOREIGN KEY (`status_id`) REFERENCES `status_lookup` (`status_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------
+-- Table structure for encrypted_data
+-- ----------------------------
+DROP TABLE IF EXISTS `encrypted_data`;
+CREATE TABLE `encrypted_data` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `company_id` bigint unsigned NOT NULL,
+  `collection` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `doc_id` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `encrypted_data` longblob NOT NULL,
+  `blind_indexes` json DEFAULT NULL,
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `idx_unique_doc` (`company_id`,`collection`,`doc_id`),
+  CONSTRAINT `encrypted_data_ibfk_1` FOREIGN KEY (`company_id`) REFERENCES `companies` (`company_id`) ON DELETE CASCADE
+) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Table structure for password_reset_tokens
@@ -254,7 +275,7 @@ CREATE TABLE `status_lookup` (
   KEY `idx_code` (`status_code`),
   KEY `idx_severity` (`severity_level`),
   KEY `idx_active` (`is_active`)
-) ENGINE=InnoDB AUTO_INCREMENT=80 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=81 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------
 -- Table structure for user_employment
@@ -380,6 +401,11 @@ CREATE TABLE `users` (
   `last_login_at` timestamp NULL DEFAULT NULL,
   `password_changed_at` timestamp NULL DEFAULT NULL,
   `deleted_at` timestamp NULL DEFAULT NULL,
+  `key_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `signing_public_key` blob COMMENT 'ML-DSA-87 public key (2592 bytes)',
+  `kex_public_key` blob COMMENT 'X25519 public key (32 bytes)',
+  `key_role` enum('owner','admin','member') COLLATE utf8mb4_unicode_ci DEFAULT 'member',
+  `key_revoked_at` timestamp NULL DEFAULT NULL,
   PRIMARY KEY (`user_id`),
   UNIQUE KEY `username` (`username`),
   KEY `idx_username` (`username`),
@@ -387,10 +413,560 @@ CREATE TABLE `users` (
   KEY `idx_company` (`company_id`),
   KEY `idx_branch` (`primary_branch_id`),
   KEY `idx_created_at` (`created_at`),
+  KEY `idx_key_id` (`key_id`),
   CONSTRAINT `users_ibfk_1` FOREIGN KEY (`company_id`) REFERENCES `companies` (`company_id`),
   CONSTRAINT `users_ibfk_2` FOREIGN KEY (`primary_branch_id`) REFERENCES `company_branches` (`branch_id`),
   CONSTRAINT `users_ibfk_3` FOREIGN KEY (`status_id`) REFERENCES `status_lookup` (`status_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------
+-- Procedure structure for sp_company_create
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_company_create`;
+delimiter ;;
+CREATE PROCEDURE `sp_company_create`(IN p_company_code VARCHAR(50),
+    IN p_company_name_encrypted VARBINARY(500),
+    IN p_legal_name_encrypted VARBINARY(500),
+    IN p_registration_number_encrypted VARBINARY(500),
+    IN p_tax_id_encrypted VARBINARY(500),
+    IN p_vat_number_encrypted VARBINARY(500),
+    IN p_email_encrypted VARBINARY(500),
+    IN p_phone_encrypted VARBINARY(500),
+    IN p_website_encrypted VARBINARY(500),
+    IN p_street_address_encrypted VARBINARY(1000),
+    IN p_city_encrypted VARBINARY(500),
+    IN p_state_encrypted VARBINARY(500),
+    IN p_postal_code_encrypted VARBINARY(500),
+    IN p_country_encrypted VARBINARY(500),
+    IN p_company_type ENUM('headquarters','subsidiary','branch','franchise'),
+    IN p_parent_company_id BIGINT UNSIGNED,
+    IN p_industry VARCHAR(100),
+    IN p_employee_count_range ENUM('1-10','11-50','51-200','201-500','501-1000','1000+'),
+    IN p_established_date DATE,
+    IN p_created_by_user_id BIGINT UNSIGNED,
+    OUT p_company_id BIGINT UNSIGNED,
+    OUT p_result_code VARCHAR(50),
+    OUT p_message VARCHAR(500))
+proc_label: BEGIN
+    DECLARE v_status_id BIGINT UNSIGNED;
+    DECLARE v_exists INT DEFAULT 0;
+    DECLARE v_parent_exists INT DEFAULT 0;
+    
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        SET p_company_id = NULL;
+        SET p_result_code = 'sql_error';
+        SET p_message = 'An error occurred while creating company';
+    END;
+    
+    START TRANSACTION;
+    
+    -- Validation
+    IF p_company_code IS NULL OR TRIM(p_company_code) = '' THEN
+        SET p_company_id = NULL;
+        SET p_result_code = 'validation_error';
+        SET p_message = 'Company code is required';
+        ROLLBACK;
+        LEAVE proc_label;
+    END IF;
+    
+    IF p_company_name_encrypted IS NULL THEN
+        SET p_company_id = NULL;
+        SET p_result_code = 'validation_error';
+        SET p_message = 'Company name is required';
+        ROLLBACK;
+        LEAVE proc_label;
+    END IF;
+    
+    IF p_legal_name_encrypted IS NULL THEN
+        SET p_company_id = NULL;
+        SET p_result_code = 'validation_error';
+        SET p_message = 'Legal name is required';
+        ROLLBACK;
+        LEAVE proc_label;
+    END IF;
+    
+    -- Check for duplicate company code
+    SELECT COUNT(*) INTO v_exists FROM companies WHERE company_code = p_company_code AND deleted_at IS NULL;
+    
+    IF v_exists > 0 THEN
+        SET p_company_id = NULL;
+        SET p_result_code = 'duplicate_entry';
+        SET p_message = 'Company code already exists';
+        ROLLBACK;
+        LEAVE proc_label;
+    END IF;
+    
+    -- Validate parent company if provided
+    IF p_parent_company_id IS NOT NULL THEN
+        SELECT COUNT(*) INTO v_parent_exists FROM companies WHERE company_id = p_parent_company_id AND deleted_at IS NULL;
+        IF v_parent_exists = 0 THEN
+            SET p_company_id = NULL;
+            SET p_result_code = 'validation_error';
+            SET p_message = 'Invalid parent company ID';
+            ROLLBACK;
+            LEAVE proc_label;
+        END IF;
+    END IF;
+    
+    -- Get active status ID
+    SELECT status_id INTO v_status_id FROM status_lookup
+    WHERE status_category = 'company' AND status_code = 'active' LIMIT 1;
+    
+    IF v_status_id IS NULL THEN
+        SET p_company_id = NULL;
+        SET p_result_code = 'configuration_error';
+        SET p_message = 'Company status configuration not found';
+        ROLLBACK;
+        LEAVE proc_label;
+    END IF;
+    
+    INSERT INTO companies (
+        company_code, company_name_encrypted, legal_name_encrypted,
+        registration_number_encrypted, tax_id_encrypted, vat_number_encrypted,
+        email_encrypted, phone_encrypted, website_encrypted,
+        street_address_encrypted, city_encrypted, state_encrypted,
+        postal_code_encrypted, country_encrypted, company_type,
+        parent_company_id, industry, employee_count_range,
+        status_id, established_date
+    ) VALUES (
+        p_company_code, p_company_name_encrypted, p_legal_name_encrypted,
+        p_registration_number_encrypted, p_tax_id_encrypted, p_vat_number_encrypted,
+        p_email_encrypted, p_phone_encrypted, p_website_encrypted,
+        p_street_address_encrypted, p_city_encrypted, p_state_encrypted,
+        p_postal_code_encrypted, p_country_encrypted, COALESCE(p_company_type, 'headquarters'),
+        p_parent_company_id, p_industry, p_employee_count_range,
+        v_status_id, p_established_date
+    );
+    
+    SET p_company_id = LAST_INSERT_ID();
+    
+    -- Log audit
+    INSERT INTO audit_logs (user_id, company_id, action, resource_type, resource_id, created_at)
+    VALUES (p_created_by_user_id, p_company_id, 'company_create', 'company', p_company_id, NOW());
+    
+    COMMIT;
+    SET p_result_code = 'success';
+    SET p_message = 'Company created successfully';
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_company_get_by_code
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_company_get_by_code`;
+delimiter ;;
+CREATE PROCEDURE `sp_company_get_by_code`(IN p_company_code VARCHAR(50))
+BEGIN
+    SELECT c.*, sl.status_code, sl.status_name
+    FROM companies c
+    LEFT JOIN status_lookup sl ON c.status_id = sl.status_id
+    WHERE c.company_code = p_company_code AND c.deleted_at IS NULL;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_company_get_by_id
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_company_get_by_id`;
+delimiter ;;
+CREATE PROCEDURE `sp_company_get_by_id`(IN p_company_id BIGINT UNSIGNED)
+BEGIN
+    SELECT c.*, sl.status_code, sl.status_name
+    FROM companies c
+    LEFT JOIN status_lookup sl ON c.status_id = sl.status_id
+    WHERE c.company_id = p_company_id AND c.deleted_at IS NULL;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_add_key
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_add_key`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_add_key`(IN p_key_id VARCHAR(64),
+    IN p_company_id BIGINT,
+    IN p_user_label BLOB,
+    IN p_signing_public_key BLOB,
+    IN p_kex_public_key BLOB,
+    IN p_role VARCHAR(20),
+    IN p_status_id BIGINT)
+BEGIN
+    INSERT INTO users (
+        username, 
+        company_id, 
+        first_name_encrypted, 
+        last_name_encrypted, 
+        email_encrypted,
+        password_hash, 
+        password_salt, 
+        status_id, 
+        key_id, 
+        signing_public_key, 
+        kex_public_key, 
+        key_role
+    ) VALUES (
+        p_key_id, 
+        p_company_id, 
+        p_user_label, 
+        p_user_label, 
+        p_user_label,
+        'encryption-auth-only', 
+        'encryption-auth-only', 
+        p_status_id,
+        p_key_id, 
+        p_signing_public_key, 
+        p_kex_public_key, 
+        p_role
+    );
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_company_exists
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_company_exists`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_company_exists`(IN p_company_code VARCHAR(64),
+    OUT p_exists INT)
+BEGIN
+    SELECT COUNT(*) INTO p_exists FROM companies WHERE company_code = p_company_code;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_create_owner
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_create_owner`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_create_owner`(IN p_key_id VARCHAR(64),
+    IN p_company_id BIGINT,
+    IN p_user_label BLOB,
+    IN p_signing_public_key BLOB,
+    IN p_kex_public_key BLOB,
+    IN p_status_id BIGINT)
+BEGIN
+    INSERT INTO users (
+        username, 
+        company_id, 
+        first_name_encrypted, 
+        last_name_encrypted, 
+        email_encrypted,
+        password_hash, 
+        password_salt, 
+        status_id, 
+        key_id, 
+        signing_public_key, 
+        kex_public_key, 
+        key_role
+    ) VALUES (
+        p_key_id, 
+        p_company_id, 
+        p_user_label, 
+        p_user_label, 
+        p_user_label,
+        'encryption-auth-only', 
+        'encryption-auth-only', 
+        p_status_id,
+        p_key_id, 
+        p_signing_public_key, 
+        p_kex_public_key, 
+        'owner'
+    );
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_delete_blob
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_delete_blob`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_delete_blob`(IN p_company_id BIGINT,
+    IN p_collection VARCHAR(64),
+    IN p_doc_id VARCHAR(128))
+BEGIN
+    DELETE FROM encrypted_data 
+    WHERE company_id = p_company_id 
+    AND collection = p_collection 
+    AND doc_id = p_doc_id;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_enable_company
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_enable_company`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_enable_company`(IN p_company_code VARCHAR(64),
+    IN p_recovery_blob BLOB,
+    OUT p_company_id BIGINT,
+    OUT p_already_enabled INT)
+BEGIN
+    SELECT company_id, COALESCE(encryption_enabled, 0) 
+    INTO p_company_id, p_already_enabled
+    FROM companies 
+    WHERE company_code = p_company_code;
+    
+    IF p_company_id IS NOT NULL AND p_already_enabled = 0 THEN
+        UPDATE companies 
+        SET recovery_blob = p_recovery_blob, encryption_enabled = 1 
+        WHERE company_id = p_company_id;
+    END IF;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_get_blob
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_get_blob`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_get_blob`(IN p_company_id BIGINT,
+    IN p_collection VARCHAR(64),
+    IN p_doc_id VARCHAR(128))
+BEGIN
+    SELECT encrypted_data 
+    FROM encrypted_data 
+    WHERE company_id = p_company_id 
+    AND collection = p_collection 
+    AND doc_id = p_doc_id;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_get_company_status
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_get_company_status`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_get_company_status`(OUT p_status_id BIGINT)
+BEGIN
+    SELECT status_id INTO p_status_id 
+    FROM status_lookup 
+    WHERE status_category = 'company' 
+    AND (LOWER(status_code) = 'active' OR LOWER(status_name) = 'active')
+    LIMIT 1;
+    
+    IF p_status_id IS NULL THEN
+        SELECT status_id INTO p_status_id 
+        FROM status_lookup 
+        WHERE status_category = 'company' 
+        LIMIT 1;
+    END IF;
+    
+    IF p_status_id IS NULL THEN
+        SELECT status_id INTO p_status_id 
+        FROM status_lookup 
+        LIMIT 1;
+    END IF;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_get_public_key
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_get_public_key`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_get_public_key`(IN p_key_id VARCHAR(64))
+BEGIN
+    SELECT 
+        key_id, 
+        company_id, 
+        signing_public_key, 
+        kex_public_key,
+        first_name_encrypted AS user_label, 
+        key_role, 
+        created_at, 
+        key_revoked_at
+    FROM users 
+    WHERE key_id = p_key_id;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_get_recovery_blob
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_get_recovery_blob`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_get_recovery_blob`(IN p_company_code VARCHAR(64),
+    OUT p_company_id BIGINT,
+    OUT p_recovery_blob BLOB)
+BEGIN
+    SELECT company_id, recovery_blob 
+    INTO p_company_id, p_recovery_blob
+    FROM companies 
+    WHERE company_code = p_company_code AND encryption_enabled = 1;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_get_user_status
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_get_user_status`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_get_user_status`(OUT p_status_id BIGINT)
+BEGIN
+    SELECT status_id INTO p_status_id 
+    FROM status_lookup 
+    WHERE status_category = 'user' 
+    LIMIT 1;
+    
+    IF p_status_id IS NULL THEN
+        SELECT status_id INTO p_status_id 
+        FROM status_lookup 
+        LIMIT 1;
+    END IF;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_list_blobs
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_list_blobs`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_list_blobs`(IN p_company_id BIGINT,
+    IN p_collection VARCHAR(64))
+BEGIN
+    SELECT doc_id 
+    FROM encrypted_data 
+    WHERE company_id = p_company_id 
+    AND collection = p_collection;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_list_keys
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_list_keys`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_list_keys`(IN p_company_id BIGINT)
+BEGIN
+    SELECT 
+        key_id, 
+        company_id, 
+        signing_public_key, 
+        kex_public_key,
+        first_name_encrypted AS user_label, 
+        key_role, 
+        created_at, 
+        key_revoked_at
+    FROM users 
+    WHERE company_id = p_company_id AND key_id IS NOT NULL;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_register_company
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_register_company`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_register_company`(IN p_company_code VARCHAR(64),
+    IN p_company_name BLOB,
+    IN p_recovery_blob BLOB,
+    IN p_status_id BIGINT,
+    OUT p_company_id BIGINT)
+BEGIN
+    INSERT INTO companies (
+        company_code, 
+        company_name_encrypted, 
+        legal_name_encrypted, 
+        recovery_blob, 
+        encryption_enabled, 
+        status_id
+    ) VALUES (
+        p_company_code, 
+        p_company_name, 
+        p_company_name, 
+        p_recovery_blob, 
+        1, 
+        p_status_id
+    );
+    
+    SET p_company_id = LAST_INSERT_ID();
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_revoke_key
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_revoke_key`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_revoke_key`(IN p_key_id VARCHAR(64),
+    IN p_company_id BIGINT)
+BEGIN
+    UPDATE users 
+    SET key_revoked_at = NOW() 
+    WHERE key_id = p_key_id AND company_id = p_company_id;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_search_blobs
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_search_blobs`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_search_blobs`(IN p_company_id BIGINT,
+    IN p_collection VARCHAR(64),
+    IN p_index_name VARCHAR(64),
+    IN p_index_value VARCHAR(255))
+BEGIN
+    SET @json_path = CONCAT('$.', p_index_name);
+    
+    SELECT doc_id 
+    FROM encrypted_data 
+    WHERE company_id = p_company_id 
+    AND collection = p_collection 
+    AND JSON_UNQUOTE(JSON_EXTRACT(blind_indexes, @json_path)) = p_index_value;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_encryption_store_blob
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_encryption_store_blob`;
+delimiter ;;
+CREATE PROCEDURE `sp_encryption_store_blob`(IN p_company_id BIGINT,
+    IN p_collection VARCHAR(64),
+    IN p_doc_id VARCHAR(128),
+    IN p_encrypted_data MEDIUMBLOB,
+    IN p_blind_indexes JSON)
+BEGIN
+    INSERT INTO encrypted_data (
+        company_id, 
+        collection, 
+        doc_id, 
+        encrypted_data, 
+        blind_indexes
+    ) VALUES (
+        p_company_id, 
+        p_collection, 
+        p_doc_id, 
+        p_encrypted_data, 
+        p_blind_indexes
+    )
+    ON DUPLICATE KEY UPDATE 
+        encrypted_data = VALUES(encrypted_data), 
+        blind_indexes = VALUES(blind_indexes);
+END
+;;
+delimiter ;
 
 -- ----------------------------
 -- Procedure structure for sp_register_user
@@ -648,6 +1224,411 @@ proc_label: BEGIN
     SET p_status_code = 'success';
     SET p_message = 'User registered successfully';
     
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_status_lookup_create
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_status_lookup_create`;
+delimiter ;;
+CREATE PROCEDURE `sp_status_lookup_create`(IN p_status_category VARCHAR(50),
+    IN p_status_code VARCHAR(50),
+    IN p_status_name VARCHAR(100),
+    IN p_status_description TEXT,
+    IN p_status_order TINYINT UNSIGNED,
+    IN p_severity_level ENUM('info','success','warning','error','critical'),
+    IN p_http_status_code INT,
+    IN p_is_active TINYINT(1),
+    IN p_is_default TINYINT(1),
+    IN p_is_terminal TINYINT(1),
+    IN p_metadata JSON,
+    OUT p_status_id BIGINT UNSIGNED,
+    OUT p_result_code VARCHAR(50),
+    OUT p_message VARCHAR(500))
+proc_label: BEGIN
+    DECLARE v_exists INT DEFAULT 0;
+    
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        SET p_status_id = NULL;
+        SET p_result_code = 'sql_error';
+        SET p_message = 'An error occurred while creating status lookup';
+    END;
+    
+    -- Validation
+    IF p_status_category IS NULL OR TRIM(p_status_category) = '' THEN
+        SET p_status_id = NULL;
+        SET p_result_code = 'validation_error';
+        SET p_message = 'Status category is required';
+        LEAVE proc_label;
+    END IF;
+    
+    IF p_status_code IS NULL OR TRIM(p_status_code) = '' THEN
+        SET p_status_id = NULL;
+        SET p_result_code = 'validation_error';
+        SET p_message = 'Status code is required';
+        LEAVE proc_label;
+    END IF;
+    
+    -- Check for duplicate
+    SELECT COUNT(*) INTO v_exists
+    FROM status_lookup
+    WHERE status_category = p_status_category AND status_code = p_status_code;
+    
+    IF v_exists > 0 THEN
+        SET p_status_id = NULL;
+        SET p_result_code = 'duplicate_entry';
+        SET p_message = 'Status category and code combination already exists';
+        LEAVE proc_label;
+    END IF;
+    
+    INSERT INTO status_lookup (
+        status_category, status_code, status_name, status_description,
+        status_order, severity_level, http_status_code, is_active,
+        is_default, is_terminal, metadata
+    ) VALUES (
+        p_status_category, p_status_code, p_status_name, p_status_description,
+        COALESCE(p_status_order, 0), p_severity_level, p_http_status_code,
+        COALESCE(p_is_active, 1), COALESCE(p_is_default, 0), COALESCE(p_is_terminal, 0),
+        p_metadata
+    );
+    
+    SET p_status_id = LAST_INSERT_ID();
+    SET p_result_code = 'success';
+    SET p_message = 'Status lookup created successfully';
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_status_lookup_delete
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_status_lookup_delete`;
+delimiter ;;
+CREATE PROCEDURE `sp_status_lookup_delete`(IN p_status_id BIGINT UNSIGNED,
+    OUT p_result_code VARCHAR(50),
+    OUT p_message VARCHAR(500))
+proc_label: BEGIN
+    DECLARE v_exists INT DEFAULT 0;
+    DECLARE v_in_use INT DEFAULT 0;
+    
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        SET p_result_code = 'sql_error';
+        SET p_message = 'An error occurred while deleting status lookup';
+    END;
+    
+    SELECT COUNT(*) INTO v_exists FROM status_lookup WHERE status_id = p_status_id;
+    
+    IF v_exists = 0 THEN
+        SET p_result_code = 'not_found';
+        SET p_message = 'Status lookup not found';
+        LEAVE proc_label;
+    END IF;
+    
+    -- Soft delete by setting is_active = 0
+    UPDATE status_lookup SET is_active = 0, updated_at = NOW() WHERE status_id = p_status_id;
+    
+    SET p_result_code = 'success';
+    SET p_message = 'Status lookup deactivated successfully';
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_status_lookup_get_by_category
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_status_lookup_get_by_category`;
+delimiter ;;
+CREATE PROCEDURE `sp_status_lookup_get_by_category`(IN p_status_category VARCHAR(50))
+BEGIN
+    SELECT * FROM status_lookup 
+    WHERE status_category = p_status_category AND is_active = 1
+    ORDER BY status_order, status_name;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_status_lookup_get_by_code
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_status_lookup_get_by_code`;
+delimiter ;;
+CREATE PROCEDURE `sp_status_lookup_get_by_code`(IN p_status_category VARCHAR(50),
+    IN p_status_code VARCHAR(50))
+BEGIN
+    SELECT * FROM status_lookup 
+    WHERE status_category = p_status_category AND status_code = p_status_code;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_status_lookup_get_by_id
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_status_lookup_get_by_id`;
+delimiter ;;
+CREATE PROCEDURE `sp_status_lookup_get_by_id`(IN p_status_id BIGINT UNSIGNED)
+BEGIN
+    SELECT * FROM status_lookup WHERE status_id = p_status_id;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_status_lookup_update
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_status_lookup_update`;
+delimiter ;;
+CREATE PROCEDURE `sp_status_lookup_update`(IN p_status_id BIGINT UNSIGNED,
+    IN p_status_name VARCHAR(100),
+    IN p_status_description TEXT,
+    IN p_status_order TINYINT UNSIGNED,
+    IN p_severity_level ENUM('info','success','warning','error','critical'),
+    IN p_http_status_code INT,
+    IN p_is_active TINYINT(1),
+    IN p_is_default TINYINT(1),
+    IN p_is_terminal TINYINT(1),
+    IN p_metadata JSON,
+    OUT p_result_code VARCHAR(50),
+    OUT p_message VARCHAR(500))
+proc_label: BEGIN
+    DECLARE v_exists INT DEFAULT 0;
+    
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        SET p_result_code = 'sql_error';
+        SET p_message = 'An error occurred while updating status lookup';
+    END;
+    
+    SELECT COUNT(*) INTO v_exists FROM status_lookup WHERE status_id = p_status_id;
+    
+    IF v_exists = 0 THEN
+        SET p_result_code = 'not_found';
+        SET p_message = 'Status lookup not found';
+        LEAVE proc_label;
+    END IF;
+    
+    UPDATE status_lookup SET
+        status_name = COALESCE(p_status_name, status_name),
+        status_description = COALESCE(p_status_description, status_description),
+        status_order = COALESCE(p_status_order, status_order),
+        severity_level = COALESCE(p_severity_level, severity_level),
+        http_status_code = COALESCE(p_http_status_code, http_status_code),
+        is_active = COALESCE(p_is_active, is_active),
+        is_default = COALESCE(p_is_default, is_default),
+        is_terminal = COALESCE(p_is_terminal, is_terminal),
+        metadata = COALESCE(p_metadata, metadata),
+        updated_at = NOW()
+    WHERE status_id = p_status_id;
+    
+    SET p_result_code = 'success';
+    SET p_message = 'Status lookup updated successfully';
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_zk_blob_delete
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_zk_blob_delete`;
+delimiter ;;
+CREATE PROCEDURE `sp_zk_blob_delete`(IN p_company_id BIGINT UNSIGNED,
+    IN p_collection VARCHAR(64),
+    IN p_doc_id VARCHAR(255))
+BEGIN
+    DELETE FROM zk_blobs
+    WHERE company_id = p_company_id 
+      AND collection = p_collection 
+      AND doc_id = p_doc_id;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_zk_blob_get
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_zk_blob_get`;
+delimiter ;;
+CREATE PROCEDURE `sp_zk_blob_get`(IN p_company_id BIGINT UNSIGNED,
+    IN p_collection VARCHAR(64),
+    IN p_doc_id VARCHAR(255))
+BEGIN
+    SELECT encrypted_data
+    FROM zk_blobs
+    WHERE company_id = p_company_id 
+      AND collection = p_collection 
+      AND doc_id = p_doc_id;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_zk_blob_list
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_zk_blob_list`;
+delimiter ;;
+CREATE PROCEDURE `sp_zk_blob_list`(IN p_company_id BIGINT UNSIGNED,
+    IN p_collection VARCHAR(64))
+BEGIN
+    SELECT doc_id
+    FROM zk_blobs
+    WHERE company_id = p_company_id AND collection = p_collection
+    ORDER BY updated_at DESC;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_zk_blob_search_by_index
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_zk_blob_search_by_index`;
+delimiter ;;
+CREATE PROCEDURE `sp_zk_blob_search_by_index`(IN p_company_id BIGINT UNSIGNED,
+    IN p_collection VARCHAR(64),
+    IN p_index_name VARCHAR(64),
+    IN p_index_value BLOB)
+BEGIN
+    SELECT doc_id
+    FROM zk_blobs
+    WHERE company_id = p_company_id 
+      AND collection = p_collection
+      AND JSON_CONTAINS(blind_indexes, CONCAT('"', HEX(p_index_value), '"'), CONCAT('$.', p_index_name));
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_zk_blob_store
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_zk_blob_store`;
+delimiter ;;
+CREATE PROCEDURE `sp_zk_blob_store`(IN p_company_id BIGINT UNSIGNED,
+    IN p_collection VARCHAR(64),
+    IN p_doc_id VARCHAR(255),
+    IN p_encrypted_data LONGBLOB,
+    IN p_blind_indexes JSON)
+BEGIN
+    INSERT INTO zk_blobs (company_id, collection, doc_id, encrypted_data, blind_indexes)
+    VALUES (p_company_id, p_collection, p_doc_id, p_encrypted_data, p_blind_indexes)
+    ON DUPLICATE KEY UPDATE 
+        encrypted_data = VALUES(encrypted_data),
+        blind_indexes = VALUES(blind_indexes),
+        updated_at = CURRENT_TIMESTAMP;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_zk_company_enable
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_zk_company_enable`;
+delimiter ;;
+CREATE PROCEDURE `sp_zk_company_enable`(IN p_company_id BIGINT UNSIGNED,
+    IN p_recovery_blob BLOB)
+BEGIN
+    UPDATE companies 
+    SET recovery_blob = p_recovery_blob, zk_enabled = 1
+    WHERE company_id = p_company_id;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_zk_company_get_by_code
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_zk_company_get_by_code`;
+delimiter ;;
+CREATE PROCEDURE `sp_zk_company_get_by_code`(IN p_company_code VARCHAR(50))
+BEGIN
+    SELECT company_id, company_code, recovery_blob, zk_enabled
+    FROM companies
+    WHERE company_code = p_company_code;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_zk_company_public_keys
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_zk_company_public_keys`;
+delimiter ;;
+CREATE PROCEDURE `sp_zk_company_public_keys`(IN p_company_id BIGINT UNSIGNED)
+BEGIN
+    SELECT 
+        key_id, company_id, signing_public_key, kex_public_key,
+        user_label, role, created_at, revoked_at
+    FROM zk_public_keys
+    WHERE company_id = p_company_id
+    ORDER BY created_at DESC;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_zk_public_key_get
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_zk_public_key_get`;
+delimiter ;;
+CREATE PROCEDURE `sp_zk_public_key_get`(IN p_key_id VARCHAR(64))
+BEGIN
+    SELECT 
+        key_id, company_id, signing_public_key, kex_public_key,
+        user_label, role, created_at, revoked_at
+    FROM zk_public_keys
+    WHERE key_id = p_key_id;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_zk_public_key_register
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_zk_public_key_register`;
+delimiter ;;
+CREATE PROCEDURE `sp_zk_public_key_register`(IN p_key_id VARCHAR(64),
+    IN p_company_id BIGINT UNSIGNED,
+    IN p_signing_public_key BLOB,
+    IN p_kex_public_key BLOB,
+    IN p_user_label VARCHAR(255),
+    IN p_role VARCHAR(20))
+BEGIN
+    INSERT INTO zk_public_keys (
+        key_id, company_id, signing_public_key, kex_public_key, user_label, role
+    ) VALUES (
+        p_key_id, p_company_id, p_signing_public_key, p_kex_public_key, p_user_label, p_role
+    );
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_zk_public_key_revoke
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_zk_public_key_revoke`;
+delimiter ;;
+CREATE PROCEDURE `sp_zk_public_key_revoke`(IN p_key_id VARCHAR(64),
+    IN p_revoked_by VARCHAR(64))
+BEGIN
+    UPDATE zk_public_keys 
+    SET revoked_at = CURRENT_TIMESTAMP, revoked_by = p_revoked_by
+    WHERE key_id = p_key_id AND revoked_at IS NULL;
+END
+;;
+delimiter ;
+
+-- ----------------------------
+-- Procedure structure for sp_zk_recovery_blob_get
+-- ----------------------------
+DROP PROCEDURE IF EXISTS `sp_zk_recovery_blob_get`;
+delimiter ;;
+CREATE PROCEDURE `sp_zk_recovery_blob_get`(IN p_company_id BIGINT UNSIGNED)
+BEGIN
+    SELECT recovery_blob
+    FROM companies
+    WHERE company_id = p_company_id;
 END
 ;;
 delimiter ;

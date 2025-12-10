@@ -19,7 +19,7 @@ type SuccessResponse struct {
 	Message      string      `json:"message"`
 	Data         interface{} `json:"data,omitempty"`
 	Status       int         `json:"status"`
-	ResponseTime string      `json:"response_time,omitempty"` // Added response time
+	ResponseTime string      `json:"response_time,omitempty"`
 }
 
 // Helper function to send error response
@@ -56,9 +56,8 @@ func (a *Api) sendSuccessWithTime(w http.ResponseWriter, message string, data in
 	json.NewEncoder(w).Encode(successResp)
 }
 
-// Execute handler - now secured with JWT
+// Execute handler - secured with JWT
 func (a *Api) executeDataHandler(w http.ResponseWriter, r *http.Request, jsonConfig map[string]interface{}) {
-	// Read the request body
 	bodyBytes, err := io.ReadAll(r.Body)
 	if err != nil {
 		a.sendError(w, "Failed to read request body", http.StatusBadRequest)
@@ -66,7 +65,6 @@ func (a *Api) executeDataHandler(w http.ResponseWriter, r *http.Request, jsonCon
 	}
 	defer r.Body.Close()
 
-	// Parse JSON body into a struct or map
 	var requestBody map[string]interface{}
 	err = json.Unmarshal(bodyBytes, &requestBody)
 	if err != nil {
@@ -74,28 +72,23 @@ func (a *Api) executeDataHandler(w http.ResponseWriter, r *http.Request, jsonCon
 		return
 	}
 
-	// Get the function name
 	f, ok := requestBody["func"].(string)
 	if !ok || f == "" {
-		a.sendError(w, "Missing or invalid 'function' parameter", http.StatusBadRequest)
+		a.sendError(w, "Missing or invalid 'func' parameter", http.StatusBadRequest)
 		return
 	}
 
-	// Extract the nested body object
 	data, ok := requestBody["data"].(map[string]interface{})
 	if !ok {
-		data = make(map[string]interface{}) // Empty body if not provided
+		data = make(map[string]interface{})
 	}
 
-	// Call Select and get the result
 	result := a.Select(f, data)
 
-	// Check if there was an error
 	if result.Error != nil {
 		a.sendError(w, fmt.Sprintf("%v", result.Error), http.StatusInternalServerError)
 		return
 	}
 
-	// Send success response with the result data
 	a.sendSuccess(w, "Request successful", result.Result, http.StatusOK)
 }
