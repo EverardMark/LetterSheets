@@ -1,10 +1,19 @@
 {
-  "port": "8001",
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080,
+    "session_hours": 24,
+    "max_login_attempts": 5,
+    "lockout_minutes": 30
+  },
   "database": {
-    "database": "ls",
-    "username": "ls_user",
     "host": "localhost",
+    "port": 3306,
+    "user": "ls_user",
     "password": "sutopp@12",
-    "port": "3306"
+    "db_name": "lettersheets",
+    "max_open": 25,
+    "max_idle": 5,
+    "max_life_minutes": 5
   }
 }
