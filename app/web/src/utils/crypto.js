@@ -1,41 +1,25 @@
 /**
- * Lettersheets Client-Side Encryption
+ * Lettersheets Client-Side Encryption — Post-Quantum Edition
  *
- * Flow:
- * 1. Registration:
- *    - Generate AES-256 company master key
- *    - Derive KEK from password + salt using PBKDF2
- *    - Wrap (encrypt) company key with KEK
- *    - Generate RSA-OAEP keypair for key exchange
- *    - Send wrapped_company_key + public_key to server
+ * Algorithms:
+ *   Key Encapsulation: ML-KEM-768 (NIST FIPS 203, replaces RSA-OAEP)
+ *   Digital Signatures: ML-DSA-65  (NIST FIPS 204, new)
+ *   Symmetric Encryption: AES-256-GCM (quantum-safe at 256-bit)
+ *   Key Wrapping: AES-KW (unchanged)
+ *   Key Derivation: PBKDF2-SHA256-600000 (unchanged)
  *
- * 2. Login + Select Company:
- *    - Server returns wrapped_company_key
- *    - Derive KEK from password + salt using PBKDF2
- *    - Unwrap (decrypt) company key with KEK
- *    - Use company key to encrypt/decrypt employee data
- *
- * 3. Inviting users:
- *    - Admin fetches new user's public key
- *    - Admin encrypts company key with user's public key
- *    - Server stores the wrapped key for the new user
- *    - New user unwraps with their private key, then re-wraps with their own KEK
+ * Install: npm install @noble/post-quantum
  */
+
+import { ml_kem768 } from "@noble/post-quantum/ml-kem.js";
+import { ml_dsa65 } from "@noble/post-quantum/ml-dsa.js";
 
 // ============================================================
 // KEY DERIVATION (Password → KEK)
 // ============================================================
 
-/**
- * Derive a Key-Encryption-Key from password + salt using PBKDF2
- * @param {string} password - User's plaintext password
- * @param {string} salt - Unique salt (stored per user)
- * @returns {Promise<CryptoKey>} AES-KW key for wrapping/unwrapping
- */
 export async function deriveKEK(password, salt) {
   const encoder = new TextEncoder();
-
-  // Import password as raw key material
   const keyMaterial = await crypto.subtle.importKey(
       "raw",
       encoder.encode(password),
@@ -43,13 +27,11 @@ export async function deriveKEK(password, salt) {
       false,
       ["deriveKey"]
   );
-
-  // Derive AES-KW key using PBKDF2
   return crypto.subtle.deriveKey(
       {
         name: "PBKDF2",
         salt: encoder.encode(salt),
-        iterations: 600000, // OWASP recommended minimum
+        iterations: 600000,
         hash: "SHA-256",
       },
       keyMaterial,
@@ -63,38 +45,22 @@ export async function deriveKEK(password, salt) {
 // COMPANY KEY GENERATION
 // ============================================================
 
-/**
- * Generate a random AES-256-GCM company master key
- * @returns {Promise<CryptoKey>} Extractable AES-GCM key
- */
 export async function generateCompanyKey() {
   return crypto.subtle.generateKey(
       { name: "AES-GCM", length: 256 },
-      true, // extractable so it can be wrapped
+      true,
       ["encrypt", "decrypt"]
   );
 }
 
 // ============================================================
-// KEY WRAPPING (Encrypt company key with KEK)
+// KEY WRAPPING (AES-KW)
 // ============================================================
 
-/**
- * Wrap (encrypt) the company key with the KEK
- * @param {CryptoKey} companyKey - AES-GCM company key
- * @param {CryptoKey} kek - AES-KW key derived from password
- * @returns {Promise<ArrayBuffer>} Wrapped key bytes
- */
 export async function wrapCompanyKey(companyKey, kek) {
   return crypto.subtle.wrapKey("raw", companyKey, kek, "AES-KW");
 }
 
-/**
- * Unwrap (decrypt) the company key with the KEK
- * @param {ArrayBuffer} wrappedKey - Wrapped key bytes from server
- * @param {CryptoKey} kek - AES-KW key derived from password
- * @returns {Promise<CryptoKey>} Decrypted AES-GCM company key
- */
 export async function unwrapCompanyKey(wrappedKey, kek) {
   return crypto.subtle.unwrapKey(
       "raw",
@@ -108,108 +74,105 @@ export async function unwrapCompanyKey(wrappedKey, kek) {
 }
 
 // ============================================================
-// RSA KEYPAIR (For key exchange when inviting users)
+// ML-KEM-768 (replaces RSA-OAEP for key exchange)
 // ============================================================
 
 /**
- * Generate RSA-OAEP keypair
- * @returns {Promise<CryptoKeyPair>} { publicKey, privateKey }
+ * Generate ML-KEM-768 keypair
+ * encapsulationKey = public  (1184 bytes) — send to server
+ * decapsulationKey = private (2400 bytes) — keep local
  */
-export async function generateKeyPair() {
-  return crypto.subtle.generateKey(
-      {
-        name: "RSA-OAEP",
-        modulusLength: 2048,
-        publicExponent: new Uint8Array([1, 0, 1]),
-        hash: "SHA-256",
-      },
-      true, // extractable
-      ["encrypt", "decrypt"]
-  );
+export function generateKEMKeyPair() {
+  const keys = ml_kem768.keygen();
+  return {
+    encapsulationKey: keys.publicKey,
+    decapsulationKey: keys.secretKey,
+  };
 }
 
-/**
- * Export public key to SPKI format (for sending to server)
- * @param {CryptoKey} publicKey
- * @returns {Promise<ArrayBuffer>}
- */
-export async function exportPublicKey(publicKey) {
-  return crypto.subtle.exportKey("spki", publicKey);
+export function kemEncapsulate(encapsulationKey) {
+  const result = ml_kem768.encapsulate(encapsulationKey);
+  return {
+    ciphertext: result.cipherText,
+    sharedSecret: result.sharedSecret,
+  };
 }
 
-/**
- * Import public key from SPKI format (received from server)
- * @param {ArrayBuffer} spkiBytes
- * @returns {Promise<CryptoKey>}
- */
-export async function importPublicKey(spkiBytes) {
-  return crypto.subtle.importKey(
-      "spki",
-      spkiBytes,
-      { name: "RSA-OAEP", hash: "SHA-256" },
-      false,
-      ["encrypt"]
-  );
-}
-
-/**
- * Export private key to PKCS8 format (for local storage)
- * @param {CryptoKey} privateKey
- * @returns {Promise<ArrayBuffer>}
- */
-export async function exportPrivateKey(privateKey) {
-  return crypto.subtle.exportKey("pkcs8", privateKey);
-}
-
-/**
- * Import private key from PKCS8 format
- * @param {ArrayBuffer} pkcs8Bytes
- * @returns {Promise<CryptoKey>}
- */
-export async function importPrivateKey(pkcs8Bytes) {
-  return crypto.subtle.importKey(
-      "pkcs8",
-      pkcs8Bytes,
-      { name: "RSA-OAEP", hash: "SHA-256" },
-      false,
-      ["decrypt"]
-  );
+export function kemDecapsulate(ciphertext, decapsulationKey) {
+  return ml_kem768.decapsulate(ciphertext, decapsulationKey);
 }
 
 // ============================================================
-// KEY EXCHANGE (Admin wraps company key for invited user)
+// ML-DSA-65 (digital signatures)
 // ============================================================
 
 /**
- * Wrap company key with a user's RSA public key
- * Used when admin invites a new user
- * @param {CryptoKey} companyKey - AES-GCM company key
- * @param {CryptoKey} recipientPublicKey - New user's RSA public key
- * @returns {Promise<ArrayBuffer>} RSA-encrypted company key
+ * Generate ML-DSA-65 keypair
+ * verificationKey = public  (1952 bytes) — send to server
+ * signingKey      = private (4032 bytes) — keep local
  */
-export async function wrapKeyForUser(companyKey, recipientPublicKey) {
+export function generateDSAKeyPair() {
+  const keys = ml_dsa65.keygen();
+  return {
+    verificationKey: keys.publicKey,
+    signingKey: keys.secretKey,
+  };
+}
+
+export function dsaSign(signingKey, message) {
+  const msgBytes =
+      typeof message === "string" ? new TextEncoder().encode(message) : message;
+  return ml_dsa65.sign(msgBytes, signingKey);
+}
+
+export function dsaVerify(verificationKey, message, signature) {
+  const msgBytes =
+      typeof message === "string" ? new TextEncoder().encode(message) : message;
+  return ml_dsa65.verify(signature, msgBytes, verificationKey);
+}
+
+// ============================================================
+// KEM-BASED KEY EXCHANGE (replaces RSA encrypt/decrypt)
+// ============================================================
+
+/**
+ * Wrap company key for a user using their KEM public key
+ * Returns kemCiphertext (send to user) + wrappedKey (iv + AES-GCM encrypted)
+ */
+export async function wrapKeyForUser(companyKey, recipientEncapsulationKey) {
+  const { ciphertext, sharedSecret } = kemEncapsulate(recipientEncapsulationKey);
+
+  const aesKey = await crypto.subtle.importKey(
+      "raw", sharedSecret, { name: "AES-GCM", length: 256 }, false, ["encrypt"]
+  );
+
   const rawKey = await crypto.subtle.exportKey("raw", companyKey);
-  return crypto.subtle.encrypt({ name: "RSA-OAEP" }, recipientPublicKey, rawKey);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aesKey, rawKey);
+
+  const wrappedKey = new Uint8Array(iv.length + encrypted.byteLength);
+  wrappedKey.set(iv);
+  wrappedKey.set(new Uint8Array(encrypted), iv.length);
+
+  return { kemCiphertext: ciphertext, wrappedKey };
 }
 
 /**
- * Unwrap company key received from admin via RSA
- * @param {ArrayBuffer} encryptedKey - RSA-encrypted company key
- * @param {CryptoKey} privateKey - User's RSA private key
- * @returns {Promise<CryptoKey>} AES-GCM company key
+ * Unwrap company key received via KEM exchange
  */
-export async function unwrapKeyFromAdmin(encryptedKey, privateKey) {
-  const rawKey = await crypto.subtle.decrypt(
-      { name: "RSA-OAEP" },
-      privateKey,
-      encryptedKey
+export async function unwrapKeyFromUser(kemCiphertext, wrappedKey, decapsulationKey) {
+  const sharedSecret = kemDecapsulate(kemCiphertext, decapsulationKey);
+
+  const aesKey = await crypto.subtle.importKey(
+      "raw", sharedSecret, { name: "AES-GCM", length: 256 }, false, ["decrypt"]
   );
+
+  const iv = wrappedKey.slice(0, 12);
+  const ciphertext = wrappedKey.slice(12);
+  const rawKey = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, aesKey, ciphertext);
+
   return crypto.subtle.importKey(
-      "raw",
-      rawKey,
-      { name: "AES-GCM", length: 256 },
-      true,
-      ["encrypt", "decrypt"]
+      "raw", rawKey, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]
   );
 }
 
@@ -217,88 +180,50 @@ export async function unwrapKeyFromAdmin(encryptedKey, privateKey) {
 // DATA ENCRYPTION / DECRYPTION
 // ============================================================
 
-/**
- * Encrypt a string with the company key
- * @param {string} plaintext - Data to encrypt
- * @param {CryptoKey} companyKey - AES-GCM key
- * @returns {Promise<string>} Base64 encoded (iv + ciphertext)
- */
 export async function encrypt(plaintext, companyKey) {
   const encoder = new TextEncoder();
-  const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit IV for GCM
-
+  const iv = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await crypto.subtle.encrypt(
-      { name: "AES-GCM", iv },
-      companyKey,
-      encoder.encode(plaintext)
+      { name: "AES-GCM", iv }, companyKey, encoder.encode(plaintext)
   );
-
-  // Prepend IV to ciphertext
   const combined = new Uint8Array(iv.length + ciphertext.byteLength);
   combined.set(iv);
   combined.set(new Uint8Array(ciphertext), iv.length);
-
   return bufferToBase64(combined);
 }
 
-/**
- * Decrypt a string with the company key
- * @param {string} encrypted - Base64 encoded (iv + ciphertext)
- * @param {CryptoKey} companyKey - AES-GCM key
- * @returns {Promise<string>} Decrypted plaintext
- */
 export async function decrypt(encrypted, companyKey) {
   const combined = base64ToBuffer(encrypted);
   const iv = combined.slice(0, 12);
   const ciphertext = combined.slice(12);
-
   const plaintext = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv },
-      companyKey,
-      ciphertext
+      { name: "AES-GCM", iv }, companyKey, ciphertext
   );
-
   return new TextDecoder().decode(plaintext);
 }
 
 // ============================================================
-// REGISTRATION HELPER
+// REGISTRATION HELPER (PQ)
 // ============================================================
 
-/**
- * Generate all keys needed for registration
- * @param {string} password - User's password
- * @param {string} salt - User's salt
- * @returns {Promise<{wrappedCompanyKey: string, publicKey: string, privateKey: string}>}
- *   All values are base64-encoded
- */
 export async function generateRegistrationKeys(password, salt) {
-  // 1. Generate company master key
   const companyKey = await generateCompanyKey();
-
-  // 2. Derive KEK from password
   const kek = await deriveKEK(password, salt);
-
-  // 3. Wrap company key with KEK
   const wrappedCompanyKey = await wrapCompanyKey(companyKey, kek);
 
-  // 4. Generate RSA keypair
-  const keyPair = await generateKeyPair();
+  const kemPair = generateKEMKeyPair();
+  const dsaPair = generateDSAKeyPair();
 
-  // 5. Export public key
-  const publicKeyBytes = await exportPublicKey(keyPair.publicKey);
-
-  // 6. Export private key (user stores this locally, encrypted)
-  const privateKeyBytes = await exportPrivateKey(keyPair.privateKey);
-
-  // 7. RSA-encrypt company key for recovery (doesn't need password to decrypt)
-  const recoveryKey = await wrapKeyForUser(companyKey, keyPair.publicKey);
+  const recovery = await wrapKeyForUser(companyKey, kemPair.encapsulationKey);
 
   return {
     wrappedCompanyKey: bufferToBase64(wrappedCompanyKey),
-    publicKey: bufferToBase64(publicKeyBytes),
-    privateKey: bufferToBase64(privateKeyBytes),
-    recoveryWrappedKey: bufferToBase64(recoveryKey),
+    kemPublicKey: bufferToBase64(kemPair.encapsulationKey),
+    kemPrivateKey: bufferToBase64(kemPair.decapsulationKey),
+    dsaPublicKey: bufferToBase64(dsaPair.verificationKey),
+    dsaPrivateKey: bufferToBase64(dsaPair.signingKey),
+    recoveryKemCiphertext: bufferToBase64(recovery.kemCiphertext),
+    recoveryWrappedKey: bufferToBase64(recovery.wrappedKey),
   };
 }
 
@@ -306,13 +231,6 @@ export async function generateRegistrationKeys(password, salt) {
 // LOGIN HELPER
 // ============================================================
 
-/**
- * Unlock the company key after login
- * @param {string} password - User's password
- * @param {string} salt - User's salt (returned by login)
- * @param {string} wrappedCompanyKeyB64 - Base64 wrapped key (from select_company)
- * @returns {Promise<CryptoKey>} Usable AES-GCM company key
- */
 export async function unlockCompanyKey(password, salt, wrappedCompanyKeyB64) {
   const kek = await deriveKEK(password, salt);
   const wrappedBytes = base64ToBuffer(wrappedCompanyKeyB64);
@@ -320,45 +238,37 @@ export async function unlockCompanyKey(password, salt, wrappedCompanyKeyB64) {
 }
 
 // ============================================================
-// PASSWORD RECOVERY (Using recovery key file)
+// PASSWORD RECOVERY (PQ)
 // ============================================================
 
-/**
- * Recover and re-wrap company key using recovery file + new password
- * @param {string} recoveryWrappedKeyB64 - RSA-encrypted company key from recovery file
- * @param {string} privateKeyB64 - RSA private key from recovery file
- * @param {string} newPassword - User's new password
- * @param {string} newSalt - New salt for the new password
- * @returns {Promise<{wrappedCompanyKey: string, publicKey: string, privateKey: string, recoveryWrappedKey: string}>}
- */
-export async function recoverKeys(recoveryWrappedKeyB64, privateKeyB64, newPassword, newSalt) {
-  // 1. Import RSA private key from recovery file
-  const privateKeyBytes = base64ToBuffer(privateKeyB64);
-  const privateKey = await importPrivateKey(privateKeyBytes);
+export async function recoverKeys(
+    recoveryKemCiphertextB64,
+    recoveryWrappedKeyB64,
+    kemPrivateKeyB64,
+    newPassword,
+    newSalt
+) {
+  const kemCiphertext = new Uint8Array(base64ToBuffer(recoveryKemCiphertextB64));
+  const wrappedKey = new Uint8Array(base64ToBuffer(recoveryWrappedKeyB64));
+  const kemPrivateKey = new Uint8Array(base64ToBuffer(kemPrivateKeyB64));
 
-  // 2. Decrypt company key using RSA private key
-  const recoveryWrappedBytes = base64ToBuffer(recoveryWrappedKeyB64);
-  const companyKey = await unwrapKeyFromAdmin(recoveryWrappedBytes, privateKey);
+  const companyKey = await unwrapKeyFromUser(kemCiphertext, wrappedKey, kemPrivateKey);
 
-  // 3. Derive new KEK from new password
   const newKek = await deriveKEK(newPassword, newSalt);
-
-  // 4. Re-wrap company key with new KEK
   const newWrappedKey = await wrapCompanyKey(companyKey, newKek);
 
-  // 5. Generate new RSA keypair
-  const newKeyPair = await generateKeyPair();
-  const newPublicKeyBytes = await exportPublicKey(newKeyPair.publicKey);
-  const newPrivateKeyBytes = await exportPrivateKey(newKeyPair.privateKey);
-
-  // 6. RSA-encrypt company key for new recovery file
-  const newRecoveryKey = await wrapKeyForUser(companyKey, newKeyPair.publicKey);
+  const kemPair = generateKEMKeyPair();
+  const dsaPair = generateDSAKeyPair();
+  const recovery = await wrapKeyForUser(companyKey, kemPair.encapsulationKey);
 
   return {
     wrappedCompanyKey: bufferToBase64(newWrappedKey),
-    publicKey: bufferToBase64(newPublicKeyBytes),
-    privateKey: bufferToBase64(newPrivateKeyBytes),
-    recoveryWrappedKey: bufferToBase64(newRecoveryKey),
+    kemPublicKey: bufferToBase64(kemPair.encapsulationKey),
+    kemPrivateKey: bufferToBase64(kemPair.decapsulationKey),
+    dsaPublicKey: bufferToBase64(dsaPair.verificationKey),
+    dsaPrivateKey: bufferToBase64(dsaPair.signingKey),
+    recoveryKemCiphertext: bufferToBase64(recovery.kemCiphertext),
+    recoveryWrappedKey: bufferToBase64(recovery.wrappedKey),
   };
 }
 
@@ -367,7 +277,7 @@ export async function recoverKeys(recoveryWrappedKeyB64, privateKeyB64, newPassw
 // ============================================================
 
 function bufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   let binary = "";
   for (let i = 0; i < bytes.length; i++) {
     binary += String.fromCharCode(bytes[i]);
