@@ -48,6 +48,7 @@ func main() {
 		repository.NewReportsRepo(db),
 		repository.NewTicketRepo(db),
 		repository.NewWorkScheduleRepo(db),
+		repository.NewComplianceRepo(db),
 		cfg,
 	)
 

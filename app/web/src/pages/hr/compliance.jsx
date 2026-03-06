@@ -21,6 +21,23 @@ async function api(action, body = {}) {
 }
 
 /* ================================================================
+   LOCAL PERSISTENCE — fallback when API is unavailable
+================================================================ */
+const LS_KEY = "ls_compliance_agencies";
+
+function lsSave(agencies) {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(agencies)); } catch {}
+}
+
+function lsLoad() {
+    try {
+        const raw = localStorage.getItem(LS_KEY);
+        if (raw) return JSON.parse(raw);
+    } catch {}
+    return null;
+}
+
+/* ================================================================
    FALLBACK TEMPLATES — used until backend is wired
 ================================================================ */
 const FALLBACK_TEMPLATES = [
@@ -85,6 +102,12 @@ export default function ComplianceTab({ agencies, setAgencies, currency = "₱" 
     const [mode, setMode] = useState(agencies.length > 0 ? "dashboard" : "setup");
     const [editIdx, setEditIdx] = useState(null);
     const [showAdd, setShowAdd] = useState(false);
+    const [toast, setToast] = useState(null);
+
+    const showToast = (msg, ok = true) => {
+        setToast({ msg, ok });
+        setTimeout(() => setToast(null), 2500);
+    };
 
     // Load company agencies on mount
     useEffect(() => {
@@ -97,10 +120,17 @@ export default function ComplianceTab({ agencies, setAgencies, currency = "₱" 
             const assembled = assembleAgencies(data);
             if (assembled.length > 0) {
                 setAgencies(assembled);
+                lsSave(assembled);
                 setMode("dashboard");
+                return;
             }
         } catch {
-            // API not ready — use local state
+            // API not ready — try localStorage
+        }
+        const cached = lsLoad();
+        if (cached && cached.length > 0) {
+            setAgencies(cached);
+            setMode("dashboard");
         }
     }
 
@@ -118,6 +148,7 @@ export default function ComplianceTab({ agencies, setAgencies, currency = "₱" 
         }));
 
         setAgencies(newAgencies);
+        lsSave(newAgencies);
         setMode("dashboard");
 
         // Try API too (non-blocking)
@@ -130,13 +161,16 @@ export default function ComplianceTab({ agencies, setAgencies, currency = "₱" 
 
     // Save agency
     async function saveAgency(agencyData, isNew, idx) {
+        let next;
         if (isNew) {
-            setAgencies([...agencies, agencyData]);
+            next = [...agencies, agencyData];
         } else {
-            const next = [...agencies];
+            next = [...agencies];
             next[idx] = agencyData;
-            setAgencies(next);
         }
+        setAgencies(next);
+        lsSave(next);
+        showToast("Agency saved");
 
         // Try API too
         try {
@@ -158,14 +192,17 @@ export default function ComplianceTab({ agencies, setAgencies, currency = "₱" 
                 })),
             });
         } catch {
-            // Local state already updated
+            // Local state already updated and persisted to localStorage
         }
     }
 
     // Delete agency
     async function deleteAgency(idx) {
         const removed = agencies[idx];
-        setAgencies(agencies.filter((_, i) => i !== idx));
+        const next = agencies.filter((_, i) => i !== idx);
+        setAgencies(next);
+        lsSave(next);
+        showToast("Agency deleted");
         try {
             if (removed.id) await api("delete_compliance_agency", { agency_id: removed.id });
         } catch {}
@@ -211,6 +248,16 @@ export default function ComplianceTab({ agencies, setAgencies, currency = "₱" 
 
     // ---- DASHBOARD ----
     return (<>
+        {toast && (
+            <div style={{
+                position: "fixed", bottom: 24, right: 24, zIndex: 9999,
+                padding: "10px 18px", borderRadius: 10, fontFamily: "'DM Sans',sans-serif",
+                fontSize: 13, fontWeight: 600, color: "#fff",
+                background: toast.ok ? "#2d9e8b" : "#ef4444",
+                boxShadow: "0 4px 16px rgba(0,0,0,.15)",
+                animation: "fadeInUp .2s ease"
+            }}>{toast.msg}</div>
+        )}
         <div className="c-bar">
             <span className="c-bar-count">{agencies.length} agencies configured</span>
             <div className="c-bar-btns">
@@ -403,10 +450,27 @@ function AgencyEditor({ agency, currency, isNew, onSave, onDelete, onCancel }) {
     const updateField = (idx, k, v) => {
         const next = [...fields];
         if (k === "label") {
-            const autoKey = v.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/_+$/, "");
             const oldKey = next[idx].key;
-            next[idx] = { ...next[idx], label: v, key: autoKey || oldKey };
-            setValues(prev => { const n = { ...prev }; n[autoKey || oldKey] = n[oldKey] || ""; if (autoKey && autoKey !== oldKey) delete n[oldKey]; return n; });
+            // Only auto-rename key for brand-new fields (key starts with "field_")
+            const isAutoKey = oldKey.startsWith("field_");
+            if (isAutoKey) {
+                const autoKey = v.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || oldKey;
+                next[idx] = { ...next[idx], label: v, key: autoKey };
+                if (autoKey !== oldKey) {
+                    setValues(prev => {
+                        const n = { ...prev };
+                        n[autoKey] = n[oldKey] || "";
+                        delete n[oldKey];
+                        return n;
+                    });
+                } else {
+                    setFields(next);
+                    return;
+                }
+            } else {
+                // Preserve stable key for existing fields
+                next[idx] = { ...next[idx], label: v };
+            }
         } else {
             next[idx] = { ...next[idx], [k]: v };
         }
@@ -586,6 +650,7 @@ const complianceCSS = `
 
   .c-spinner{width:28px;height:28px;border:3px solid #eee;border-top-color:#2d9e8b;border-radius:50%;animation:cSpin .6s linear infinite;margin:0 auto}
   @keyframes cSpin{to{transform:rotate(360deg)}}
+  @keyframes fadeInUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
   @media(max-width:768px){.c-tmpl-grid{grid-template-columns:1fr 1fr}.c-grid{grid-template-columns:1fr}.c-editor-grid{grid-template-columns:1fr}}
   @media(max-width:500px){.c-tmpl-grid{grid-template-columns:1fr}}

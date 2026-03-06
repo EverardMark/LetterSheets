@@ -347,6 +347,51 @@ function SchedPanel({ open, mode, sched, idx, departments, positions, onClose, o
                     <textarea className="pp-input pp-textarea" value={form.description || ""} onChange={e => set("description", e.target.value)} placeholder="Brief description of this schedule" rows={2} disabled={isView} />
                 </div>
                 <div className="pp-field">
+                    <label className="pp-label">Hours / Day</label>
+                    <input
+                        type="number"
+                        className="pp-input"
+                        value={form.hours_per_day !== undefined ? form.hours_per_day : 8}
+                        onChange={e => set("hours_per_day", parseFloat(e.target.value) || 8)}
+                        step="0.5" min="1" max="24"
+                        disabled={isView}
+                    />
+                    <span style={{fontSize:11,color:"#999",marginTop:3}}>Used to compute hourly rate from daily rate</span>
+                </div>
+                <div className="pp-field">
+                    <label className="pp-label">Working Days / Month</label>
+                    <input
+                        type="number"
+                        className="pp-input"
+                        value={form.working_days_per_month !== undefined ? form.working_days_per_month : 22}
+                        onChange={e => set("working_days_per_month", parseInt(e.target.value) || 22)}
+                        step="1" min="1" max="31"
+                        disabled={isView}
+                    />
+                    <span style={{fontSize:11,color:"#999",marginTop:3}}>
+                        {form.working_days_per_month
+                            ? `Daily rate = monthly salary ÷ ${form.working_days_per_month}`
+                            : "e.g. 22 for 5-day week, 26 for 6-day week"}
+                    </span>
+                </div>
+                <div className="pp-field">
+                    <label className="pp-label">Night Diff %</label>
+                    <input
+                        type="number"
+                        className="pp-input"
+                        value={form.night_diff_pct !== undefined ? form.night_diff_pct : 0}
+                        onChange={e => set("night_diff_pct", parseFloat(e.target.value) || 0)}
+                        placeholder="e.g. 0.10 for 10%"
+                        step="0.01" min="0" max="1"
+                        disabled={isView}
+                    />
+                    <span style={{fontSize:11,color:"#999",marginTop:3}}>
+                        {form.night_diff_pct > 0
+                            ? `${(form.night_diff_pct * 100).toFixed(0)}% premium on hours worked 10 PM – 6 AM`
+                            : "0 = no night differential for this schedule"}
+                    </span>
+                </div>
+                <div className="pp-field">
                     <label className="pp-label" style={{ cursor: isView ? "default" : "pointer" }}>
                         <input
                             type="checkbox"

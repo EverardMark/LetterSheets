@@ -82,15 +82,16 @@ function computeTax(monthlyTaxable) {
 }
 
 // Scale statutory for semi-monthly: compute on monthly, then halve
-function computeStatutory(monthlySalary, settings) {
-    const divisor = settings.pay_schedule === "semi_monthly" ? 2 : 1;
-    const sss = settings.enable_sss ? computeSSS(monthlySalary) : { ee: 0, er: 0 };
-    const ph = settings.enable_philhealth ? computePhilHealth(monthlySalary) : { ee: 0, er: 0 };
-    const pi = settings.enable_pagibig ? computePagibig(monthlySalary) : { ee: 0, er: 0 };
+// compliance = { sss, philhealth, pagibig, tax } — derived from active compliance agencies
+function computeStatutory(monthlySalary, paySchedule, compliance) {
+    const divisor = paySchedule === "semi_monthly" ? 2 : 1;
+    const sss = compliance.sss ? computeSSS(monthlySalary) : { ee: 0, er: 0 };
+    const ph  = compliance.philhealth ? computePhilHealth(monthlySalary) : { ee: 0, er: 0 };
+    const pi  = compliance.pagibig ? computePagibig(monthlySalary) : { ee: 0, er: 0 };
 
     const totalEEDeductions = sss.ee + ph.ee + pi.ee;
     const monthlyTaxable = monthlySalary - totalEEDeductions;
-    const tax = settings.enable_tax ? computeTax(monthlyTaxable) : 0;
+    const tax = compliance.tax ? computeTax(monthlyTaxable) : 0;
 
     return {
         sss_ee: Math.round(sss.ee / divisor * 100) / 100,
@@ -127,9 +128,9 @@ async function getCompanyKey() {
    MAIN COMPONENT
 ================================================================ */
 export default function PayrollTab({ employees = [] }) {
-    const [view, setView] = useState("list"); // list | run | settings
+    const [view, setView] = useState("list"); // list | run
     const [runs, setRuns] = useState([]);
-    const [settings, setSettings] = useState(null);
+    const [settings] = useState({ pay_schedule: "semi_monthly", ot_multiplier: 1.25 });
     const [activeRun, setActiveRun] = useState(null);
     const [items, setItems] = useState([]);
     const [computing, setComputing] = useState(false);
@@ -139,14 +140,11 @@ export default function PayrollTab({ employees = [] }) {
         try { const d = await api("get_payroll_runs"); setRuns(d.runs || []); } catch {}
     }, []);
 
-    const loadSettings = useCallback(async () => {
-        try { const d = await api("get_payroll_settings"); setSettings(d.settings); } catch {}
-    }, []);
-
-    useEffect(() => { loadRuns(); loadSettings(); }, [loadRuns, loadSettings]);
+    useEffect(() => { loadRuns(); }, [loadRuns]);
 
     const openRun = async (run) => {
         setActiveRun(run);
+        setItems([]);
         setView("run");
         try {
             const d = await api("get_payroll_items", { run_id: run.id });
@@ -154,46 +152,150 @@ export default function PayrollTab({ employees = [] }) {
         } catch { setItems([]); }
     };
 
-    const createRun = async (periodStart, periodEnd, payDate) => {
+    const computeForRun = async (run) => {
+        setComputing(true);
+        setActiveRun(run);
+        setItems([]);
+        setView("run");
+        // Kick off compute — reuse computePayroll logic but with explicit run arg
+        await _doCompute(run);
+        setComputing(false);
+    };
+
+    const createAndCompute = async (periodStart, periodEnd) => {
         try {
             const d = await api("create_payroll_run", {
                 period_start: periodStart, period_end: periodEnd,
-                pay_date: payDate || null,
+                pay_date: null,
             });
             await loadRuns();
-            if (d.id) openRun({ ...d, status: "Draft" });
+            if (d.id) {
+                const run = { ...d, status: "Draft" };
+                await computeForRun(run);
+            }
         } catch (e) { alert("Failed: " + e.message); }
     };
 
-    /* ---- COMPUTE PAYROLL (browser-side) ---- */
-    const computePayroll = async () => {
-        if (!activeRun || !settings) return;
-        setComputing(true);
+    const createRun = createAndCompute;
 
+    const computePayroll = async () => {
+        if (!activeRun) return;
+        setComputing(true);
+        await _doCompute(activeRun);
+        setComputing(false);
+    };
+
+    /* ---- COMPUTE PAYROLL (browser-side) ---- */
+    const _doCompute = async (runArg) => {
+        const activeRun = runArg;
+        if (!activeRun || !settings) return;
         try {
             const companyKey = await getCompanyKey();
             const newItems = [];
 
-            // Get attendance for this period
+            // Fetch attendance for the pay period
             let attendance = [];
             try {
-                const attData = await api("get_attendance", { date_from: activeRun.period_start.substring(0,10), date_to: activeRun.period_end.substring(0,10) });
+                const attData = await api("get_attendance", {
+                    date_from: activeRun.period_start.substring(0, 10),
+                    date_to: activeRun.period_end.substring(0, 10),
+                });
                 attendance = attData.attendance || [];
             } catch {}
 
-            // Build attendance map per employee
-            const attMap = {};
-            attendance.forEach(a => {
-                if (!attMap[a.employee_id]) attMap[a.employee_id] = { hours: 0, ot: 0, days: 0 };
-                attMap[a.employee_id].hours += a.hours_worked || 0;
-                attMap[a.employee_id].ot += a.overtime_hours || 0;
-                attMap[a.employee_id].days += 1;
-            });
+            // Fetch approved leaves for the pay period
+            // Endpoint: get_leaves — returns { leaves: [...] } with start_date / end_date / status fields
+            const leaveByEmp = {}; // employee_id → approved leave days overlapping this pay period
+            try {
+                const lvData = await api("get_leaves", {
+                    date_from: activeRun.period_start.substring(0, 10),
+                    date_to:   activeRun.period_end.substring(0, 10),
+                    status:    "Approved",
+                });
+                const periodStart = new Date(activeRun.period_start.substring(0, 10) + "T00:00:00");
+                const periodEnd   = new Date(activeRun.period_end.substring(0, 10)   + "T00:00:00");
+                // Parse dates as UTC noon to avoid DST/timezone offset shifting the day boundary
+                const parseDate = (str) => { const [y,m,d] = str.substring(0,10).split("-").map(Number); return Date.UTC(y, m-1, d); };
+                const pStart = parseDate(activeRun.period_start);
+                const pEnd   = parseDate(activeRun.period_end);
+                for (const lv of (lvData.leaves || [])) {
+                    if ((lv.status || "").toLowerCase() !== "approved") continue;
+                    const s = parseDate(lv.start_date);
+                    const e = parseDate(lv.end_date);
+                    const cs = s < pStart ? pStart : s;
+                    const ce = e > pEnd   ? pEnd   : e;
+                    const days = Math.max(0, Math.round((ce - cs) / 86400000) + 1);
+                    if (days > 0) leaveByEmp[lv.employee_id] = (leaveByEmp[lv.employee_id] || 0) + days;
+                }
+            } catch (e) { console.error("get_leaves failed:", e); }
+
+            // Fetch work schedules list for hours_per_day / working_days_per_month lookup
+            const schedMetaById = {}; // id → { hours_per_day, working_days_per_month, name }
+            try {
+                const wsData = await api("get_work_schedules");
+                const list = Array.isArray(wsData) ? wsData : [];
+                for (const ws of list) {
+                    if (ws.id) schedMetaById[ws.id] = ws;
+                }
+            } catch {}
+
+            // Returns true when a given date string (YYYY-MM-DD) is a rest day on the schedule
+            const isRestDay = (dateStr, days) => {
+                if (!dateStr || !days.length) return false;
+                const dow = new Date(dateStr + "T00:00:00").getDay();
+                const cfg = days.find(d => (d.day_of_week ?? -1) === dow);
+                return cfg ? !!cfg.is_rest_day : false;
+            };
+
+            // Estimates hours falling in the night-differential window (10 PM – 6 AM)
+            // Uses clock_in / clock_out on the attendance record when available
+            const nightDiffHours = (att) => {
+                if (!att.clock_in || !att.clock_out) return 0;
+                try {
+                    const toMins = (t) => {
+                        // clock_in/clock_out are stored as full datetime or HH:MM strings
+                        const timepart = String(t).includes("T") ? String(t).split("T")[1] : String(t);
+                        const [h, m] = timepart.split(":").map(Number);
+                        return h * 60 + (m || 0);
+                    };
+                    const inM = toMins(att.clock_in);
+                    let outM = toMins(att.clock_out);
+                    if (outM <= inM) outM += 1440; // crosses midnight
+                    // Night window: 22:00 → 06:00 next day (expressed as 1320 → 1800)
+                    const nightStart = 22 * 60;
+                    const nightEnd = 30 * 60;
+                    const overlap = Math.max(0, Math.min(outM, nightEnd) - Math.max(inM, nightStart));
+                    return overlap / 60;
+                } catch { return 0; }
+            };
+
+            // Group attendance records by employee id
+            const attByEmp = {};
+            for (const a of attendance) {
+                if (!attByEmp[a.employee_id]) attByEmp[a.employee_id] = [];
+                attByEmp[a.employee_id].push(a);
+            }
 
             const activeEmps = employees.filter(e => e.status === "Active");
+            const divisor = settings.pay_schedule === "semi_monthly" ? 2 : 1;
+            const defaultOTMult = settings.ot_multiplier || 1.25;
+
+            // Always compute all PH statutory deductions (SSS, PhilHealth, Pag-IBIG, BIR)
+            // Compliance agencies are configured in the Compliance tab — no need to re-fetch
+            const compliance = { sss: true, philhealth: true, pagibig: true, tax: true };
+
+            // Build position OT multiplier map: position name → ot_multiplier
+            const posOTMap = {};
+            try {
+                const posData = await api("get_positions");
+                const posList = Array.isArray(posData) ? posData : (posData.positions || []);
+                for (const p of posList) {
+                    if (p.name && p.ot_multiplier > 0) posOTMap[p.name] = p.ot_multiplier;
+                }
+            } catch {}
 
             for (const emp of activeEmps) {
-                // Fetch full employee to get encrypted salary
+                // Fetch full employee record to decrypt salary and get work_schedule field
                 let monthlySalary = 0;
                 try {
                     const full = await api("get_employee", { id: emp.id });
@@ -201,41 +303,131 @@ export default function PayrollTab({ employees = [] }) {
                         const val = await decryptField(full.encrypted.basic_salary, companyKey);
                         monthlySalary = parseFloat(val) || 0;
                     }
+                    // Carry work_schedule_id onto emp for resolveSchedule
+                    if (!emp.work_schedule_id && full.work_schedule_id) {
+                        emp.work_schedule_id = full.work_schedule_id;
+                    }
                 } catch {}
 
-                if (monthlySalary <= 0) continue; // skip if no salary
+                if (monthlySalary <= 0) continue;
 
-                const att = attMap[emp.id] || { hours: 0, ot: 0, days: 0 };
-                const workingDays = settings.working_days || 22;
-                const divisor = settings.pay_schedule === "semi_monthly" ? 2 : 1;
-                const periodDays = workingDays / divisor;
-                const daysWorked = att.days || periodDays; // default full period if no attendance
+                // resolve_employee_schedule handles the full priority chain and returns days
+                let resolvedSched = null;
+                try {
+                    resolvedSched = await api("resolve_employee_schedule", { employee_id: emp.id });
+                    console.log("[sched]", emp.id, JSON.stringify(resolvedSched));
+                } catch {}
+                const days = resolvedSched?.days || [];
+                const schedMeta = resolvedSched?.id ? (schedMetaById[resolvedSched.id] || {}) : {};
+                const workingDays = schedMeta.working_days_per_month || 22;
+                const hoursPerDay = schedMeta.hours_per_day || 8;
+                const sched = resolvedSched; // kept for name/id display
 
                 const dailyRate = monthlySalary / workingDays;
-                const basicPay = Math.round(dailyRate * daysWorked * 100) / 100;
-                const hourlyRate = dailyRate / (settings.hours_per_day || 8);
-                const otPay = Math.round(att.ot * hourlyRate * (settings.ot_multiplier || 1.25) * 100) / 100;
+                const hourlyRate = dailyRate / hoursPerDay;
+                const periodDays = workingDays / divisor;
+                const ndPct = (sched?.night_diff_pct ?? 0.10);
+                // Position-level OT rate, falling back to company default
+                const otMult = posOTMap[emp.position] ?? defaultOTMult;
 
-                const grossPay = basicPay + otPay;
+                const empAtt = attByEmp[emp.id] || [];
 
-                // Statutory (based on full monthly salary for correct bracket)
-                const stat = computeStatutory(monthlySalary, settings);
+                let basicPay = 0;
+                let otPay = 0;
+                let nightDiff = 0;
+                let daysWorked = 0;
+                let totalHours = 0;
+                let totalOtHours = 0;
+
+                if (empAtt.length === 0) {
+                    // No attendance data — assume the employee worked the full period
+                    daysWorked = periodDays;
+                    basicPay = Math.round(dailyRate * daysWorked * 100) / 100;
+                } else {
+                    for (const att of empAtt) {
+                        const rest = isRestDay(att.date, days);
+                        // Cap regular hours to scheduled hours_per_day; derive OT from the excess
+                        const rawHours = (att.hours_worked ?? 0);
+                        // Derive OT from schedule day config if available, else use att.overtime_hours
+                        const dow = new Date(att.date.substring(0,10) + "T00:00:00").getDay();
+                        const dayConf = days.find(d => d.day_of_week === dow);
+                        let ot = 0;
+                        if (dayConf && !dayConf.is_rest_day && dayConf.start_time && dayConf.end_time) {
+                            const toM = t => { const [h,m] = t.substring(0,5).split(":").map(Number); return h*60+(m||0); };
+                            const schedEnd = toM(dayConf.end_time);
+                            // OT = only time worked after the scheduled end time
+                            // Early arrivals before start_time do NOT count as OT
+                            if (att.clock_out) {
+                                const clockOutStr = String(att.clock_out).includes("T") ? String(att.clock_out).split("T")[1] : String(att.clock_out);
+                                let clockOutM = toM(clockOutStr);
+                                const clockInStr = att.clock_in ? (String(att.clock_in).includes("T") ? String(att.clock_in).split("T")[1] : String(att.clock_in)) : null;
+                                const clockInM = clockInStr ? toM(clockInStr) : toM(dayConf.start_time);
+                                if (clockOutM < clockInM) clockOutM += 1440; // crossed midnight
+                                const otM = Math.max(0, clockOutM - Math.max(clockInM, schedEnd));
+                                ot = otM / 60;
+                            } else {
+                                // No clock_out: fall back to hours - scheduled, but clamp to 0 if within schedule
+                                const scheduledHours = Math.max(0, schedEnd - toM(dayConf.start_time)) / 60;
+                                ot = Math.max(0, rawHours - scheduledHours);
+                            }
+                        } else {
+                            ot = att.overtime_hours || 0;
+                        }
+                        console.log("[ot]", {date:att.date, dow, rawHours, dayConf: dayConf ? {start:dayConf.start_time,end:dayConf.end_time,rest:dayConf.is_rest_day} : null, ot});
+                        const hw = Math.max(0, rawHours - ot);
+                        const nd = nightDiffHours(att);
+
+                        totalHours += rawHours;
+                        totalOtHours += ot;
+                        daysWorked++;
+
+                        if (rest) {
+                            // Philippine Labor Code: rest-day work = 130 % of hourly rate
+                            // Rest-day OT = 130 % × 130 % of hourly rate
+                            basicPay += hourlyRate * hw * 1.30;
+                            otPay += hourlyRate * ot * 1.30 * 1.30;
+                        } else {
+                            basicPay += hourlyRate * hw;
+                            otPay += hourlyRate * ot * otMult;
+                        }
+
+                        // Night differential: ndPct is 0 on schedules without night hours
+                        nightDiff += hourlyRate * nd * ndPct;
+                    }
+                    basicPay = Math.round(basicPay * 100) / 100;
+                    otPay = Math.round(otPay * 100) / 100;
+                    nightDiff = Math.round(nightDiff * 100) / 100;
+                }
+
+                // Deduct approved leave days (unpaid leave = absent days × daily rate)
+                const approvedLeaveDays = leaveByEmp[emp.id] || 0;
+                const leaveDeduction = Math.round(dailyRate * approvedLeaveDays * 100) / 100;
+                if (approvedLeaveDays > 0) {
+                    basicPay = Math.max(0, Math.round((basicPay - leaveDeduction) * 100) / 100);
+                    daysWorked = Math.max(0, daysWorked - approvedLeaveDays);
+                }
+
+                const grossPay = Math.round((basicPay + otPay + nightDiff) * 100) / 100;
+
+                // Statutory deductions always use the full monthly salary for the correct bracket
+                const stat = computeStatutory(monthlySalary, settings.pay_schedule, compliance);
                 const totalDeductions = stat.sss_ee + stat.philhealth_ee + stat.pagibig_ee + stat.withholding_tax;
                 const netPay = Math.round((grossPay - totalDeductions) * 100) / 100;
 
                 const existing = items.find(it => it.employee_id === emp.id);
 
-                const item = {
+                // sp_upsert_payroll_item expects all these fields including schedule metadata
+                const dbItem = {
                     id: existing?.id || crypto.randomUUID(),
                     run_id: activeRun.id,
                     employee_id: emp.id,
                     basic_pay: basicPay,
                     days_worked: daysWorked,
-                    hours_worked: att.hours,
-                    ot_hours: att.ot,
+                    hours_worked: totalHours,
+                    ot_hours: totalOtHours,
                     ot_pay: otPay,
                     holiday_pay: 0,
-                    night_diff: 0,
+                    night_diff: nightDiff,
                     allowances: 0,
                     other_earnings: 0,
                     gross_pay: grossPay,
@@ -245,20 +437,28 @@ export default function PayrollTab({ employees = [] }) {
                     other_deductions: 0,
                     total_deductions: Math.round(totalDeductions * 100) / 100,
                     net_pay: netPay,
+                    work_schedule_name: sched?.name || null,
+                    hours_per_day: hoursPerDay,
+                    working_days_per_month: workingDays,
+                    ot_multiplier_used: otMult,
+                };
+                // Full item for local state adds display-only fields not in DB
+                const item = {
+                    ...dbItem,
+                    leave_days: approvedLeaveDays,
+                    leave_deduction: leaveDeduction,
                     first_name: emp.first_name,
                     last_name: emp.last_name,
                     department: emp.department,
                     position: emp.position,
                 };
 
-                // Save to server
-                try { await api("save_payroll_item", item); } catch {}
+                try { await api("save_payroll_item", dbItem); } catch { /* backend save — non-blocking */ }
                 newItems.push(item);
             }
 
             setItems(newItems);
 
-            // Update run totals
             const totGross = newItems.reduce((s, i) => s + i.gross_pay, 0);
             const totDed = newItems.reduce((s, i) => s + i.total_deductions, 0);
             const totNet = newItems.reduce((s, i) => s + i.net_pay, 0);
@@ -300,15 +500,6 @@ export default function PayrollTab({ employees = [] }) {
 
     if (!settings) return <div style={{padding:40,textAlign:"center",color:"#999"}}>Loading...</div>;
 
-    /* ---- SETTINGS VIEW ---- */
-    if (view === "settings") return <SettingsView settings={settings} onSave={async (s) => {
-        try {
-            await api("save_payroll_settings", s);
-            setSettings(s);
-            setView("list");
-        } catch (e) { alert("Failed: " + e.message); }
-    }} onBack={() => setView("list")} />;
-
     /* ---- RUN DETAIL VIEW ---- */
     if (view === "run" && activeRun) return (
         <RunDetail
@@ -325,8 +516,7 @@ export default function PayrollTab({ employees = [] }) {
     return (<>
         <div className="pr-bar">
             <div className="pr-bar-right" style={{marginLeft:"auto"}}>
-                <button className="pr-btn-s" onClick={() => setView("settings")}><I name="settings" size={14}/> Settings</button>
-                <NewRunButton settings={settings} onCreate={createRun} />
+                <ComputeButton onCompute={createAndCompute} computing={computing} />
             </div>
         </div>
 
@@ -371,43 +561,37 @@ function fmtPeriod(a, b) {
 }
 
 /* ================================================================
-   NEW RUN BUTTON (with period picker)
+   COMPUTE PAYROLL BUTTON + MODAL
 ================================================================ */
-function NewRunButton({ settings, onCreate }) {
+function ComputeButton({ onCompute, computing }) {
     const [open, setOpen] = useState(false);
-    const [ps, setPS] = useState("");
-    const [pe, setPE] = useState("");
+    const now = new Date();
+    const y = now.getFullYear(), m = String(now.getMonth() + 1).padStart(2, "0");
+    const [ps, setPS] = useState(`${y}-${m}-01`);
+    const [pe, setPE] = useState(new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10));
 
-    useEffect(() => {
-        const now = new Date();
-        const y = now.getFullYear(), m = now.getMonth();
-        if (settings?.pay_schedule === "semi_monthly") {
-            if (now.getDate() <= 15) {
-                setPS(`${y}-${String(m+1).padStart(2,"0")}-01`);
-                setPE(`${y}-${String(m+1).padStart(2,"0")}-15`);
-            } else {
-                setPS(`${y}-${String(m+1).padStart(2,"0")}-16`);
-                setPE(new Date(y, m+1, 0).toISOString().slice(0,10));
-            }
-        } else {
-            setPS(`${y}-${String(m+1).padStart(2,"0")}-01`);
-            setPE(new Date(y, m+1, 0).toISOString().slice(0,10));
-        }
-    }, [settings, open]);
+    const handleCompute = () => {
+        if (!ps || !pe) return;
+        setOpen(false);
+        onCompute(ps, pe);
+    };
 
     return (<>
-        <button className="pr-btn-p" onClick={() => setOpen(true)}><I name="plus" size={14}/> New Run</button>
+        <button className="pr-btn-compute" onClick={() => setOpen(true)} disabled={computing}>
+            {computing ? "Computing..." : "⚡ Compute Payroll"}
+        </button>
         {open && (<>
             <div className="lv-modal-bg" onClick={() => setOpen(false)}/>
-            <div className="lv-modal" style={{width:380}}>
-                <h3 className="lv-modal-t">New Payroll Run</h3>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:14}}>
-                    <div><label className="bp-label">Period Start</label><input type="date" className="bp-input" value={ps} onChange={e => setPS(e.target.value)}/></div>
-                    <div><label className="bp-label">Period End</label><input type="date" className="bp-input" value={pe} onChange={e => setPE(e.target.value)}/></div>
+            <div className="lv-modal" style={{width:360}}>
+                <h3 className="lv-modal-t">Compute Payroll</h3>
+                <p style={{fontSize:13,color:"#888",margin:"6px 0 16px"}}>Select the pay period to compute.</p>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    <div><label className="bp-label">Start Date</label><input type="date" className="bp-input" value={ps} onChange={e => setPS(e.target.value)}/></div>
+                    <div><label className="bp-label">End Date</label><input type="date" className="bp-input" value={pe} onChange={e => setPE(e.target.value)}/></div>
                 </div>
                 <div className="lv-modal-btns">
                     <button className="bp-btn-cancel" onClick={() => setOpen(false)}>Cancel</button>
-                    <button className="pr-btn-p" onClick={() => { onCreate(ps, pe); setOpen(false); }}>Create Run</button>
+                    <button className="pr-btn-compute" onClick={handleCompute}>⚡ Compute</button>
                 </div>
             </div>
         </>)}
@@ -420,6 +604,7 @@ function NewRunButton({ settings, onCreate }) {
 function RunDetail({ run, items, settings, computing, onCompute, onApprove, onDelete, onBack }) {
     const isDraft = run.status === "Draft";
     const sc = run.status === "Approved" ? "#22c55e" : run.status === "Paid" ? "#0ea5e9" : "#f59e0b";
+    const [selectedItem, setSelectedItem] = useState(null);
 
     return (<>
         <div className="pr-run-head">
@@ -431,41 +616,33 @@ function RunDetail({ run, items, settings, computing, onCompute, onApprove, onDe
             <div className="pr-run-actions">
                 {isDraft && <button className="pr-btn-compute" onClick={onCompute} disabled={computing}>{computing ? "Computing..." : "⚡ Compute Payroll"}</button>}
                 {isDraft && items.length > 0 && <button className="lv-foot-approve" onClick={onApprove}><I name="check" size={13}/> Approve</button>}
-                {isDraft && <button className="bp-btn-danger" onClick={onDelete}>Delete</button>}
+                <button className="bp-btn-danger" onClick={() => {
+                    if (!isDraft && !window.confirm("This run is " + run.status + ". Are you sure you want to permanently delete it?")) return;
+                    onDelete();
+                }}>Delete</button>
             </div>
-        </div>
-
-        <div className="pr-summary">
-            {[
-                { label: "Employees", value: items.length, color: "#6366f1" },
-                { label: "Gross Pay", value: peso(run.total_gross), color: "#22c55e" },
-                { label: "Deductions", value: peso(run.total_deductions), color: "#ef4444" },
-                { label: "Net Pay", value: peso(run.total_net), color: "#0ea5e9" },
-            ].map((s,i) => (
-                <div key={i} className="pr-sum-card">
-                    <div className="pr-sum-l">{s.label}</div>
-                    <div className="pr-sum-v" style={{color:s.color}}>{s.value}</div>
-                </div>
-            ))}
         </div>
 
         {items.length === 0 ? (
-            <div className="pr-empty">
-                <div className="pr-empty-ic"><I name="users" size={28}/></div>
-                <h3 className="pr-empty-t">{isDraft ? 'Click "Compute Payroll" to generate' : "No items"}</h3>
-                <p className="pr-empty-d">Payroll will be computed for all active employees with salary data.</p>
+            <div className="at-empty">
+                <div className="at-empty-ic"><I name="users" size={28}/></div>
+                <div className="at-empty-t">{isDraft ? "Click \"Compute Payroll\" to generate" : "No items"}</div>
+                <div className="at-empty-d">Payroll will be computed for all active employees with salary data.</div>
             </div>
         ) : (
-            <div className="pr-tbl-wrap">
-                <table className="pr-tbl pr-tbl-items">
+            <div style={{overflowX:"auto",flex:1,background:"#fff",borderRadius:10}}>
+                <table className="at-tbl">
                     <thead>
                     <tr>
                         <th>Employee</th>
+                        <th>Department</th>
                         <th style={{textAlign:"right"}}>Basic</th>
                         <th style={{textAlign:"right"}}>OT</th>
+                        <th style={{textAlign:"right"}}>Night Diff</th>
+                        <th style={{textAlign:"right"}}>Leave Ded</th>
                         <th style={{textAlign:"right"}}>Gross</th>
                         <th style={{textAlign:"right"}}>SSS</th>
-                        <th style={{textAlign:"right"}}>PhilH</th>
+                        <th style={{textAlign:"right"}}>PhilHealth</th>
                         <th style={{textAlign:"right"}}>HDMF</th>
                         <th style={{textAlign:"right"}}>Tax</th>
                         <th style={{textAlign:"right"}}>Total Ded</th>
@@ -474,112 +651,210 @@ function RunDetail({ run, items, settings, computing, onCompute, onApprove, onDe
                     </thead>
                     <tbody>
                     {items.map(it => (
-                        <tr key={it.id}>
+                        <tr key={it.id} onClick={() => setSelectedItem(it)}>
                             <td>
-                                <div className="pr-emp">
-                                    <span className="pr-emp-av">{(it.first_name?.[0]||"")+(it.last_name?.[0]||"")}</span>
-                                    <div><div className="pr-emp-name">{it.first_name} {it.last_name}</div><div className="pr-emp-dept">{it.department}</div></div>
+                                <div className="at-emp">
+                                    <span className="at-emp-av">{(it.first_name?.[0]||"")+(it.last_name?.[0]||"")}</span>
+                                    <div>
+                                        <div className="at-emp-name">{it.first_name} {it.last_name}</div>
+                                        <div className="at-emp-pos">{it.position || "—"}</div>
+                                    </div>
                                 </div>
                             </td>
-                            <td className="pr-r">{peso(it.basic_pay)}</td>
-                            <td className="pr-r">{it.ot_pay > 0 ? peso(it.ot_pay) : "—"}</td>
-                            <td className="pr-r pr-bold">{peso(it.gross_pay)}</td>
-                            <td className="pr-r pr-ded">{peso(it.sss_ee)}</td>
-                            <td className="pr-r pr-ded">{peso(it.philhealth_ee)}</td>
-                            <td className="pr-r pr-ded">{peso(it.pagibig_ee)}</td>
-                            <td className="pr-r pr-ded">{peso(it.withholding_tax)}</td>
-                            <td className="pr-r pr-ded pr-bold">{peso(it.total_deductions)}</td>
-                            <td className="pr-r pr-net">{peso(it.net_pay)}</td>
+                            <td className="at-td-dept">{it.department || "—"}</td>
+                            <td className="at-td-hrs" style={{textAlign:"right"}}>{peso(it.basic_pay)}</td>
+                            <td className="at-td-hrs" style={{textAlign:"right",color: it.ot_pay > 0 ? "#f59e0b" : undefined}}>{it.ot_pay > 0 ? peso(it.ot_pay) : "—"}</td>
+                            <td className="at-td-hrs" style={{textAlign:"right",color: it.night_diff > 0 ? "#8b5cf6" : undefined}}>{it.night_diff > 0 ? peso(it.night_diff) : "—"}</td>
+                            <td className="at-td-hrs" style={{textAlign:"right",color: it.leave_deduction > 0 ? "#ef4444" : undefined}}>{it.leave_deduction > 0 ? `- ${peso(it.leave_deduction)}` : "—"}</td>
+                            <td className="at-td-time" style={{textAlign:"right"}}>{peso(it.gross_pay)}</td>
+                            <td className="at-td-hrs" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.sss_ee)}</td>
+                            <td className="at-td-hrs" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.philhealth_ee)}</td>
+                            <td className="at-td-hrs" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.pagibig_ee)}</td>
+                            <td className="at-td-hrs" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.withholding_tax)}</td>
+                            <td className="at-td-time" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.total_deductions)}</td>
+                            <td className="at-td-time" style={{textAlign:"right",color:"#22c55e"}}>{peso(it.net_pay)}</td>
                         </tr>
                     ))}
-                    <tr className="pr-total-row">
-                        <td style={{fontWeight:700}}>TOTAL</td>
-                        <td className="pr-r pr-bold">{peso(items.reduce((s,i)=>s+i.basic_pay,0))}</td>
-                        <td className="pr-r">{peso(items.reduce((s,i)=>s+i.ot_pay,0))}</td>
-                        <td className="pr-r pr-bold">{peso(items.reduce((s,i)=>s+i.gross_pay,0))}</td>
-                        <td className="pr-r pr-ded">{peso(items.reduce((s,i)=>s+i.sss_ee,0))}</td>
-                        <td className="pr-r pr-ded">{peso(items.reduce((s,i)=>s+i.philhealth_ee,0))}</td>
-                        <td className="pr-r pr-ded">{peso(items.reduce((s,i)=>s+i.pagibig_ee,0))}</td>
-                        <td className="pr-r pr-ded">{peso(items.reduce((s,i)=>s+i.withholding_tax,0))}</td>
-                        <td className="pr-r pr-ded pr-bold">{peso(items.reduce((s,i)=>s+i.total_deductions,0))}</td>
-                        <td className="pr-r pr-net pr-bold">{peso(items.reduce((s,i)=>s+i.net_pay,0))}</td>
+                    <tr style={{background:"#f8fafc",borderTop:"2px solid #e0e0e0",fontWeight:700}}>
+                        <td colSpan={2} style={{padding:"12px 14px",fontSize:13}}>TOTAL</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px"}}>{peso(items.reduce((s,i)=>s+i.basic_pay,0))}</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px",color:"#f59e0b"}}>{peso(items.reduce((s,i)=>s+i.ot_pay,0))}</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px",color:"#8b5cf6"}}>{peso(items.reduce((s,i)=>s+(i.night_diff||0),0))}</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+(i.leave_deduction||0),0))}</td>
+                        <td className="at-td-time" style={{textAlign:"right",padding:"12px 14px"}}>{peso(items.reduce((s,i)=>s+i.gross_pay,0))}</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.sss_ee,0))}</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.philhealth_ee,0))}</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.pagibig_ee,0))}</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.withholding_tax,0))}</td>
+                        <td className="at-td-time" style={{textAlign:"right",padding:"12px 14px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.total_deductions,0))}</td>
+                        <td className="at-td-time" style={{textAlign:"right",padding:"12px 14px",color:"#22c55e"}}>{peso(items.reduce((s,i)=>s+i.net_pay,0))}</td>
                     </tr>
                     </tbody>
                 </table>
             </div>
         )}
+        {selectedItem && <PayrollItemModal item={selectedItem} settings={settings} run={run} onClose={() => setSelectedItem(null)} />}
         <style>{prCSS}</style>
     </>);
 }
 
 /* ================================================================
-   SETTINGS VIEW
+   PAYROLL ITEM DETAIL MODAL
 ================================================================ */
-function SettingsView({ settings, onSave, onBack }) {
-    const [form, setForm] = useState({ ...settings });
-    const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+function PayrollItemModal({ item: it, settings, run, onClose }) {
+    const initials = (it.first_name?.[0] || "") + (it.last_name?.[0] || "");
+
+    const Row = ({ label, value, color, bold, indent, top }) => (
+        <div className={`pd-row${bold ? " pd-row-bold" : ""}${top ? " pd-row-top" : ""}`}>
+            <span className={`pd-row-label${indent ? " pd-row-indent" : ""}`}>{label}</span>
+            <span className="pd-row-value" style={color ? { color } : {}}>{value}</span>
+        </div>
+    );
+
+    const Divider = ({ label }) => (
+        <div className="pd-divider">{label}</div>
+    );
+
+    const workingDays = it.working_days_per_month || 22;
+    const divisor = settings?.pay_schedule === "semi_monthly" ? 2 : 1;
+    const periodDays = workingDays / divisor;
+    const hoursPerDay = it.hours_per_day || 8;
+
+    // Reconstruct daily / hourly rates for display
+    // basic_pay already accounts for actual days worked and rest-day premiums,
+    // so we show the base rates derived from the stored values
+    const dailyRateApprox = it.days_worked > 0 ? it.basic_pay / it.days_worked : 0;
+    const hourlyRateApprox = dailyRateApprox / hoursPerDay;
+
+    const hasOT       = it.ot_pay > 0;
+    const hasND       = it.night_diff > 0;
+    const hasHoliday  = it.holiday_pay > 0;
+    const hasAllow    = it.allowances > 0;
+    const hasOtherEar = it.other_earnings > 0;
+    const hasBenefit  = it.benefit_deductions > 0;
+    const hasLoan     = it.loan_deductions > 0;
+    const hasOtherDed = it.other_deductions > 0;
+
+    const otMult = it.ot_multiplier_used || settings?.ot_multiplier || 1.25;
+    // night_diff_pct is stored on the work schedule, not settings;
+    // back-calculate from the stored night_diff and hours if available,
+    // otherwise show a generic label
+    const ndLabel = it.night_diff > 0 ? "Night-shift hours (10 PM – 6 AM) premium" : "";
 
     return (<>
-        <div className="pr-run-head">
-            <button className="pr-back" onClick={onBack}><I name="arrow-left" size={16}/> Back</button>
-            <h2 className="pr-run-title">Payroll Settings</h2>
-            <button className="pr-btn-p" onClick={() => onSave(form)}>Save Settings</button>
-        </div>
+        <div className="pd-bg" onClick={onClose} />
+        <div className="pd-modal">
 
-        <div className="pr-settings">
-            <div className="pr-set-section">
-                <h4 className="bp-sec-title">Schedule & Rates</h4>
-                <div className="bp-fields">
-                    <div className="bp-field">
-                        <label className="bp-label">Pay Schedule</label>
-                        <select className="bp-input" value={form.pay_schedule} onChange={e => set("pay_schedule", e.target.value)}>
-                            <option value="semi_monthly">Semi-Monthly (1-15, 16-end)</option>
-                            <option value="monthly">Monthly</option>
-                        </select>
-                    </div>
-                    <div className="bp-field">
-                        <label className="bp-label">Working Days/Month</label>
-                        <input type="number" className="bp-input" value={form.working_days} onChange={e => set("working_days", parseInt(e.target.value)||22)} />
-                    </div>
-                    <div className="bp-field">
-                        <label className="bp-label">Hours/Day</label>
-                        <input type="number" className="bp-input" value={form.hours_per_day} onChange={e => set("hours_per_day", parseFloat(e.target.value)||8)} step="0.5" />
-                    </div>
-                    <div className="bp-field">
-                        <label className="bp-label">OT Multiplier</label>
-                        <input type="number" className="bp-input" value={form.ot_multiplier} onChange={e => set("ot_multiplier", parseFloat(e.target.value)||1.25)} step="0.05" />
-                    </div>
-                    <div className="bp-field">
-                        <label className="bp-label">Night Diff %</label>
-                        <input type="number" className="bp-input" value={form.night_diff_pct} onChange={e => set("night_diff_pct", parseFloat(e.target.value)||0.10)} step="0.01" />
-                    </div>
-                </div>
-            </div>
-
-            <div className="pr-set-section">
-                <h4 className="bp-sec-title">Statutory Deductions</h4>
-                <p style={{fontSize:12,color:"#888",marginBottom:14}}>Toggle which PH statutory contributions to auto-compute. Uses 2024 contribution tables.</p>
-                <div className="pr-toggles">
-                    {[
-                        { key: "enable_sss", label: "SSS", desc: "Social Security System" },
-                        { key: "enable_philhealth", label: "PhilHealth", desc: "Philippine Health Insurance" },
-                        { key: "enable_pagibig", label: "Pag-IBIG / HDMF", desc: "Home Development Mutual Fund" },
-                        { key: "enable_tax", label: "Withholding Tax", desc: "BIR graduated tax (TRAIN Law)" },
-                    ].map(t => (
-                        <div key={t.key} className="pr-toggle-row">
-                            <div className="pr-toggle-info">
-                                <div className="pr-toggle-label">{t.label}</div>
-                                <div className="pr-toggle-desc">{t.desc}</div>
-                            </div>
-                            <button className={`pr-toggle ${form[t.key] ? "pr-toggle-on" : ""}`} onClick={() => set(t.key, !form[t.key])}>
-                                <div className="pr-toggle-dot"/>
-                            </button>
+            {/* Header */}
+            <div className="pd-head">
+                <div className="pd-head-left">
+                    <div className="pd-av">{initials}</div>
+                    <div>
+                        <div className="pd-name">{it.first_name} {it.last_name}</div>
+                        <div className="pd-meta">
+                            {it.department && <span>{it.department}</span>}
+                            {it.position && <><span className="pd-dot">·</span><span>{it.position}</span></>}
+                            {it.work_schedule_name && <><span className="pd-dot">·</span><span className="pd-sched">{it.work_schedule_name}</span></>}
                         </div>
-                    ))}
+                    </div>
                 </div>
+                <button className="pd-close" onClick={onClose}>×</button>
+            </div>
+
+            {/* Period strip */}
+            <div className="pd-period">
+                <span>Period: <strong>{fmtPeriod(run.period_start, run.period_end)}</strong></span>
+                <span className="pd-dot">·</span>
+                <span>{it.days_worked} days worked</span>
+                {it.hours_worked > 0 && <><span className="pd-dot">·</span><span>{it.hours_worked}h total</span></>}
+                {hasOT && <><span className="pd-dot">·</span><span>{it.ot_hours}h OT</span></>}
+            </div>
+
+            <div className="pd-body">
+                {/* ── EARNINGS ── */}
+                <Divider label="Earnings" />
+
+                <Row label="Basic Pay" value={peso(it.basic_pay)} />
+                <Row
+                    label={`  ${it.days_worked} day${it.days_worked !== 1 ? "s" : ""} worked`}
+                    value={it.days_worked < periodDays
+                        ? `(${it.days_worked} of ${periodDays} period days)`
+                        : "(full period)"}
+                    indent
+                />
+                {(it.leave_days > 0) && <Row
+                    label={`  ${it.leave_days} approved leave day${it.leave_days !== 1 ? "s" : ""} deducted`}
+                    value={`- ${peso(it.leave_deduction)}`}
+                    indent color="#ef4444"
+                />}
+
+                {hasOT && <>
+                    <Row label="Overtime Pay" value={peso(it.ot_pay)} />
+                    <Row label={`  ${it.ot_hours}h × ${otMult}× OT rate`} value="" indent />
+                </>}
+
+                {hasND && <>
+                    <Row label="Night Differential" value={peso(it.night_diff)} color="#8b5cf6" />
+                    <Row label={`  ${ndLabel}`} value="" indent />
+                </>}
+
+                {hasHoliday && <Row label="Holiday Pay" value={peso(it.holiday_pay)} />}
+                {hasAllow   && <Row label="Allowances"  value={peso(it.allowances)} />}
+                {hasOtherEar && <Row label="Other Earnings" value={peso(it.other_earnings)} />}
+
+                <Row label="GROSS PAY" value={peso(it.gross_pay)} color="#22c55e" bold top />
+
+                {/* ── DEDUCTIONS ── */}
+                <Divider label="Statutory Deductions" />
+
+                <Row label="SSS (Employee Share)" value={`- ${peso(it.sss_ee)}`} color="#ef4444" />
+                <Row label="  (Employer share)" value={peso(it.sss_er)} indent />
+
+                <Row label="PhilHealth (Employee Share)" value={`- ${peso(it.philhealth_ee)}`} color="#ef4444" />
+                <Row label="  (Employer share)" value={peso(it.philhealth_er)} indent />
+
+                <Row label="Pag-IBIG / HDMF (Employee Share)" value={`- ${peso(it.pagibig_ee)}`} color="#ef4444" />
+                <Row label="  (Employer share)" value={peso(it.pagibig_er)} indent />
+
+                <Row label="Withholding Tax (BIR TRAIN)" value={`- ${peso(it.withholding_tax)}`} color="#ef4444" />
+                <Row
+                    label={`  Taxable income: ${peso(it.gross_pay - it.sss_ee - it.philhealth_ee - it.pagibig_ee)}`}
+                    value=""
+                    indent
+                />
+
+                {(hasBenefit || hasLoan || hasOtherDed) && <>
+                    <Divider label="Other Deductions" />
+                    {hasBenefit  && <Row label="Benefit Deductions" value={`- ${peso(it.benefit_deductions)}`} color="#ef4444" />}
+                    {hasLoan     && <Row label="Loan Deductions"    value={`- ${peso(it.loan_deductions)}`}    color="#ef4444" />}
+                    {hasOtherDed && <Row label="Other Deductions"   value={`- ${peso(it.other_deductions)}`}  color="#ef4444" />}
+                </>}
+
+                <Row label="TOTAL DEDUCTIONS" value={`- ${peso(it.total_deductions)}`} color="#ef4444" bold top />
+
+                {/* ── NET ── */}
+                <div className="pd-net-row">
+                    <span className="pd-net-label">NET PAY</span>
+                    <span className="pd-net-value">{peso(it.net_pay)}</span>
+                </div>
+
+                {/* ── Employer cost summary ── */}
+                <Divider label="Total Employer Cost" />
+                <Row label="Gross Pay" value={peso(it.gross_pay)} />
+                <Row label="SSS Employer Share" value={peso(it.sss_er)} />
+                <Row label="PhilHealth Employer Share" value={peso(it.philhealth_er)} />
+                <Row label="Pag-IBIG Employer Share" value={peso(it.pagibig_er)} />
+                <Row
+                    label="TOTAL COST TO COMPANY"
+                    value={peso(it.gross_pay + it.sss_er + it.philhealth_er + it.pagibig_er)}
+                    bold top
+                />
+            </div>
+
+            <div className="pd-foot">
+                <button className="pr-btn-p" onClick={onClose}>Close</button>
             </div>
         </div>
-        <style>{prCSS}</style>
     </>);
 }
 
@@ -630,11 +905,43 @@ const prCSS = `
   .pr-sum-l{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
   .pr-sum-v{font-size:20px;font-weight:700}
 
+  .pr-item-row{cursor:pointer;transition:background .1s}
+  .pr-item-row:hover{background:#f5f3ff !important}
+
+  /* Payroll item detail modal */
+  .pd-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:500;animation:bpFade .12s}
+  .pd-modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:16px;width:520px;max-width:95vw;max-height:88vh;display:flex;flex-direction:column;z-index:501;box-shadow:0 16px 48px rgba(0,0,0,.16);overflow:hidden}
+  .pd-head{display:flex;align-items:center;justify-content:space-between;padding:20px 24px 16px;border-bottom:1px solid #f0f0f0;flex-shrink:0}
+  .pd-head-left{display:flex;align-items:center;gap:12px}
+  .pd-av{width:42px;height:42px;border-radius:12px;background:#eef2ff;color:#6366f1;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .pd-name{font-size:16px;font-weight:700;color:#222}
+  .pd-meta{display:flex;align-items:center;gap:4px;font-size:11px;color:#999;margin-top:2px;flex-wrap:wrap}
+  .pd-dot{color:#ddd}
+  .pd-sched{color:#2d9e8b;font-weight:600}
+  .pd-close{width:30px;height:30px;border-radius:8px;border:1px solid #eee;background:#fff;font-size:18px;color:#999;cursor:pointer;display:flex;align-items:center;justify-content:center;line-height:1;flex-shrink:0}
+  .pd-close:hover{background:#f5f5f5;color:#333}
+  .pd-period{padding:8px 24px;background:#fafbff;border-bottom:1px solid #f0f0f0;font-size:11px;color:#888;display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0}
+  .pd-body{flex:1;overflow-y:auto;padding:16px 24px}
+  .pd-foot{padding:14px 24px;border-top:1px solid #f0f0f0;display:flex;justify-content:flex-end;flex-shrink:0}
+  .pd-divider{font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.06em;margin:16px 0 6px;padding-bottom:4px;border-bottom:1px solid #f0f0f0}
+  .pd-divider:first-child{margin-top:0}
+  .pd-row{display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;font-size:13px;color:#444}
+  .pd-row-bold .pd-row-label,.pd-row-bold .pd-row-value{font-weight:700;font-size:13px;color:#222}
+  .pd-row-top{margin-top:8px;padding-top:10px;border-top:1px solid #eee}
+  .pd-row-label{color:#555}
+  .pd-row-indent{font-size:11px;color:#bbb;padding-left:12px}
+  .pd-row-value{font-variant-numeric:tabular-nums;font-weight:500;text-align:right}
+  .pd-net-row{display:flex;justify-content:space-between;align-items:center;margin-top:12px;padding:14px 16px;background:linear-gradient(135deg,#f0fdf4,#dcfce7);border-radius:10px;border:1px solid #bbf7d0}
+  .pd-net-label{font-size:13px;font-weight:700;color:#166534;text-transform:uppercase;letter-spacing:.04em}
+  .pd-net-value{font-size:22px;font-weight:800;color:#16a34a;font-variant-numeric:tabular-nums}
+
   .pr-tbl-items td{font-size:12px}
   .pr-r{text-align:right !important;font-variant-numeric:tabular-nums}
   .pr-bold{font-weight:700}
   .pr-ded{color:#ef4444}
+  .pr-nd{color:#8b5cf6}
   .pr-net{color:#22c55e;font-weight:700}
+  .pr-sched-tag{font-size:10px;font-weight:600;color:#2d9e8b;background:#edf8f5;padding:2px 7px;border-radius:4px;white-space:nowrap}
   .pr-emp{display:flex;align-items:center;gap:8px}
   .pr-emp-av{width:30px;height:30px;border-radius:8px;background:#eef2ff;color:#6366f1;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
   .pr-emp-name{font-weight:600;color:#222;font-size:12px}
@@ -642,23 +949,6 @@ const prCSS = `
   .pr-total-row{background:#f8fafc !important;border-top:2px solid #e0e0e0 !important}
   .pr-total-row td{padding:14px !important}
 
-  /* Settings */
-  .pr-settings{max-width:640px}
-  .pr-set-section{background:#fff;border:1px solid #eee;border-radius:12px;padding:20px 24px;margin-bottom:16px}
-  .pr-toggles{display:flex;flex-direction:column;gap:2px}
-  .pr-toggle-row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid #f5f5f5}
-  .pr-toggle-row:last-child{border-bottom:none}
-  .pr-toggle-info{flex:1}
-  .pr-toggle-label{font-size:14px;font-weight:600;color:#222}
-  .pr-toggle-desc{font-size:11px;color:#999;margin-top:2px}
-  .pr-toggle{width:44px;height:24px;border-radius:12px;border:none;background:#e5e7eb;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0}
-  .pr-toggle-on{background:#6366f1}
-  .pr-toggle-dot{width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:3px;left:3px;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.12)}
-  .pr-toggle-on .pr-toggle-dot{transform:translateX(20px)}
-
-  @media(max-width:768px){.pr-summary{grid-template-columns:repeat(2,1fr)}}
-
-  /* Shared modal styles */
   .lv-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:400;animation:bpFade .12s}
   @keyframes bpFade{from{opacity:0}to{opacity:1}}
   .lv-modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:16px;padding:28px;width:420px;max-width:90vw;z-index:401;box-shadow:0 12px 40px rgba(0,0,0,.12)}
@@ -670,10 +960,27 @@ const prCSS = `
   .bp-btn-cancel:hover{background:#f5f5f5}
   .bp-btn-danger{padding:9px 16px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#ef4444;cursor:pointer}
   .bp-btn-danger:hover{background:#ef4444;color:#fff}
-  .bp-sec-title{font-size:13px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px}
   .bp-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .bp-field{display:flex;flex-direction:column}
   .bp-label{font-size:12px;font-weight:600;color:#666;margin-bottom:5px}
   .bp-input{width:100%;padding:9px 12px;border:1px solid #e0e0e0;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;color:#333;outline:none;transition:border-color .15s;background:#fff;box-sizing:border-box}
   .bp-input:focus{border-color:#6366f1;box-shadow:0 0 0 2px rgba(99,102,241,.1)}
+
+  /* Attendance-style table (shared classes) */
+  .at-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px 20px;background:#fff;border-radius:10px}
+  .at-empty-ic{width:56px;height:56px;border-radius:50%;background:#eef2ff;color:#6366f1;display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
+  .at-empty-t{font-size:15px;font-weight:700;color:#333;margin-bottom:4px}
+  .at-empty-d{font-size:13px;color:#999}
+  .at-tbl{width:100%;border-collapse:collapse;font-size:13px;background:#fff;border-radius:10px;overflow:hidden}
+  .at-tbl thead th{text-align:left;padding:10px 14px;font-size:11px;font-weight:600;color:#999;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #eee;background:#fafbfa;white-space:nowrap}
+  .at-tbl tbody td{padding:12px 14px;border-bottom:1px solid #f5f5f5;color:#444}
+  .at-tbl tbody tr{transition:background .1s;cursor:pointer}
+  .at-tbl tbody tr:hover{background:#f5f3ff}
+  .at-emp{display:flex;align-items:center;gap:10px}
+  .at-emp-av{width:34px;height:34px;border-radius:8px;background:#eef2ff;color:#6366f1;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .at-emp-name{font-weight:600;color:#222;font-size:13px}
+  .at-emp-pos{font-size:11px;color:#aaa;margin-top:1px}
+  .at-td-dept{color:#666;font-size:12px}
+  .at-td-time{font-weight:600;color:#333;font-size:13px;font-variant-numeric:tabular-nums}
+  .at-td-hrs{font-weight:500;color:#555;font-variant-numeric:tabular-nums}
 `;

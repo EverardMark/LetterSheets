@@ -139,6 +139,7 @@ export default function PositionsTab({ positions, setPositions, departments = []
                             <th>Position</th>
                             <th>Department</th>
                             <th>Level</th>
+                            <th>OT Rate</th>
                             <th>Employees</th>
                         </tr>
                         </thead>
@@ -156,6 +157,7 @@ export default function PositionsTab({ positions, setPositions, departments = []
                                     </td>
                                     <td>{p.department || "—"}</td>
                                     <td>{p.level ? <span className="ps-level-tag">{p.level}</span> : "—"}</td>
+                                    <td>{p.ot_multiplier > 0 ? <span className="ps-ot-tag">{p.ot_multiplier}×</span> : <span style={{color:"#bbb"}}>default</span>}</td>
                                     <td><span className="ps-count-tag">{count}</span></td>
                                 </tr>
                             );
@@ -271,6 +273,23 @@ function PosPanel({ open, mode, pos, idx, departments, onClose, onSave, onDelete
                         {LEVELS.map(l => <option key={l} value={l}>{l}</option>)}
                     </select>
                 </div>
+                <div className="pp-field">
+                    <label className="pp-label">OT Multiplier</label>
+                    <input
+                        type="number"
+                        className="pp-input"
+                        value={form.ot_multiplier || ""}
+                        onChange={e => set("ot_multiplier", parseFloat(e.target.value) || 0)}
+                        placeholder="e.g. 1.25"
+                        step="0.05" min="0"
+                        disabled={isView}
+                    />
+                    <span style={{fontSize:11,color:"#999",marginTop:3}}>
+                        {form.ot_multiplier > 0
+                            ? `${form.ot_multiplier}× hourly rate for OT hours`
+                            : "0 = use company default (1.25×)"}
+                    </span>
+                </div>
                 <div className="pp-field pp-field-full">
                     <label className="pp-label">Description</label>
                     <textarea className="pp-input pp-textarea" value={form.description || ""} onChange={e => set("description", e.target.value)} placeholder="Role responsibilities and requirements" rows={3} disabled={isView} />
@@ -371,6 +390,7 @@ const posCSS = `
   .ps-pos-name{font-weight:600;color:#222}
   .ps-level-tag{font-size:11px;font-weight:600;color:#6366f1;background:#eef2ff;padding:2px 8px;border-radius:4px}
   .ps-count-tag{font-size:11px;font-weight:600;color:#2d9e8b;background:#edf8f5;padding:2px 8px;border-radius:4px}
+  .ps-ot-tag{font-size:11px;font-weight:600;color:#ea580c;background:#fff7ed;padding:2px 8px;border-radius:4px}
 
   .ps-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px 20px;background:#fff;border-radius:10px}
   .ps-empty-ic{width:56px;height:56px;border-radius:50%;background:#eef2ff;color:#6366f1;display:flex;align-items:center;justify-content:center;margin:0 auto 12px}

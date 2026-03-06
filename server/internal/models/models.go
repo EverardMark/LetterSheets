@@ -167,19 +167,12 @@ type OnboardingItem struct {
 
 // PayrollSettings represents company payroll configuration
 type PayrollSettings struct {
-	ID               string  `json:"id" db:"id"`
-	CompanyID        string  `json:"company_id" db:"company_id"`
-	PaySchedule      string  `json:"pay_schedule" db:"pay_schedule"`
-	WorkingDays      int     `json:"working_days" db:"working_days"`
-	HoursPerDay      float64 `json:"hours_per_day" db:"hours_per_day"`
-	OTMultiplier     float64 `json:"ot_multiplier" db:"ot_multiplier"`
-	NightDiffPct     float64 `json:"night_diff_pct" db:"night_diff_pct"`
-	EnableSSS        bool    `json:"enable_sss" db:"enable_sss"`
-	EnablePhilHealth bool    `json:"enable_philhealth" db:"enable_philhealth"`
-	EnablePagibig    bool    `json:"enable_pagibig" db:"enable_pagibig"`
-	EnableTax        bool    `json:"enable_tax" db:"enable_tax"`
-	CreatedAt        string  `json:"created_at" db:"created_at"`
-	UpdatedAt        string  `json:"updated_at" db:"updated_at"`
+	ID           string  `json:"id" db:"id"`
+	CompanyID    string  `json:"company_id" db:"company_id"`
+	PaySchedule  string  `json:"pay_schedule" db:"pay_schedule"`
+	OTMultiplier float64 `json:"ot_multiplier" db:"ot_multiplier"`
+	CreatedAt    string  `json:"created_at" db:"created_at"`
+	UpdatedAt    string  `json:"updated_at" db:"updated_at"`
 }
 
 // PayrollRun represents a pay period run
@@ -232,10 +225,14 @@ type PayrollItem struct {
 	CreatedAt         string  `json:"created_at" db:"created_at"`
 	UpdatedAt         string  `json:"updated_at" db:"updated_at"`
 	// Joined
-	FirstName  string `json:"first_name,omitempty"`
-	LastName   string `json:"last_name,omitempty"`
-	Department string `json:"department,omitempty"`
-	Position   string `json:"position,omitempty"`
+	FirstName           string  `json:"first_name,omitempty"`
+	LastName            string  `json:"last_name,omitempty"`
+	Department          string  `json:"department,omitempty"`
+	Position            string  `json:"position,omitempty"`
+	WorkScheduleName    *string `json:"work_schedule_name,omitempty"`
+	HoursPerDay         float64 `json:"hours_per_day,omitempty"`
+	WorkingDaysPerMonth int     `json:"working_days_per_month,omitempty"`
+	OTMultiplierUsed    float64 `json:"ot_multiplier_used,omitempty"` // actual rate applied, for audit/display
 }
 
 // Leave represents a leave request
@@ -290,6 +287,7 @@ type Position struct {
 	Department    string  `json:"department" db:"department"`
 	Level         string  `json:"level" db:"level"`
 	Description   *string `json:"description,omitempty" db:"description"`
+	OTMultiplier  float64 `json:"ot_multiplier" db:"ot_multiplier"` // 0 = use company default
 	SortOrder     int     `json:"sort_order" db:"sort_order"`
 	EmployeeCount int     `json:"employee_count" db:"employee_count"`
 	CreatedAt     string  `json:"created_at" db:"created_at"`
@@ -855,6 +853,7 @@ type Invoice struct {
 	BalanceDue    float64 `json:"balance_due"`
 	Memo          string  `json:"memo,omitempty"`
 	Reference     string  `json:"reference,omitempty"`
+	JournalID     string  `json:"journal_id,omitempty"`
 	ItemCount     int     `json:"item_count,omitempty"`
 	PaymentCount  int     `json:"payment_count,omitempty"`
 	IsDeleted     int     `json:"-"`
@@ -888,6 +887,7 @@ type InvoicePayment struct {
 	AccountID     string  `json:"account_id,omitempty"`
 	AccountCode   string  `json:"account_code,omitempty"`
 	AccountName   string  `json:"account_name,omitempty"`
+	JournalID     string  `json:"journal_id,omitempty"`
 	Memo          string  `json:"memo,omitempty"`
 	IsDeleted     int     `json:"-"`
 	CreatedAt     string  `json:"created_at,omitempty"`
@@ -1087,15 +1087,18 @@ type TicketCategoryStats struct {
 // ==================== WORK SCHEDULES ====================
 
 type WorkSchedule struct {
-	ID          string  `json:"id"`
-	CompanyID   string  `json:"company_id"`
-	Name        string  `json:"name"`
-	Type        string  `json:"type"`
-	Description *string `json:"description,omitempty"`
-	Color       string  `json:"color"`
-	IsDefault   bool    `json:"is_default"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
+	ID                  string  `json:"id"`
+	CompanyID           string  `json:"company_id"`
+	Name                string  `json:"name"`
+	Type                string  `json:"type"`
+	Description         *string `json:"description,omitempty"`
+	Color               string  `json:"color"`
+	IsDefault           bool    `json:"is_default"`
+	HoursPerDay         float64 `json:"hours_per_day"`          // e.g. 8, 9, 10 — used for hourly rate calculation
+	WorkingDaysPerMonth int     `json:"working_days_per_month"` // e.g. 22 (5-day week), 26 (6-day week)
+	NightDiffPct        float64 `json:"night_diff_pct"`         // 0.10 = 10%; 0 means no night diff for this schedule
+	CreatedAt           string  `json:"created_at"`
+	UpdatedAt           string  `json:"updated_at"`
 	// Joined counts
 	EmployeeCount   int `json:"employee_count"`
 	DepartmentCount int `json:"department_count"`
@@ -1155,4 +1158,116 @@ type RosterEntry struct {
 	EndTime        *string `json:"end_time,omitempty"`
 	BreakMinutes   *int    `json:"break_minutes,omitempty"`
 	IsRestDay      bool    `json:"is_rest_day"`
+}
+
+// ==================== COMPLIANCE ====================
+
+// ComplianceTemplate represents a country/region compliance template
+type ComplianceTemplate struct {
+	ID             string                     `json:"id"`
+	CompanyID      *string                    `json:"company_id,omitempty"`
+	Code           string                     `json:"code"`
+	Name           string                     `json:"name"`
+	CurrencySymbol string                     `json:"currency_symbol,omitempty"`
+	IsGlobal       bool                       `json:"is_global"`
+	Agencies       []ComplianceTemplateAgency `json:"agencies,omitempty"`
+	CreatedAt      string                     `json:"created_at,omitempty"`
+	UpdatedAt      string                     `json:"updated_at,omitempty"`
+}
+
+// ComplianceTemplateAgency is one agency entry inside a template
+type ComplianceTemplateAgency struct {
+	ID         string                    `json:"id"`
+	TemplateID string                    `json:"template_id"`
+	Name       string                    `json:"name"`
+	FullName   string                    `json:"full_name,omitempty"`
+	Color      string                    `json:"color"`
+	Frequency  string                    `json:"frequency"`
+	Website    string                    `json:"website,omitempty"`
+	SortOrder  int                       `json:"sort_order"`
+	Fields     []ComplianceTemplateField `json:"fields,omitempty"`
+}
+
+// ComplianceTemplateField is one field definition inside a template agency
+type ComplianceTemplateField struct {
+	ID        string `json:"id"`
+	AgencyID  string `json:"agency_id"`
+	FieldKey  string `json:"field_key"`
+	Label     string `json:"label"`
+	FieldType string `json:"field_type"`
+	SortOrder int    `json:"sort_order"`
+}
+
+// ComplianceAgency represents a company's configured compliance obligation
+type ComplianceAgency struct {
+	ID        string            `json:"id" db:"id"`
+	CompanyID string            `json:"company_id" db:"company_id"`
+	Name      string            `json:"name" db:"name"`
+	FullName  string            `json:"full_name,omitempty" db:"full_name"`
+	Color     string            `json:"color" db:"color"`
+	Frequency string            `json:"frequency" db:"frequency"`
+	Website   string            `json:"website,omitempty" db:"website"`
+	Status    string            `json:"status" db:"status"`
+	DueDate   *string           `json:"due_date,omitempty" db:"due_date"`
+	LastFiled *string           `json:"last_filed,omitempty" db:"last_filed"`
+	SortOrder int               `json:"sort_order" db:"sort_order"`
+	Fields    []ComplianceField `json:"fields,omitempty"`
+	Values    []ComplianceValue `json:"values,omitempty"`
+	CreatedAt string            `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt string            `json:"updated_at,omitempty" db:"updated_at"`
+}
+
+// ComplianceField is a named value slot on a company compliance agency
+type ComplianceField struct {
+	ID        string `json:"id" db:"id"`
+	AgencyID  string `json:"agency_id" db:"agency_id"`
+	CompanyID string `json:"company_id" db:"company_id"`
+	FieldKey  string `json:"field_key" db:"field_key"`
+	Label     string `json:"label" db:"label"`
+	FieldType string `json:"field_type" db:"field_type"`
+	SortOrder int    `json:"sort_order" db:"sort_order"`
+}
+
+// ComplianceValue holds the (optionally encrypted) current value for a field
+type ComplianceValue struct {
+	ID             string `json:"id" db:"id"`
+	FieldID        string `json:"field_id" db:"field_id"`
+	CompanyID      string `json:"company_id" db:"company_id"`
+	ValueEncrypted string `json:"value_encrypted,omitempty" db:"value_encrypted"`
+	UpdatedAt      string `json:"updated_at,omitempty" db:"updated_at"`
+}
+
+// ComplianceAgenciesResponse is the envelope returned by get_compliance_agencies
+type ComplianceAgenciesResponse struct {
+	Agencies []ComplianceAgency `json:"agencies"`
+	Fields   []ComplianceField  `json:"fields"`
+	Values   []ComplianceValue  `json:"values"`
+}
+
+// ComplianceTemplatesResponse is the envelope returned by get_compliance_templates
+type ComplianceTemplatesResponse struct {
+	Templates []ComplianceTemplate       `json:"templates"`
+	Agencies  []ComplianceTemplateAgency `json:"agencies"`
+	Fields    []ComplianceTemplateField  `json:"fields"`
+}
+
+// UpsertComplianceAgencyRequest is the body for create/update_compliance_agency
+type UpsertComplianceAgencyRequest struct {
+	AgencyID  string                 `json:"agency_id,omitempty"`
+	Name      string                 `json:"name"`
+	FullName  string                 `json:"full_name,omitempty"`
+	Color     string                 `json:"color,omitempty"`
+	Frequency string                 `json:"frequency,omitempty"`
+	Website   string                 `json:"website,omitempty"`
+	Status    string                 `json:"status,omitempty"`
+	DueDate   *string                `json:"due_date,omitempty"`
+	LastFiled *string                `json:"last_filed,omitempty"`
+	Fields    []ComplianceFieldInput `json:"fields,omitempty"`
+}
+
+// ComplianceFieldInput is a field definition inside UpsertComplianceAgencyRequest
+type ComplianceFieldInput struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	Type  string `json:"type"`
 }

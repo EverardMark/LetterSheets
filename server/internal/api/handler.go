@@ -14,30 +14,31 @@ import (
 )
 
 type Handler struct {
-	regRepo      *repository.RegistrationRepo
-	companyRepo  *repository.CompanyRepo
-	userRepo     *repository.UserRepo
-	accessRepo   *repository.AccessRepo
-	sessionRepo  *repository.SessionRepo
-	historyRepo  *repository.ChangeHistoryRepo
-	benefitRepo  *repository.BenefitRepo
-	employeeRepo *repository.EmployeeRepo
-	deptRepo     *repository.DepartmentRepo
-	posRepo      *repository.PositionRepo
-	attendRepo   *repository.AttendanceRepo
-	leaveRepo    *repository.LeaveRepo
-	payrollRepo  *repository.PayrollRepo
-	onbRepo      *repository.OnboardingRepo
-	loanRepo     *repository.LoanRepo
-	acctRepo     *repository.AccountingRepo
-	apRepo       *repository.APRepo
-	arRepo       *repository.ARRepo
-	taxRepo      *repository.TaxRepo
-	bankRepo     *repository.BankRepo
-	reportsRepo  *repository.ReportsRepo
-	ticketRepo   *repository.TicketRepo
-	schedRepo    *repository.WorkScheduleRepo
-	cfg          *config.AppConfig
+	regRepo        *repository.RegistrationRepo
+	companyRepo    *repository.CompanyRepo
+	userRepo       *repository.UserRepo
+	accessRepo     *repository.AccessRepo
+	sessionRepo    *repository.SessionRepo
+	historyRepo    *repository.ChangeHistoryRepo
+	benefitRepo    *repository.BenefitRepo
+	employeeRepo   *repository.EmployeeRepo
+	deptRepo       *repository.DepartmentRepo
+	posRepo        *repository.PositionRepo
+	attendRepo     *repository.AttendanceRepo
+	leaveRepo      *repository.LeaveRepo
+	payrollRepo    *repository.PayrollRepo
+	onbRepo        *repository.OnboardingRepo
+	loanRepo       *repository.LoanRepo
+	acctRepo       *repository.AccountingRepo
+	apRepo         *repository.APRepo
+	arRepo         *repository.ARRepo
+	taxRepo        *repository.TaxRepo
+	bankRepo       *repository.BankRepo
+	reportsRepo    *repository.ReportsRepo
+	ticketRepo     *repository.TicketRepo
+	schedRepo      *repository.WorkScheduleRepo
+	complianceRepo *repository.ComplianceRepo
+	cfg            *config.AppConfig
 }
 
 func NewHandler(
@@ -64,33 +65,35 @@ func NewHandler(
 	reportsRepo *repository.ReportsRepo,
 	ticketRepo *repository.TicketRepo,
 	schedRepo *repository.WorkScheduleRepo,
+	complianceRepo *repository.ComplianceRepo,
 	cfg *config.AppConfig,
 ) *Handler {
 	return &Handler{
-		regRepo:      regRepo,
-		companyRepo:  companyRepo,
-		userRepo:     userRepo,
-		accessRepo:   accessRepo,
-		sessionRepo:  sessionRepo,
-		historyRepo:  historyRepo,
-		benefitRepo:  benefitRepo,
-		employeeRepo: employeeRepo,
-		deptRepo:     deptRepo,
-		posRepo:      posRepo,
-		attendRepo:   attendRepo,
-		leaveRepo:    leaveRepo,
-		payrollRepo:  payrollRepo,
-		onbRepo:      onbRepo,
-		loanRepo:     loanRepo,
-		acctRepo:     acctRepo,
-		apRepo:       apRepo,
-		arRepo:       arRepo,
-		taxRepo:      taxRepo,
-		bankRepo:     bankRepo,
-		reportsRepo:  reportsRepo,
-		ticketRepo:   ticketRepo,
-		schedRepo:    schedRepo,
-		cfg:          cfg,
+		regRepo:        regRepo,
+		companyRepo:    companyRepo,
+		userRepo:       userRepo,
+		accessRepo:     accessRepo,
+		sessionRepo:    sessionRepo,
+		historyRepo:    historyRepo,
+		benefitRepo:    benefitRepo,
+		employeeRepo:   employeeRepo,
+		deptRepo:       deptRepo,
+		posRepo:        posRepo,
+		attendRepo:     attendRepo,
+		leaveRepo:      leaveRepo,
+		payrollRepo:    payrollRepo,
+		onbRepo:        onbRepo,
+		loanRepo:       loanRepo,
+		acctRepo:       acctRepo,
+		apRepo:         apRepo,
+		arRepo:         arRepo,
+		taxRepo:        taxRepo,
+		bankRepo:       bankRepo,
+		reportsRepo:    reportsRepo,
+		ticketRepo:     ticketRepo,
+		schedRepo:      schedRepo,
+		complianceRepo: complianceRepo,
+		cfg:            cfg,
 	}
 }
 
@@ -484,6 +487,8 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 	// --- Accounts Receivable ---
 	case "get_customers":
 		h.withAuth(w, r, h.getCustomers)
+	case "get_customer":
+		h.withAuth(w, r, h.getCustomer)
 	case "create_customer":
 		h.withAuth(w, r, h.createCustomer)
 	case "update_customer":
@@ -610,6 +615,20 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 		h.withAuth(w, r, h.getScheduleRoster)
 	case "bulk_assign_schedule":
 		h.withAuth(w, r, h.bulkAssignSchedule)
+
+	// --- Compliance ---
+	case "get_compliance_templates":
+		h.withAuth(w, r, h.getComplianceTemplates)
+	case "get_compliance_agencies":
+		h.withAuth(w, r, h.getComplianceAgencies)
+	case "apply_compliance_template":
+		h.withAuth(w, r, h.applyComplianceTemplate)
+	case "create_compliance_agency":
+		h.withAuth(w, r, h.createComplianceAgency)
+	case "update_compliance_agency":
+		h.withAuth(w, r, h.updateComplianceAgency)
+	case "delete_compliance_agency":
+		h.withAuth(w, r, h.deleteComplianceAgency)
 
 	default:
 		Error(w, http.StatusBadRequest, "unknown action: "+action)
@@ -1584,9 +1603,8 @@ func (h *Handler) getPayrollSettings(w http.ResponseWriter, r *http.Request, ses
 	}
 	if settings == nil {
 		settings = &models.PayrollSettings{
-			PaySchedule: "semi_monthly", WorkingDays: 22, HoursPerDay: 8,
-			OTMultiplier: 1.25, NightDiffPct: 0.10,
-			EnableSSS: true, EnablePhilHealth: true, EnablePagibig: true, EnableTax: true,
+			PaySchedule:  "semi_monthly",
+			OTMultiplier: 1.25,
 		}
 	}
 	JSON(w, http.StatusOK, map[string]interface{}{"settings": settings})
@@ -3852,6 +3870,22 @@ func (h *Handler) getCustomers(w http.ResponseWriter, r *http.Request, session *
 	}
 	JSON(w, http.StatusOK, c)
 }
+func (h *Handler) getCustomer(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		CustomerID string `json:"customer_id"`
+	}
+	if err := Decode(r, &req); err != nil || req.CustomerID == "" {
+		Error(w, http.StatusBadRequest, "customer_id required")
+		return
+	}
+	customer, err := h.arRepo.GetCustomer(session.CompanyID, req.CustomerID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, customer)
+}
+
 func (h *Handler) createCustomer(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
 	var req models.Customer
 	if err := Decode(r, &req); err != nil {
@@ -4771,4 +4805,121 @@ func (h *Handler) bulkAssignSchedule(w http.ResponseWriter, r *http.Request, ses
 		"message": "assigned",
 		"count":   len(req.EmployeeIDs),
 	})
+}
+
+// ==================== COMPLIANCE ====================
+
+func (h *Handler) getComplianceTemplates(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	templates, err := h.complianceRepo.GetTemplates(session.CompanyID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, templates)
+}
+
+func (h *Handler) getComplianceAgencies(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	resp, err := h.complianceRepo.GetAgencies(session.CompanyID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) applyComplianceTemplate(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		TemplateCode string `json:"template_code"`
+	}
+	if err := Decode(r, &req); err != nil || req.TemplateCode == "" {
+		Error(w, http.StatusBadRequest, "template_code required")
+		return
+	}
+	if err := h.complianceRepo.ApplyTemplate(session.CompanyID, req.TemplateCode); err != nil {
+		Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *Handler) createComplianceAgency(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req models.UpsertComplianceAgencyRequest
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.Name == "" {
+		Error(w, http.StatusBadRequest, "name required")
+		return
+	}
+	agency := &models.ComplianceAgency{
+		ID:        uuid.New().String(),
+		CompanyID: session.CompanyID,
+		Name:      req.Name,
+		FullName:  req.FullName,
+		Color:     req.Color,
+		Frequency: req.Frequency,
+		Website:   req.Website,
+		Status:    req.Status,
+		DueDate:   req.DueDate,
+		LastFiled: req.LastFiled,
+	}
+	if agency.Color == "" {
+		agency.Color = "#0ea5e9"
+	}
+	if agency.Frequency == "" {
+		agency.Frequency = "Monthly"
+	}
+	if agency.Status == "" {
+		agency.Status = "Not Filed"
+	}
+	if err := h.complianceRepo.CreateAgency(agency, req.Fields); err != nil {
+		Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	JSON(w, http.StatusCreated, agency)
+}
+
+func (h *Handler) updateComplianceAgency(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req models.UpsertComplianceAgencyRequest
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.AgencyID == "" {
+		Error(w, http.StatusBadRequest, "agency_id required")
+		return
+	}
+	agency := &models.ComplianceAgency{
+		ID:        req.AgencyID,
+		CompanyID: session.CompanyID,
+		Name:      req.Name,
+		FullName:  req.FullName,
+		Color:     req.Color,
+		Frequency: req.Frequency,
+		Website:   req.Website,
+		Status:    req.Status,
+		DueDate:   req.DueDate,
+		LastFiled: req.LastFiled,
+	}
+	if err := h.complianceRepo.UpdateAgency(agency, req.Fields); err != nil {
+		Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, agency)
+}
+
+func (h *Handler) deleteComplianceAgency(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		AgencyID string `json:"agency_id"`
+	}
+	if err := Decode(r, &req); err != nil || req.AgencyID == "" {
+		Error(w, http.StatusBadRequest, "agency_id required")
+		return
+	}
+	if err := h.complianceRepo.DeleteAgency(session.CompanyID, req.AgencyID); err != nil {
+		Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

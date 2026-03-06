@@ -61,6 +61,53 @@ func (r *ARRepo) GetCustomers(cid string, activeOnly bool) ([]models.Customer, e
 	return out, nil
 }
 
+func (r *ARRepo) GetCustomer(cid, id string) (*models.Customer, error) {
+	rows, err := r.db.Query("CALL sp_get_customer(?,?)", id, cid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		return nil, fmt.Errorf("customer not found")
+	}
+	var c models.Customer
+	var cp, email, phone, addr, city, prov, zip, tin, notes sql.NullString
+	err = rows.Scan(&c.ID, &c.CompanyID, &c.Name, &cp, &email, &phone, &addr,
+		&city, &prov, &zip, &tin, &c.PaymentTerms, &notes,
+		&c.IsActive, &c.IsDeleted, &c.CreatedAt, &c.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if cp.Valid {
+		c.ContactPerson = cp.String
+	}
+	if email.Valid {
+		c.Email = email.String
+	}
+	if phone.Valid {
+		c.Phone = phone.String
+	}
+	if addr.Valid {
+		c.Address = addr.String
+	}
+	if city.Valid {
+		c.City = city.String
+	}
+	if prov.Valid {
+		c.Province = prov.String
+	}
+	if zip.Valid {
+		c.ZipCode = zip.String
+	}
+	if tin.Valid {
+		c.TIN = tin.String
+	}
+	if notes.Valid {
+		c.Notes = notes.String
+	}
+	return &c, nil
+}
+
 func (r *ARRepo) CreateCustomer(c *models.Customer) error {
 	rows, err := r.db.Query("CALL sp_create_customer(?,?,?,?,?,?,?,?,?,?,?,?,?)", c.ID, c.CompanyID, c.Name, c.ContactPerson, c.Email, c.Phone, c.Address, c.City, c.Province, c.ZipCode, c.TIN, c.PaymentTerms, c.Notes)
 	if err != nil {
@@ -112,8 +159,8 @@ func (r *ARRepo) GetInvoices(cid, status, custID, dateFrom, dateTo string) ([]mo
 	var out []models.Invoice
 	for rows.Next() {
 		var inv models.Invoice
-		var memo, ref, ctn sql.NullString
-		if err := rows.Scan(&inv.ID, &inv.CompanyID, &inv.CustomerID, &inv.InvoiceNumber, &inv.InvoiceDate, &inv.DueDate, &inv.Status, &inv.Subtotal, &inv.TaxAmount, &inv.TotalAmount, &inv.AmountPaid, &inv.BalanceDue, &memo, &ref, &inv.IsDeleted, &inv.CreatedAt, &inv.UpdatedAt, &inv.CustomerName, &ctn, &inv.ItemCount, &inv.PaymentCount); err != nil {
+		var memo, ref, jid, ctn sql.NullString
+		if err := rows.Scan(&inv.ID, &inv.CompanyID, &inv.CustomerID, &inv.InvoiceNumber, &inv.InvoiceDate, &inv.DueDate, &inv.Status, &inv.Subtotal, &inv.TaxAmount, &inv.TotalAmount, &inv.AmountPaid, &inv.BalanceDue, &memo, &ref, &jid, &inv.IsDeleted, &inv.CreatedAt, &inv.UpdatedAt, &inv.CustomerName, &ctn, &inv.ItemCount, &inv.PaymentCount); err != nil {
 			return nil, fmt.Errorf("scan inv: %w", err)
 		}
 		if memo.Valid {
@@ -121,6 +168,9 @@ func (r *ARRepo) GetInvoices(cid, status, custID, dateFrom, dateTo string) ([]mo
 		}
 		if ref.Valid {
 			inv.Reference = ref.String
+		}
+		if jid.Valid {
+			inv.JournalID = jid.String
 		}
 		if ctn.Valid {
 			inv.CustomerTIN = ctn.String
@@ -140,8 +190,8 @@ func (r *ARRepo) GetInvoice(id, cid string) (*models.Invoice, error) {
 		return nil, fmt.Errorf("not found")
 	}
 	var inv models.Invoice
-	var memo, ref, ctn sql.NullString
-	if err := rows.Scan(&inv.ID, &inv.CompanyID, &inv.CustomerID, &inv.InvoiceNumber, &inv.InvoiceDate, &inv.DueDate, &inv.Status, &inv.Subtotal, &inv.TaxAmount, &inv.TotalAmount, &inv.AmountPaid, &inv.BalanceDue, &memo, &ref, &inv.IsDeleted, &inv.CreatedAt, &inv.UpdatedAt, &inv.CustomerName, &ctn); err != nil {
+	var memo, ref, jid, ctn sql.NullString
+	if err := rows.Scan(&inv.ID, &inv.CompanyID, &inv.CustomerID, &inv.InvoiceNumber, &inv.InvoiceDate, &inv.DueDate, &inv.Status, &inv.Subtotal, &inv.TaxAmount, &inv.TotalAmount, &inv.AmountPaid, &inv.BalanceDue, &memo, &ref, &jid, &inv.IsDeleted, &inv.CreatedAt, &inv.UpdatedAt, &inv.CustomerName, &ctn); err != nil {
 		return nil, err
 	}
 	if memo.Valid {
@@ -149,6 +199,9 @@ func (r *ARRepo) GetInvoice(id, cid string) (*models.Invoice, error) {
 	}
 	if ref.Valid {
 		inv.Reference = ref.String
+	}
+	if jid.Valid {
+		inv.JournalID = jid.String
 	}
 	if ctn.Valid {
 		inv.CustomerTIN = ctn.String
@@ -259,8 +312,8 @@ func (r *ARRepo) GetInvoicePayments(iid string) ([]models.InvoicePayment, error)
 	var out []models.InvoicePayment
 	for rows.Next() {
 		var p models.InvoicePayment
-		var rn, aid, ac, an, memo sql.NullString
-		if err := rows.Scan(&p.ID, &p.CompanyID, &p.InvoiceID, &p.PaymentDate, &p.Amount, &p.PaymentMethod, &rn, &aid, &memo, &p.IsDeleted, &p.CreatedAt, &ac, &an); err != nil {
+		var rn, aid, jid, ac, an, memo sql.NullString
+		if err := rows.Scan(&p.ID, &p.CompanyID, &p.InvoiceID, &p.PaymentDate, &p.Amount, &p.PaymentMethod, &rn, &aid, &jid, &memo, &p.IsDeleted, &p.CreatedAt, &ac, &an); err != nil {
 			return nil, err
 		}
 		if rn.Valid {
@@ -268,6 +321,9 @@ func (r *ARRepo) GetInvoicePayments(iid string) ([]models.InvoicePayment, error)
 		}
 		if aid.Valid {
 			p.AccountID = aid.String
+		}
+		if jid.Valid {
+			p.JournalID = jid.String
 		}
 		if ac.Valid {
 			p.AccountCode = ac.String

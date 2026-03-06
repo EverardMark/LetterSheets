@@ -31,9 +31,8 @@ func (r *PayrollRepo) GetSettings(ctx context.Context, companyID string) (*model
 	var s models.PayrollSettings
 	var createdAt, updatedAt sql.NullString
 	err = rows.Scan(
-		&s.ID, &s.CompanyID, &s.PaySchedule, &s.WorkingDays, &s.HoursPerDay,
-		&s.OTMultiplier, &s.NightDiffPct,
-		&s.EnableSSS, &s.EnablePhilHealth, &s.EnablePagibig, &s.EnableTax,
+		&s.ID, &s.CompanyID, &s.PaySchedule,
+		&s.OTMultiplier,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -50,10 +49,9 @@ func (r *PayrollRepo) GetSettings(ctx context.Context, companyID string) (*model
 
 func (r *PayrollRepo) UpsertSettings(ctx context.Context, s *models.PayrollSettings, meta *models.RequestMeta) error {
 	_, err := r.db.ExecContext(ctx,
-		"CALL sp_upsert_payroll_settings(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		s.ID, meta.CompanyID, s.PaySchedule, s.WorkingDays, s.HoursPerDay,
-		s.OTMultiplier, s.NightDiffPct,
-		s.EnableSSS, s.EnablePhilHealth, s.EnablePagibig, s.EnableTax,
+		"CALL sp_upsert_payroll_settings(?, ?, ?, ?, ?, ?, ?, ?)",
+		s.ID, meta.CompanyID, s.PaySchedule,
+		s.OTMultiplier,
 		meta.SessionID, meta.UserID, meta.IPAddress, meta.UserAgent,
 	)
 	return err
@@ -196,6 +194,10 @@ func (r *PayrollRepo) GetItems(ctx context.Context, runID, companyID string) ([]
 	for rows.Next() {
 		var it models.PayrollItem
 		var createdAt, updatedAt sql.NullString
+		var workScheduleName sql.NullString
+		var hoursPerDay sql.NullFloat64
+		var workingDaysPerMonth sql.NullInt64
+		var otMultiplierUsed sql.NullFloat64
 		err := rows.Scan(
 			&it.ID, &it.RunID, &it.CompanyID, &it.EmployeeID,
 			&it.BasicPay, &it.DaysWorked, &it.HoursWorked,
@@ -207,9 +209,22 @@ func (r *PayrollRepo) GetItems(ctx context.Context, runID, companyID string) ([]
 			&it.TotalDeductions, &it.NetPay,
 			&createdAt, &updatedAt,
 			&it.FirstName, &it.LastName, &it.Department, &it.Position,
+			&workScheduleName, &hoursPerDay, &workingDaysPerMonth, &otMultiplierUsed,
 		)
 		if err != nil {
 			return nil, err
+		}
+		if workScheduleName.Valid {
+			it.WorkScheduleName = &workScheduleName.String
+		}
+		if hoursPerDay.Valid {
+			it.HoursPerDay = hoursPerDay.Float64
+		}
+		if workingDaysPerMonth.Valid {
+			it.WorkingDaysPerMonth = int(workingDaysPerMonth.Int64)
+		}
+		if otMultiplierUsed.Valid {
+			it.OTMultiplierUsed = otMultiplierUsed.Float64
 		}
 		if createdAt.Valid {
 			it.CreatedAt = createdAt.String
@@ -224,7 +239,7 @@ func (r *PayrollRepo) GetItems(ctx context.Context, runID, companyID string) ([]
 
 func (r *PayrollRepo) UpsertItem(ctx context.Context, it *models.PayrollItem) error {
 	_, err := r.db.ExecContext(ctx,
-		"CALL sp_upsert_payroll_item(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"CALL sp_upsert_payroll_item(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		it.ID, it.RunID, it.CompanyID, it.EmployeeID,
 		it.BasicPay, it.DaysWorked, it.HoursWorked,
 		it.OTHours, it.OTPay, it.HolidayPay, it.NightDiff,
@@ -233,6 +248,7 @@ func (r *PayrollRepo) UpsertItem(ctx context.Context, it *models.PayrollItem) er
 		it.PagibigEE, it.PagibigER, it.WithholdingTax,
 		it.BenefitDeductions, it.LoanDeductions, it.OtherDeductions,
 		it.TotalDeductions, it.NetPay,
+		it.WorkScheduleName, it.HoursPerDay, it.WorkingDaysPerMonth, it.OTMultiplierUsed,
 	)
 	return err
 }
