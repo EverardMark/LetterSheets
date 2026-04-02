@@ -1519,8 +1519,15 @@ func (h *Handler) deleteOnboardingChecklist(w http.ResponseWriter, r *http.Reque
 		Error(w, http.StatusBadRequest, "id required")
 		return
 	}
+	// Delete child items first to avoid FK constraint errors
+	items, err := h.onbRepo.GetItems(r.Context(), req.ID)
+	if err == nil {
+		for _, it := range items {
+			_ = h.onbRepo.DeleteItem(r.Context(), it.ID)
+		}
+	}
 	if err := h.onbRepo.DeleteChecklist(r.Context(), req.ID, getMeta(r, session)); err != nil {
-		Error(w, http.StatusInternalServerError, "failed")
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
 		return
 	}
 	JSON(w, http.StatusOK, map[string]string{"message": "deleted"})

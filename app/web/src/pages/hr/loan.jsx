@@ -129,31 +129,9 @@ export default function LoanTab({ employees = [] }) {
         return true;
     });
 
-    // Stats
-    const totalActive = loans.filter(l => l.status === "Active").length;
-    const totalPending = loans.filter(l => l.status === "Pending").length;
-    const totalDisbursed = loans.filter(l => ["Active", "Paid"].includes(l.status)).reduce((s, l) => s + (l.amount || 0), 0);
-    const totalOutstanding = loans.filter(l => l.status === "Active").reduce((s, l) => s + (l.balance || 0), 0);
-
     if (view === "types") return <LoanTypesView types={loanTypes} onBack={() => { setView("list"); loadTypes(); }} onReload={loadTypes} />;
 
-    return (<>
-        {/* Stats */}
-        <div className="ln-stats">
-            {[
-                { label: "Active Loans", value: totalActive, icon: "trending-up", color: "#0ea5e9" },
-                { label: "Pending", value: totalPending, icon: "clock", color: "#f59e0b" },
-                { label: "Total Disbursed", value: fmtMoney(totalDisbursed), icon: "dollar-sign", color: "#6366f1", isMoney: true },
-                { label: "Outstanding", value: fmtMoney(totalOutstanding), icon: "alert-circle", color: "#ef4444", isMoney: true },
-            ].map((s, i) => (
-                <div key={i} className="ln-stat">
-                    <div className="ln-stat-ic" style={{ background: s.color + "14", color: s.color }}><I name={s.icon} /></div>
-                    <div className="ln-stat-v" style={s.isMoney ? { fontSize: 16 } : {}}>{s.value}</div>
-                    <div className="ln-stat-l">{s.label}</div>
-                </div>
-            ))}
-        </div>
-
+    return (<div className="ln-page">
         {/* Toolbar */}
         <div className="ln-toolbar">
             <div className="ln-tabs">
@@ -185,12 +163,11 @@ export default function LoanTab({ employees = [] }) {
                     <th>Term</th>
                     <th>Status</th>
                     <th>Applied</th>
-                    <th></th>
                 </tr>
                 </thead>
                 <tbody>
                 {filtered.length === 0 ? (
-                    <tr><td colSpan={8} className="ln-table-empty">No loans found</td></tr>
+                    <tr><td colSpan={7} className="ln-table-empty">No loans found</td></tr>
                 ) : filtered.map(loan => {
                     const sc = STATUS_COLORS[loan.status] || "#999";
                     const paidPct = loan.total_payable > 0 ? Math.round((loan.total_paid / loan.total_payable) * 100) : 0;
@@ -224,14 +201,6 @@ export default function LoanTab({ employees = [] }) {
                   </span>
                             </td>
                             <td className="ln-date">{fmtDate(loan.applied_date)}</td>
-                            <td>
-                                {loan.status === "Pending" && (
-                                    <div className="ln-actions" onClick={e => e.stopPropagation()}>
-                                        <button className="ln-act-btn ln-act-approve" title="Approve" onClick={() => approveLoan(loan.id)}><I name="check" size={13} /></button>
-                                        <button className="ln-act-btn ln-act-reject" title="Reject" onClick={() => setShowRejectModal(loan.id)}><I name="x" size={13} /></button>
-                                    </div>
-                                )}
-                            </td>
                         </tr>
                     );
                 })}
@@ -255,7 +224,7 @@ export default function LoanTab({ employees = [] }) {
         {showApplyModal && <ApplyModal employees={employees} loanTypes={loanTypes} onSubmit={submitLoan} onClose={() => setShowApplyModal(false)} />}
         {showRejectModal && <RejectModal onReject={(note) => rejectLoan(showRejectModal, note)} onClose={() => setShowRejectModal(null)} />}
         <style>{CSS}</style>
-    </>);
+    </div>);
 }
 
 /* ================================================================
@@ -277,27 +246,29 @@ function LoanPanel({ loan, payments, onApprove, onReject, onCancel, onDelete, on
     };
 
     return (<>
-        <div className="sp-overlay" onClick={onClose} />
-        <div className="sp-panel">
-            <div className="sp-head">
-                <div className="sp-head-top">
-                    <div className="sp-av" style={{ background: sc + "14", color: sc }}>
-                        {(loan.first_name?.[0] || "") + (loan.last_name?.[0] || "")}
-                    </div>
-                    <div className="sp-head-info">
-                        <h3 className="sp-name">{loan.first_name} {loan.last_name}</h3>
-                        <p className="sp-pos">{loan.position || ""}{loan.department ? ` · ${loan.department}` : ""}</p>
-                    </div>
-                    <button className="sp-close" onClick={onClose}><I name="x" size={18} /></button>
+        <div className="ob-modal-bg" onClick={onClose} />
+        <div className="ob-modal" style={{ width: 520, maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+                <div className="sp-av" style={{ background: sc + "14", color: sc }}>
+                    {(loan.first_name?.[0] || "") + (loan.last_name?.[0] || "")}
                 </div>
-
-                <div className="ln-panel-type">
-                    <span className="ln-type-chip">{loan.loan_type_name || "Loan"}</span>
-                    <span className="ln-status" style={{ background: sc + "14", color: sc }}>
-            <I name={STATUS_ICONS[loan.status]} size={11} /> {loan.status}
-          </span>
+                <div style={{ flex: 1 }}>
+                    <h3 className="ob-modal-t">{loan.first_name} {loan.last_name}</h3>
+                    <p style={{ fontSize: 12, color: "#999", margin: "2px 0 0" }}>{loan.position || ""}{loan.department ? ` · ${loan.department}` : ""}</p>
                 </div>
+                <button className="sp-close" onClick={onClose}><I name="x" size={18} /></button>
+            </div>
 
+            <div className="ln-panel-type">
+                <span className="ln-type-chip">{loan.loan_type_name || "Loan"}</span>
+                <span className="ln-status" style={{ background: sc + "14", color: sc }}>
+                    <I name={STATUS_ICONS[loan.status]} size={11} /> {loan.status}
+                </span>
+            </div>
+
+            {/* Scrollable content */}
+            <div style={{ flex: 1, overflowY: "auto", marginRight: -8, paddingRight: 8 }}>
                 {/* Amount summary */}
                 <div className="ln-panel-summary">
                     <div className="ln-panel-row">
@@ -331,7 +302,7 @@ function LoanPanel({ loan, payments, onApprove, onReject, onCancel, onDelete, on
                 </div>
 
                 {/* Dates */}
-                <div className="sp-dates">
+                <div className="sp-dates" style={{ marginTop: 12, marginBottom: 12 }}>
                     <span><I name="calendar" size={11} /> Applied {fmtDate(loan.applied_date)}</span>
                     {loan.start_date && <span><I name="play" size={11} /> Started {fmtDate(loan.start_date)}</span>}
                     {loan.end_date && <span><I name="flag" size={11} /> Due {fmtDate(loan.end_date)}</span>}
@@ -339,19 +310,17 @@ function LoanPanel({ loan, payments, onApprove, onReject, onCancel, onDelete, on
 
                 {loan.rejection_note && <div className="ln-rejection"><I name="alert-circle" size={12} /> {loan.rejection_note}</div>}
                 {loan.notes && <div className="ln-notes"><I name="message-square" size={12} /> {loan.notes}</div>}
-            </div>
 
-            {/* Actions */}
-            {loan.status === "Pending" && (
-                <div className="ln-panel-actions">
-                    <button className="ln-btn-approve" onClick={onApprove}><I name="check" size={14} /> Approve</button>
-                    <button className="ln-btn-reject" onClick={onReject}><I name="x" size={14} /> Reject</button>
-                </div>
-            )}
+                {/* Actions */}
+                {loan.status === "Pending" && (
+                    <div style={{ display: "flex", gap: 8, marginTop: 12, marginBottom: 12 }}>
+                        <button className="ln-btn-approve" onClick={onApprove}><I name="check" size={14} /> Approve</button>
+                        <button className="ln-btn-reject" onClick={onReject}><I name="x" size={14} /> Reject</button>
+                    </div>
+                )}
 
-            {/* Payments */}
-            <div className="sp-items-wrap">
-                <div className="ln-pay-header">
+                {/* Payments */}
+                <div className="ln-pay-header" style={{ marginTop: 16 }}>
                     <h4 className="sp-section-title">Payments ({payments.length})</h4>
                     {loan.status === "Active" && (
                         <button className="ln-btn-sm" onClick={() => setShowPayForm(!showPayForm)}>
@@ -404,7 +373,8 @@ function LoanPanel({ loan, payments, onApprove, onReject, onCancel, onDelete, on
                 )}
             </div>
 
-            <div className="sp-footer">
+            {/* Footer */}
+            <div className="ob-modal-btns" style={{ marginTop: 18 }}>
                 {["Pending", "Approved"].includes(loan.status) && (
                     <button className="ln-btn-ghost-sm" onClick={onCancel}><I name="slash" size={12} /> Cancel Loan</button>
                 )}
@@ -597,13 +567,7 @@ function LoanTypesView({ types, onBack, onReload }) {
 
 /* ================================================================ */
 const CSS = `
-  /* Stats */
-  .ln-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
-  .ln-stat{background:#fff;border:1px solid #eee;border-radius:12px;padding:16px}
-  .ln-stat:hover{border-color:#ddd}
-  .ln-stat-ic{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;margin-bottom:10px}
-  .ln-stat-v{font-size:22px;font-weight:700;color:#222}
-  .ln-stat-l{font-size:11px;color:#999;margin-top:2px}
+  .ln-page{display:flex;flex-direction:column;height:calc(100vh - 100px);overflow:hidden}
 
   /* Toolbar */
   .ln-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px}
@@ -634,7 +598,8 @@ const CSS = `
   .ob-btn-danger-sm:hover{background:#ef4444;color:#fff}
 
   /* Table */
-  .ln-table-wrap{overflow-x:auto}
+  .ln-table-wrap{flex:1;min-height:0;overflow-x:auto;overflow-y:auto;background:#fff;border-radius:12px;border:1px solid #eee}
+  .ln-table thead{position:sticky;top:0;background:#fff;z-index:1}
   .ln-table{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
   .ln-table th{text-align:left;padding:10px 14px;font-size:11px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #f0f0f0}
   .ln-table td{padding:12px 14px;border-bottom:1px solid #f8f8f8}
@@ -761,7 +726,6 @@ const CSS = `
   .ob-toggle-on .ob-toggle-dot{transform:translateX(20px)}
 
   @media(max-width:900px){
-    .ln-stats{grid-template-columns:repeat(2,1fr)}
     .ln-toolbar{flex-direction:column;align-items:stretch}
     .ln-tabs{overflow-x:auto}
     .tpl-layout{grid-template-columns:1fr}

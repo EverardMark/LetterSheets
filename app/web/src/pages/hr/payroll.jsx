@@ -513,7 +513,7 @@ export default function PayrollTab({ employees = [] }) {
     );
 
     /* ---- LIST VIEW (default) ---- */
-    return (<>
+    return (<div className="pr-wrap">
         <div className="pr-bar">
             <div className="pr-bar-right" style={{marginLeft:"auto"}}>
                 <ComputeButton onCompute={createAndCompute} computing={computing} />
@@ -550,7 +550,7 @@ export default function PayrollTab({ employees = [] }) {
             </div>
         )}
         <style>{prCSS}</style>
-    </>);
+    </div>);
 }
 
 function fmtPeriod(a, b) {
@@ -606,12 +606,14 @@ function RunDetail({ run, items, settings, computing, onCompute, onApprove, onDe
     const sc = run.status === "Approved" ? "#22c55e" : run.status === "Paid" ? "#0ea5e9" : "#f59e0b";
     const [selectedItem, setSelectedItem] = useState(null);
 
-    return (<>
+    return (<div className="pr-run-wrap">
         <div className="pr-run-head">
-            <button className="pr-back" onClick={onBack}><I name="arrow-left" size={16}/> Back</button>
-            <div className="pr-run-info">
-                <h2 className="pr-run-title">{fmtPeriod(run.period_start, run.period_end)}</h2>
-                <span className="pr-badge" style={{background:sc+"18",color:sc}}>{run.status}</span>
+            <div className="pr-run-top">
+                <button className="pr-back" onClick={onBack}><I name="arrow-left" size={16}/> Back</button>
+                <div className="pr-run-info">
+                    <h2 className="pr-run-title">{fmtPeriod(run.period_start, run.period_end)}</h2>
+                    <span className="pr-badge" style={{background:sc+"18",color:sc}}>{run.status}</span>
+                </div>
             </div>
             <div className="pr-run-actions">
                 {isDraft && <button className="pr-btn-compute" onClick={onCompute} disabled={computing}>{computing ? "Computing..." : "⚡ Compute Payroll"}</button>}
@@ -619,7 +621,7 @@ function RunDetail({ run, items, settings, computing, onCompute, onApprove, onDe
                 <button className="bp-btn-danger" onClick={() => {
                     if (!isDraft && !window.confirm("This run is " + run.status + ". Are you sure you want to permanently delete it?")) return;
                     onDelete();
-                }}>Delete</button>
+                }}><I name="trash-2" size={13}/> Delete</button>
             </div>
         </div>
 
@@ -630,72 +632,78 @@ function RunDetail({ run, items, settings, computing, onCompute, onApprove, onDe
                 <div className="at-empty-d">Payroll will be computed for all active employees with salary data.</div>
             </div>
         ) : (
-            <div style={{overflowX:"auto",flex:1,background:"#fff",borderRadius:10}}>
-                <table className="at-tbl">
-                    <thead>
-                    <tr>
-                        <th>Employee</th>
-                        <th>Department</th>
-                        <th style={{textAlign:"right"}}>Basic</th>
-                        <th style={{textAlign:"right"}}>OT</th>
-                        <th style={{textAlign:"right"}}>Night Diff</th>
-                        <th style={{textAlign:"right"}}>Leave Ded</th>
-                        <th style={{textAlign:"right"}}>Gross</th>
-                        <th style={{textAlign:"right"}}>SSS</th>
-                        <th style={{textAlign:"right"}}>PhilHealth</th>
-                        <th style={{textAlign:"right"}}>HDMF</th>
-                        <th style={{textAlign:"right"}}>Tax</th>
-                        <th style={{textAlign:"right"}}>Total Ded</th>
-                        <th style={{textAlign:"right"}}>Net Pay</th>
-                    </tr>
-                    </thead>
-                    <tbody>
-                    {items.map(it => (
-                        <tr key={it.id} onClick={() => setSelectedItem(it)}>
-                            <td>
-                                <div className="at-emp">
-                                    <span className="at-emp-av">{(it.first_name?.[0]||"")+(it.last_name?.[0]||"")}</span>
-                                    <div>
-                                        <div className="at-emp-name">{it.first_name} {it.last_name}</div>
-                                        <div className="at-emp-pos">{it.position || "—"}</div>
-                                    </div>
-                                </div>
-                            </td>
-                            <td className="at-td-dept">{it.department || "—"}</td>
-                            <td className="at-td-hrs" style={{textAlign:"right"}}>{peso(it.basic_pay)}</td>
-                            <td className="at-td-hrs" style={{textAlign:"right",color: it.ot_pay > 0 ? "#f59e0b" : undefined}}>{it.ot_pay > 0 ? peso(it.ot_pay) : "—"}</td>
-                            <td className="at-td-hrs" style={{textAlign:"right",color: it.night_diff > 0 ? "#8b5cf6" : undefined}}>{it.night_diff > 0 ? peso(it.night_diff) : "—"}</td>
-                            <td className="at-td-hrs" style={{textAlign:"right",color: it.leave_deduction > 0 ? "#ef4444" : undefined}}>{it.leave_deduction > 0 ? `- ${peso(it.leave_deduction)}` : "—"}</td>
-                            <td className="at-td-time" style={{textAlign:"right"}}>{peso(it.gross_pay)}</td>
-                            <td className="at-td-hrs" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.sss_ee)}</td>
-                            <td className="at-td-hrs" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.philhealth_ee)}</td>
-                            <td className="at-td-hrs" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.pagibig_ee)}</td>
-                            <td className="at-td-hrs" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.withholding_tax)}</td>
-                            <td className="at-td-time" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.total_deductions)}</td>
-                            <td className="at-td-time" style={{textAlign:"right",color:"#22c55e"}}>{peso(it.net_pay)}</td>
+            <div className="pr-tbl-outer">
+                <div className="pr-tbl-scroll">
+                    <table className="at-tbl pr-compact">
+                        <thead>
+                        <tr>
+                            <th>Employee</th>
+                            <th>Dept</th>
+                            <th style={{textAlign:"right"}}>Basic</th>
+                            <th style={{textAlign:"right"}}>OT</th>
+                            <th style={{textAlign:"right"}}>N.Diff</th>
+                            <th style={{textAlign:"right"}}>Leave</th>
+                            <th style={{textAlign:"right"}}>Gross</th>
+                            <th style={{textAlign:"right"}}>SSS</th>
+                            <th style={{textAlign:"right"}}>PhilH</th>
+                            <th style={{textAlign:"right"}}>HDMF</th>
+                            <th style={{textAlign:"right"}}>Tax</th>
+                            <th style={{textAlign:"right"}}>Ded</th>
+                            <th style={{textAlign:"right"}}>Net</th>
                         </tr>
-                    ))}
-                    <tr style={{background:"#f8fafc",borderTop:"2px solid #e0e0e0",fontWeight:700}}>
-                        <td colSpan={2} style={{padding:"12px 14px",fontSize:13}}>TOTAL</td>
-                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px"}}>{peso(items.reduce((s,i)=>s+i.basic_pay,0))}</td>
-                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px",color:"#f59e0b"}}>{peso(items.reduce((s,i)=>s+i.ot_pay,0))}</td>
-                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px",color:"#8b5cf6"}}>{peso(items.reduce((s,i)=>s+(i.night_diff||0),0))}</td>
-                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+(i.leave_deduction||0),0))}</td>
-                        <td className="at-td-time" style={{textAlign:"right",padding:"12px 14px"}}>{peso(items.reduce((s,i)=>s+i.gross_pay,0))}</td>
-                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.sss_ee,0))}</td>
-                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.philhealth_ee,0))}</td>
-                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.pagibig_ee,0))}</td>
-                        <td className="at-td-hrs" style={{textAlign:"right",padding:"12px 14px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.withholding_tax,0))}</td>
-                        <td className="at-td-time" style={{textAlign:"right",padding:"12px 14px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.total_deductions,0))}</td>
-                        <td className="at-td-time" style={{textAlign:"right",padding:"12px 14px",color:"#22c55e"}}>{peso(items.reduce((s,i)=>s+i.net_pay,0))}</td>
+                        </thead>
+                        <tbody>
+                        {items.map(it => (
+                            <tr key={it.id} onClick={() => setSelectedItem(it)}>
+                                <td>
+                                    <div className="at-emp">
+                                        <span className="at-emp-av">{(it.first_name?.[0]||"")+(it.last_name?.[0]||"")}</span>
+                                        <div>
+                                            <div className="at-emp-name">{it.first_name} {it.last_name}</div>
+                                            <div className="at-emp-pos">{it.position || "—"}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td className="at-td-dept">{it.department || "—"}</td>
+                                <td className="at-td-hrs" style={{textAlign:"right"}}>{peso(it.basic_pay)}</td>
+                                <td className="at-td-hrs" style={{textAlign:"right",color: it.ot_pay > 0 ? "#f59e0b" : undefined}}>{it.ot_pay > 0 ? peso(it.ot_pay) : "—"}</td>
+                                <td className="at-td-hrs" style={{textAlign:"right",color: it.night_diff > 0 ? "#8b5cf6" : undefined}}>{it.night_diff > 0 ? peso(it.night_diff) : "—"}</td>
+                                <td className="at-td-hrs" style={{textAlign:"right",color: it.leave_deduction > 0 ? "#ef4444" : undefined}}>{it.leave_deduction > 0 ? `- ${peso(it.leave_deduction)}` : "—"}</td>
+                                <td className="at-td-time" style={{textAlign:"right"}}>{peso(it.gross_pay)}</td>
+                                <td className="at-td-hrs" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.sss_ee)}</td>
+                                <td className="at-td-hrs" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.philhealth_ee)}</td>
+                                <td className="at-td-hrs" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.pagibig_ee)}</td>
+                                <td className="at-td-hrs" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.withholding_tax)}</td>
+                                <td className="at-td-time" style={{textAlign:"right",color:"#ef4444"}}>{peso(it.total_deductions)}</td>
+                                <td className="at-td-time" style={{textAlign:"right",color:"#22c55e"}}>{peso(it.net_pay)}</td>
+                            </tr>
+                        ))}
+                        </tbody>
+                    </table>
+                </div>
+                <table className="at-tbl pr-compact pr-total-tbl">
+                    <tfoot>
+                    <tr>
+                        <td colSpan={2} style={{padding:"10px 6px",fontSize:12}}>TOTAL</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"10px 6px"}}>{peso(items.reduce((s,i)=>s+i.basic_pay,0))}</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"10px 6px",color:"#f59e0b"}}>{peso(items.reduce((s,i)=>s+i.ot_pay,0))}</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"10px 6px",color:"#8b5cf6"}}>{peso(items.reduce((s,i)=>s+(i.night_diff||0),0))}</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"10px 6px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+(i.leave_deduction||0),0))}</td>
+                        <td className="at-td-time" style={{textAlign:"right",padding:"10px 6px"}}>{peso(items.reduce((s,i)=>s+i.gross_pay,0))}</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"10px 6px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.sss_ee,0))}</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"10px 6px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.philhealth_ee,0))}</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"10px 6px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.pagibig_ee,0))}</td>
+                        <td className="at-td-hrs" style={{textAlign:"right",padding:"10px 6px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.withholding_tax,0))}</td>
+                        <td className="at-td-time" style={{textAlign:"right",padding:"10px 6px",color:"#ef4444"}}>{peso(items.reduce((s,i)=>s+i.total_deductions,0))}</td>
+                        <td className="at-td-time" style={{textAlign:"right",padding:"10px 6px",color:"#22c55e"}}>{peso(items.reduce((s,i)=>s+i.net_pay,0))}</td>
                     </tr>
-                    </tbody>
+                    </tfoot>
                 </table>
             </div>
         )}
         {selectedItem && <PayrollItemModal item={selectedItem} settings={settings} run={run} onClose={() => setSelectedItem(null)} />}
         <style>{prCSS}</style>
-    </>);
+    </div>);
 }
 
 /* ================================================================
@@ -862,6 +870,7 @@ function PayrollItemModal({ item: it, settings, run, onClose }) {
    STYLES
 ================================================================ */
 const prCSS = `
+  .pr-wrap{display:flex;flex-direction:column;min-height:calc(100vh - 54px - 48px);width:1px;min-width:100%;overflow:hidden;box-sizing:border-box}
   .pr-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px}
   .pr-bar-right{display:flex;gap:8px}
   .pr-btn-p{display:flex;align-items:center;gap:5px;padding:9px 18px;border:none;border-radius:8px;background:#6366f1;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s}
@@ -869,12 +878,12 @@ const prCSS = `
   .pr-btn-s{display:flex;align-items:center;gap:5px;padding:9px 16px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#666;cursor:pointer}
   .pr-btn-s:hover{background:#f5f5f5}
 
-  .pr-empty{text-align:center;padding:60px 20px}
+  .pr-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px 20px;background:#fff;border-radius:12px}
   .pr-empty-ic{width:72px;height:72px;border-radius:50%;background:#eef2ff;color:#6366f1;display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
   .pr-empty-t{font-size:18px;font-weight:700;color:#333;margin-bottom:6px}
   .pr-empty-d{font-size:13px;color:#999;max-width:380px;margin:0 auto}
 
-  .pr-tbl-wrap{overflow-x:auto;background:#fff;border:1px solid #eee;border-radius:12px}
+  .pr-tbl-wrap{overflow-x:auto;background:#fff;border:1px solid #eee;border-radius:12px;min-width:0;width:100%}
   .pr-tbl{width:100%;border-collapse:collapse;font-size:13px}
   .pr-tbl thead th{text-align:left;padding:12px 14px;color:#888;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #eee;white-space:nowrap}
   .pr-tbl tbody tr{border-bottom:1px solid #f5f5f5;transition:background .1s}
@@ -890,13 +899,20 @@ const prCSS = `
   .pr-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
 
   /* Run detail */
-  .pr-run-head{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+  .pr-run-wrap{display:flex;flex-direction:column;min-height:calc(100vh - 54px - 48px);width:1px;min-width:100%;overflow:hidden;box-sizing:border-box}
+  .pr-run-head{display:flex;flex-direction:column;gap:12px;margin-bottom:18px;min-width:0;width:100%}
+  .pr-run-top{display:flex;align-items:center;gap:14px}
+  .pr-tbl-outer{flex:1;display:flex;flex-direction:column;background:#fff;border-radius:10px;min-width:0;width:100%;overflow:hidden}
+  .pr-tbl-scroll{flex:1;overflow:auto;min-width:0}
+  .pr-total-tbl{border-top:2px solid #e0e0e0}
+  .pr-total-tbl tfoot tr{background:#f8fafc;font-weight:700}
+  .pr-total-tbl tfoot td{background:#f8fafc}
   .pr-back{display:flex;align-items:center;gap:4px;padding:8px 14px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;font-family:'DM Sans',sans-serif;font-size:13px;color:#666;cursor:pointer}
   .pr-back:hover{background:#f5f5f5}
-  .pr-run-info{display:flex;align-items:center;gap:10px;flex:1}
-  .pr-run-title{font-size:20px;font-weight:700;color:#222;margin:0}
-  .pr-run-actions{display:flex;gap:8px;margin-left:auto}
-  .pr-btn-compute{padding:9px 20px;border:none;border-radius:8px;background:linear-gradient(135deg,#6366f1,#8b5cf6);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s}
+  .pr-run-info{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+  .pr-run-title{font-size:18px;font-weight:700;color:#222;margin:0;white-space:nowrap}
+  .pr-run-actions{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
+  .pr-btn-compute{padding:9px 16px;border:none;border-radius:8px;background:linear-gradient(135deg,#6366f1,#8b5cf6);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s;white-space:nowrap}
   .pr-btn-compute:hover{opacity:.9}
   .pr-btn-compute:disabled{opacity:.5;cursor:not-allowed}
 
@@ -936,6 +952,10 @@ const prCSS = `
   .pd-net-value{font-size:22px;font-weight:800;color:#16a34a;font-variant-numeric:tabular-nums}
 
   .pr-tbl-items td{font-size:12px}
+  .pr-compact{font-size:12px}
+  .pr-compact thead{position:sticky;top:0;z-index:2}
+  .pr-compact thead th{padding:8px 6px;font-size:10px;background:#fafbfa}
+  .pr-compact tbody td{padding:10px 6px;font-size:12px}
   .pr-r{text-align:right !important;font-variant-numeric:tabular-nums}
   .pr-bold{font-weight:700}
   .pr-ded{color:#ef4444}
@@ -954,11 +974,11 @@ const prCSS = `
   .lv-modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:16px;padding:28px;width:420px;max-width:90vw;z-index:401;box-shadow:0 12px 40px rgba(0,0,0,.12)}
   .lv-modal-t{font-size:18px;font-weight:700;color:#222;margin-bottom:6px}
   .lv-modal-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
-  .lv-foot-approve{display:flex;align-items:center;gap:5px;padding:9px 20px;border:none;border-radius:8px;background:#22c55e;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer}
+  .lv-foot-approve{display:flex;align-items:center;gap:5px;padding:9px 16px;border:none;border-radius:8px;background:#22c55e;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;white-space:nowrap}
   .lv-foot-approve:hover{background:#16a34a}
   .bp-btn-cancel{padding:9px 18px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#666;cursor:pointer}
   .bp-btn-cancel:hover{background:#f5f5f5}
-  .bp-btn-danger{padding:9px 16px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#ef4444;cursor:pointer}
+  .bp-btn-danger{padding:9px 16px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#ef4444;cursor:pointer;white-space:nowrap}
   .bp-btn-danger:hover{background:#ef4444;color:#fff}
   .bp-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .bp-field{display:flex;flex-direction:column}

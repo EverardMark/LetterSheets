@@ -247,65 +247,57 @@ export default function ComplianceTab({ agencies, setAgencies, currency = "₱" 
     }
 
     // ---- DASHBOARD ----
-    return (<>
-        {toast && (
-            <div style={{
-                position: "fixed", bottom: 24, right: 24, zIndex: 9999,
-                padding: "10px 18px", borderRadius: 10, fontFamily: "'DM Sans',sans-serif",
-                fontSize: 13, fontWeight: 600, color: "#fff",
-                background: toast.ok ? "#2d9e8b" : "#ef4444",
-                boxShadow: "0 4px 16px rgba(0,0,0,.15)",
-                animation: "fadeInUp .2s ease"
-            }}>{toast.msg}</div>
-        )}
-        <div className="c-bar">
-            <span className="c-bar-count">{agencies.length} agencies configured</span>
-            <div className="c-bar-btns">
-                <button className="c-btn-sec" onClick={() => setShowAdd(true)}><I name="shield" size={14}/> Add Agency</button>
-                <button className="c-btn-sec c-btn-reset" onClick={() => setMode("setup")}><I name="grid" size={14}/> Change Template</button>
+    return (
+        <div className="c-wrap">
+            {toast && (
+                <div style={{
+                    position: "fixed", bottom: 24, right: 24, zIndex: 9999,
+                    padding: "10px 18px", borderRadius: 10, fontFamily: "'DM Sans',sans-serif",
+                    fontSize: 13, fontWeight: 600, color: "#fff",
+                    background: toast.ok ? "#2d9e8b" : "#ef4444",
+                    boxShadow: "0 4px 16px rgba(0,0,0,.15)",
+                    animation: "fadeInUp .2s ease"
+                }}>{toast.msg}</div>
+            )}
+            <div className="c-bar">
+                <span className="c-bar-count">{agencies.length} agencies configured</span>
+                <div className="c-bar-btns">
+                    <button className="c-btn-sec" onClick={() => setShowAdd(true)}><I name="shield" size={14}/> Add Agency</button>
+                    <button className="c-btn-sec c-btn-reset" onClick={() => setMode("setup")}><I name="grid" size={14}/> Change Template</button>
+                </div>
             </div>
-        </div>
 
-        <div className="c-stats">
-            {agencies.map((a, i) => (
-                <div key={i} className="c-stat" onClick={() => setEditIdx(i)}>
-                    <div className="c-stat-ic" style={{ background: a.color + "14", color: a.color }}><I name="shield"/></div>
-                    <div className="c-stat-v">{a.name}</div>
-                    <div className="c-stat-l"><span className={`c-badge ${badgeClass(a.status)}`}>{a.status}</span></div>
-                </div>
-            ))}
-        </div>
-
-        <div className="c-grid">
-            {agencies.map((a, i) => (
-                <div key={i} className="c-card" style={{ borderTopColor: a.color }}>
-                    <div className="c-card-head">
-                        <div>
-                            <div className="c-card-name">{a.name}</div>
-                            <div className="c-card-full">{a.fullName}</div>
+            <div className="c-grid">
+                {agencies.map((a, i) => (
+                    <div key={i} className="c-card" style={{ borderTopColor: a.color }}>
+                        <div className="c-card-head">
+                            <div>
+                                <div className="c-card-name">{a.name}</div>
+                                <div className="c-card-full">{a.fullName}</div>
+                            </div>
+                            <div className="c-card-actions">
+                                <span className={`c-badge ${badgeClass(a.status)}`}>{a.status}</span>
+                                <button className="c-card-edit" onClick={() => setEditIdx(i)}>Edit</button>
+                            </div>
                         </div>
-                        <div className="c-card-actions">
-                            <span className={`c-badge ${badgeClass(a.status)}`}>{a.status}</span>
-                            <button className="c-card-edit" onClick={() => setEditIdx(i)}>Edit</button>
+                        {a.fields.map((f, j) => (
+                            <div key={j} className="c-card-row">
+                                <span className="c-card-rl">{f.label}</span>
+                                <span className="c-card-rv">{f.type === "currency" && currency}{a.values?.[f.key] || "—"}</span>
+                            </div>
+                        ))}
+                        <div className="c-card-foot">
+                            <span>Frequency: {a.frequency}</span>
+                            <span>Due: {a.dueDate || "—"}</span>
+                            <span>Last: {a.lastFiled || "—"}</span>
                         </div>
                     </div>
-                    {a.fields.map((f, j) => (
-                        <div key={j} className="c-card-row">
-                            <span className="c-card-rl">{f.label}</span>
-                            <span className="c-card-rv">{f.type === "currency" && currency}{a.values?.[f.key] || "—"}</span>
-                        </div>
-                    ))}
-                    <div className="c-card-foot">
-                        <span>Frequency: {a.frequency}</span>
-                        <span>Due: {a.dueDate || "—"}</span>
-                        <span>Last: {a.lastFiled || "—"}</span>
-                    </div>
-                </div>
-            ))}
-        </div>
+                ))}
+            </div>
 
-        <style>{complianceCSS}</style>
-    </>);
+            <style>{complianceCSS}</style>
+        </div>
+    );
 }
 
 /* ================================================================
@@ -548,7 +540,8 @@ function badgeClass(status) {
    STYLES
 ================================================================ */
 const complianceCSS = `
-  .c-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px}
+  .c-wrap{display:flex;flex-direction:column;height:100%;overflow:hidden}
+  .c-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;flex-shrink:0}
   .c-bar-count{font-size:13px;color:#888}
   .c-bar-btns{display:flex;gap:8px}
 
@@ -576,7 +569,10 @@ const complianceCSS = `
   .c-b-overdue{background:#fef2f2;color:#ef4444}
   .c-b-neutral{background:#f3f4f6;color:#999}
 
-  .c-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .c-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;flex:1;min-height:0;overflow-y:auto;padding-right:4px;align-content:start;scrollbar-color:transparent transparent}
+  .c-grid::-webkit-scrollbar{width:6px}
+  .c-grid::-webkit-scrollbar-track{background:transparent}
+  .c-grid::-webkit-scrollbar-thumb{background:transparent;border-radius:3px}
   .c-card{border:1px solid #eee;border-radius:12px;padding:18px;border-top:3px solid;background:#fff}
   .c-card-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;gap:8px}
   .c-card-name{font-size:18px;font-weight:700;color:#222}

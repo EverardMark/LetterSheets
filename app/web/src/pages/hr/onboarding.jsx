@@ -146,18 +146,14 @@ export default function OnboardingTab({ employees = [] }) {
 
     const performDrop = async (card, targetColId) => {
         const items = allItemsMap[card.id] || [];
-        if (items.length === 0) return;
 
         const tplNames = templates.map(t => t.name);
         let targetTplIdx = -1;
         if (targetColId !== "__not_started__" && targetColId !== "__completed__") {
-            const tpl = templates.find(t => t.id === targetColId);
+            const tpl = templates.find(t => String(t.id) === String(targetColId));
             if (tpl) targetTplIdx = tplNames.indexOf(tpl.name);
         }
 
-        // Items from templates BEFORE target: completed
-        // Items from target template and after: uncompleted
-        // This means card is "currently at" the target stage
         const updated = items.map(item => {
             if (targetColId === "__completed__") return { ...item, completed: true };
             if (targetColId === "__not_started__") return { ...item, completed: false };
@@ -267,9 +263,12 @@ export default function OnboardingTab({ employees = [] }) {
 
         // If card was explicitly dropped on a column, use that assignment
         const override = cardColumns[cl.id];
-        if (override && colMap[override]) {
-            colMap[override].push(cl);
-            return;
+        if (override != null) {
+            const matchCol = columns.find(c => String(c.id) === String(override));
+            if (matchCol && colMap[matchCol.id]) {
+                colMap[matchCol.id].push(cl);
+                return;
+            }
         }
 
         if (items.length === 0 || (cl.progress === 0 && cl.completed_items === 0 && !items.some(i => i.completed))) {
@@ -298,7 +297,7 @@ export default function OnboardingTab({ employees = [] }) {
 
     if (view === "templates") return <TemplatesView templates={templates} onBack={() => { setView("board"); loadTemplates(); }} onReload={loadTemplates} />;
 
-    return (<>
+    return (<div className="ob-wrap">
         {/* Top bar */}
         <div className="ob-topbar">
             <div className="ob-topbar-left">
@@ -306,6 +305,7 @@ export default function OnboardingTab({ employees = [] }) {
             </div>
             <div className="ob-topbar-right">
                 <button className="ob-btn-ghost" onClick={() => setView("templates")}><I name="settings" size={14} /> Templates</button>
+                <button className="ob-btn-primary" disabled={templates.length === 0} onClick={() => setShowNewModal(true)}><I name="plus" size={14} /> New Onboarding</button>
             </div>
         </div>
 
@@ -319,7 +319,7 @@ export default function OnboardingTab({ employees = [] }) {
             <div className="ob-board" ref={boardRef}>
                 {columns.map(col => {
                     const cards = colMap[col.id] || [];
-                    const isOver = dragOver === col.id;
+                    const isOver = dragOver != null && String(dragOver) === String(col.id);
                     return (
                         <div key={col.id} className={`ob-col ${isOver ? "ob-col-over" : ""}`}
                              ref={el => { colRefs.current[col.id] = el; }}
@@ -375,7 +375,7 @@ export default function OnboardingTab({ employees = [] }) {
             </div>
         )}
 
-        {/* Side panel */}
+        {/* Checklist modal */}
         {selectedCl && (
             <ChecklistPanel cl={selectedCl} items={clItems} templates={templates}
                             onToggle={toggleItem} onAddItem={addItem}
@@ -386,7 +386,7 @@ export default function OnboardingTab({ employees = [] }) {
 
         {showNewModal && <NewModal employees={availableEmps} onStart={startOnboarding} onClose={() => setShowNewModal(false)} />}
         <style>{CSS}</style>
-    </>);
+    </div>);
 }
 
 /* ================================================================
@@ -408,33 +408,31 @@ function ChecklistPanel({ cl, items, templates, onToggle, onAddItem, onDelete, o
     const orderedCats = [...tplNames.filter(n => grouped[n]), ...Object.keys(grouped).filter(k => !tplNames.includes(k))];
 
     return (<>
-        <div className="sp-overlay" onClick={onClose} />
-        <div className="sp-panel">
-            <div className="sp-head">
-                <div className="sp-head-top">
-                    <div className="sp-av" style={{ background: pct === 100 ? "#dcfce7" : "#fef3c7", color: pct === 100 ? "#22c55e" : "#f59e0b" }}>
-                        {(cl.first_name?.[0] || "") + (cl.last_name?.[0] || "")}
-                    </div>
-                    <div className="sp-head-info">
-                        <h3 className="sp-name">{cl.first_name} {cl.last_name}</h3>
-                        <p className="sp-pos">{cl.position || ""}{cl.department ? ` · ${cl.department}` : ""}</p>
-                    </div>
-                    <button className="sp-close" onClick={onClose}><I name="x" size={18} /></button>
+        <div className="ob-modal-bg" onClick={onClose} />
+        <div className="ob-modal ob-modal-cl">
+            <div className="ob-modal-cl-head">
+                <div className="sp-av" style={{ background: pct === 100 ? "#dcfce7" : "#fef3c7", color: pct === 100 ? "#22c55e" : "#f59e0b" }}>
+                    {(cl.first_name?.[0] || "") + (cl.last_name?.[0] || "")}
                 </div>
-
-                <div className="sp-progress">
-                    <div className="sp-pbar"><div className="sp-pfill" style={{ width: pct + "%", background: pct === 100 ? "#22c55e" : "#f59e0b" }} /></div>
-                    <div className="sp-pinfo"><span>{done} of {total} completed</span><span className="sp-ppct">{pct}%</span></div>
+                <div className="sp-head-info">
+                    <h3 className="ob-modal-t">{cl.first_name} {cl.last_name}</h3>
+                    <p className="ob-modal-sub">{cl.position || ""}{cl.department ? ` · ${cl.department}` : ""}</p>
                 </div>
-
-                <div className="sp-dates">
-                    <span><I name="play" size={11} /> Started {fmtDate(cl.start_date)}</span>
-                    {cl.target_date && <span className={isOverdue ? "sp-overdue" : ""}><I name="flag" size={11} /> Target {fmtDate(cl.target_date)}</span>}
-                    {cl.completed_date && <span style={{ color: "#22c55e" }}><I name="check-circle" size={11} /> Done {fmtDate(cl.completed_date)}</span>}
-                </div>
+                <button className="sp-close" onClick={onClose}><I name="x" size={18} /></button>
             </div>
 
-            <div className="sp-items-wrap">
+            <div className="sp-progress">
+                <div className="sp-pbar"><div className="sp-pfill" style={{ width: pct + "%", background: pct === 100 ? "#22c55e" : "#f59e0b" }} /></div>
+                <div className="sp-pinfo"><span>{done} of {total} completed</span><span className="sp-ppct">{pct}%</span></div>
+            </div>
+
+            <div className="sp-dates">
+                <span><I name="play" size={11} /> Started {fmtDate(cl.start_date)}</span>
+                {cl.target_date && <span className={isOverdue ? "sp-overdue" : ""}><I name="flag" size={11} /> Target {fmtDate(cl.target_date)}</span>}
+                {cl.completed_date && <span style={{ color: "#22c55e" }}><I name="check-circle" size={11} /> Done {fmtDate(cl.completed_date)}</span>}
+            </div>
+
+            <div className="ob-modal-cl-scroll">
                 {items.length === 0 ? (
                     <div className="sp-empty">No items. Add templates with items first, then start onboarding.</div>
                 ) : orderedCats.map((cat, ci) => {
@@ -489,8 +487,9 @@ function ChecklistPanel({ cl, items, templates, onToggle, onAddItem, onDelete, o
                 )}
             </div>
 
-            <div className="sp-footer">
+            <div className="ob-modal-btns" style={{ justifyContent: "space-between" }}>
                 <button className="ob-btn-danger-sm" onClick={onDelete}><I name="trash-2" size={13} /> Delete</button>
+                <button className="ob-btn-ghost" onClick={onClose}>Close</button>
             </div>
         </div>
     </>);
@@ -499,6 +498,90 @@ function ChecklistPanel({ cl, items, templates, onToggle, onAddItem, onDelete, o
 /* ================================================================
    NEW ONBOARDING MODAL
 ================================================================ */
+function EmployeePicker({ employees, value, onChange }) {
+    const [query, setQuery] = useState("");
+    const [showDrop, setShowDrop] = useState(false);
+    const wrapRef = useState(null);
+
+    const selected = employees.find(e => String(e.id) === String(value));
+
+    const filtered = query.trim()
+        ? employees.filter(e => {
+            const full = `${e.first_name} ${e.last_name} ${e.department || ""}`.toLowerCase();
+            return full.includes(query.toLowerCase());
+        }).slice(0, 50)
+        : [];
+
+    const pick = (emp) => {
+        onChange(emp.id);
+        setQuery("");
+        setShowDrop(false);
+    };
+
+    const clear = () => {
+        onChange("");
+        setQuery("");
+    };
+
+    useEffect(() => {
+        const handler = (e) => {
+            if (wrapRef[0] && !wrapRef[0].contains(e.target)) setShowDrop(false);
+        };
+        document.addEventListener("mousedown", handler);
+        return () => document.removeEventListener("mousedown", handler);
+    }, []);
+
+    if (selected && !showDrop) {
+        return (
+            <div className="ep-selected">
+                <span className="ep-sel-av">{(selected.first_name?.[0] || "") + (selected.last_name?.[0] || "")}</span>
+                <div className="ep-sel-info">
+                    <span className="ep-sel-name">{selected.first_name} {selected.last_name}</span>
+                    {selected.department && <span className="ep-sel-dept">{selected.department}</span>}
+                </div>
+                <button type="button" className="ep-sel-clear" onClick={clear} title="Change employee">✕</button>
+            </div>
+        );
+    }
+
+    return (
+        <div className="ep-wrap" ref={el => wrapRef[0] = el}>
+            <div className="ep-input-wrap">
+                <I name="search" size={13} style={{ color: "#bbb", flexShrink: 0 }} />
+                <input
+                    className="ep-input"
+                    placeholder="Type to search employees..."
+                    value={query}
+                    onChange={e => { setQuery(e.target.value); setShowDrop(true); }}
+                    onFocus={() => setShowDrop(true)}
+                    autoComplete="off"
+                />
+                {query && <button type="button" className="ep-clear" onClick={() => setQuery("")}>✕</button>}
+            </div>
+            {showDrop && (
+                <div className="ep-drop">
+                    {!query.trim() ? (
+                        <div className="ep-hint">Start typing a name to search {employees.length.toLocaleString()} employees...</div>
+                    ) : filtered.length === 0 ? (
+                        <div className="ep-hint">No employees match "{query}"</div>
+                    ) : (<>
+                        {filtered.map(emp => (
+                            <div key={emp.id} className="ep-item" onClick={() => pick(emp)}>
+                                <span className="ep-item-av">{(emp.first_name?.[0] || "") + (emp.last_name?.[0] || "")}</span>
+                                <div className="ep-item-info">
+                                    <span className="ep-item-name">{emp.first_name} {emp.last_name}</span>
+                                    {emp.department && <span className="ep-item-dept">{emp.department}</span>}
+                                </div>
+                            </div>
+                        ))}
+                        {filtered.length === 50 && <div className="ep-hint">Showing first 50 results. Keep typing to narrow down...</div>}
+                    </>)}
+                </div>
+            )}
+        </div>
+    );
+}
+
 function NewModal({ employees, onStart, onClose }) {
     const [empId, setEmpId] = useState("");
     const [targetDate, setTargetDate] = useState("");
@@ -509,10 +592,7 @@ function NewModal({ employees, onStart, onClose }) {
             <p className="ob-modal-sub">Employee will be placed in "Not Started" with all template items assigned automatically.</p>
             <div className="ob-modal-fields">
                 <div><label className="ob-lbl">Employee <span className="ob-req">*</span></label>
-                    <select className="ob-inp" value={empId} onChange={e => setEmpId(e.target.value)}>
-                        <option value="">Select employee...</option>
-                        {employees.map(e => <option key={e.id} value={e.id}>{e.first_name} {e.last_name}</option>)}
-                    </select>
+                    <EmployeePicker employees={employees} value={empId} onChange={setEmpId} />
                 </div>
                 <div><label className="ob-lbl">Target Completion Date</label>
                     <input type="date" className="ob-inp" value={targetDate} onChange={e => setTargetDate(e.target.value)} />
@@ -599,10 +679,11 @@ function TemplatesView({ templates, onBack, onReload }) {
         onReload();
     };
 
-    return (<>
+    return (<div className="tpl-wrap">
         <div className="tpl-head">
-            <button className="ob-btn-ghost" onClick={onBack}><I name="arrow-left" size={16} /> Back to Board</button>
+            <button className="ob-btn-ghost" onClick={onBack}><I name="arrow-left" size={16} /></button>
             <h2 className="tpl-title">Checklist Templates</h2>
+            <button className="ob-btn-primary" onClick={createTpl}><I name="plus" size={14} /> New Template</button>
         </div>
 
         <p className="tpl-desc">Each template becomes a column on the onboarding board. Add the documents and stages employees need to complete.</p>
@@ -691,11 +772,12 @@ function TemplatesView({ templates, onBack, onReload }) {
             )}
         </div>
         <style>{CSS}</style>
-    </>);
+    </div>);
 }
 
 /* ================================================================ */
 const CSS = `
+  .ob-wrap{display:flex;flex-direction:column;min-height:calc(100vh - 54px - 48px)}
   .ob-topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:12px}
   .ob-topbar-left{display:flex;align-items:center;gap:12px}
   .ob-topbar-right{display:flex;gap:8px}
@@ -710,14 +792,14 @@ const CSS = `
   .ob-btn-danger-sm{display:flex;align-items:center;gap:4px;padding:7px 12px;border:1px solid #fecaca;border-radius:7px;background:#fef2f2;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;color:#ef4444;cursor:pointer}
   .ob-btn-danger-sm:hover{background:#ef4444;color:#fff}
 
-  .ob-empty-board{text-align:center;padding:60px 20px}
+  .ob-empty-board{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px 20px;background:#fff;border-radius:10px}
   .ob-empty-board h3{font-size:18px;font-weight:700;color:#333;margin:14px 0 6px}
   .ob-empty-board p{font-size:13px;color:#999;max-width:400px;margin:0 auto}
   .ob-empty-icon{width:68px;height:68px;border-radius:50%;background:#fef3c7;color:#f59e0b;display:flex;align-items:center;justify-content:center;margin:0 auto}
 
   /* ===== BOARD ===== */
   .ob-board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;min-height:460px}
-  .ob-col{flex:1;min-width:220px;max-width:320px;background:#f9fafb;border:1px solid #eee;border-radius:12px;min-height:200px;display:flex;flex-direction:column}
+  .ob-col{flex:1;min-width:220px;max-width:320px;background:#fff;border:1px solid #eee;border-radius:12px;min-height:200px;display:flex;flex-direction:column}
   .ob-col-over{background:rgba(245,158,11,.06);border-color:#f59e0b;border-style:dashed}
 
   .ob-col-head{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid #eee}
@@ -754,22 +836,13 @@ const CSS = `
   .ob-card-meta span{display:flex;align-items:center;gap:3px}
   .ob-card-overdue-txt{color:#ef4444 !important;font-weight:600}
 
-  /* ===== SIDE PANEL ===== */
-  .sp-overlay{position:fixed;inset:0;background:rgba(0,0,0,.25);z-index:500;animation:spFade .12s}
-  @keyframes spFade{from{opacity:0}to{opacity:1}}
-  .sp-panel{position:fixed;top:0;right:0;bottom:0;width:440px;max-width:92vw;background:#fff;z-index:501;display:flex;flex-direction:column;box-shadow:-4px 0 24px rgba(0,0,0,.1);animation:spSlide .2s ease-out}
-  @keyframes spSlide{from{transform:translateX(100%)}to{transform:none}}
-
-  .sp-head{padding:24px 24px 16px;border-bottom:1px solid #f0f0f0}
-  .sp-head-top{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  /* ===== CHECKLIST MODAL ===== */
+  .ob-modal-cl{width:540px;display:flex;flex-direction:column}
+  .ob-modal-cl-head{display:flex;align-items:center;gap:12px;margin-bottom:16px}
   .sp-av{width:44px;height:44px;border-radius:12px;font-size:14px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
   .sp-head-info{flex:1}
-  .sp-name{font-size:18px;font-weight:700;color:#222;margin:0}
-  .sp-pos{font-size:12px;color:#999;margin:2px 0 0}
   .sp-close{width:32px;height:32px;border:none;border-radius:8px;background:#f5f5f5;color:#999;display:flex;align-items:center;justify-content:center;cursor:pointer}
   .sp-close:hover{background:#eee;color:#333}
-
-  .sp-tpl-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:6px;background:#fef3c7;color:#d97706;font-size:11px;font-weight:600;margin-bottom:12px}
 
   .sp-progress{margin-bottom:12px}
   .sp-pbar{height:8px;background:#f3f4f6;border-radius:4px;overflow:hidden}
@@ -777,12 +850,11 @@ const CSS = `
   .sp-pinfo{display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:#999}
   .sp-ppct{font-weight:700;color:#333;font-size:16px}
 
-  .sp-dates{display:flex;gap:14px;font-size:11px;color:#aaa;flex-wrap:wrap}
+  .sp-dates{display:flex;gap:14px;font-size:11px;color:#aaa;flex-wrap:wrap;margin-bottom:16px}
   .sp-dates span{display:flex;align-items:center;gap:4px}
   .sp-overdue{color:#ef4444 !important;font-weight:600}
 
-  .sp-items-wrap{flex:1;overflow-y:auto;padding:18px 24px}
-  .sp-section-title{font-size:12px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px}
+  .ob-modal-cl-scroll{flex:1;overflow-y:auto;max-height:50vh;border-top:1px solid #f0f0f0;padding-top:16px}
   .sp-empty{text-align:center;padding:30px;color:#ccc;font-size:13px}
 
   .sp-group{margin-bottom:16px}
@@ -812,15 +884,38 @@ const CSS = `
   .sp-add-btn:hover{background:#d97706}
   .sp-add-btn:disabled{opacity:.4;cursor:not-allowed}
 
-  .sp-footer{padding:16px 24px;border-top:1px solid #f0f0f0;display:flex;justify-content:flex-end}
-
   /* ===== MODAL ===== */
   .ob-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:600;animation:spFade .12s}
+  @keyframes spFade{from{opacity:0}to{opacity:1}}
   .ob-modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:16px;padding:28px;width:440px;max-width:90vw;z-index:601;box-shadow:0 12px 40px rgba(0,0,0,.12)}
   .ob-modal-t{font-size:18px;font-weight:700;color:#222;margin:0}
   .ob-modal-sub{font-size:12px;color:#999;margin:4px 0 0}
   .ob-modal-fields{display:flex;flex-direction:column;gap:12px;margin-top:16px}
   .ob-modal-btns{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+
+  /* ===== EMPLOYEE PICKER ===== */
+  .ep-wrap{position:relative}
+  .ep-input-wrap{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;transition:border-color .15s}
+  .ep-input-wrap:focus-within{border-color:#f59e0b;box-shadow:0 0 0 2px rgba(245,158,11,.1)}
+  .ep-input{border:none;outline:none;font-family:'DM Sans',sans-serif;font-size:13px;color:#333;flex:1;background:transparent}
+  .ep-input::placeholder{color:#bbb}
+  .ep-clear{background:none;border:none;color:#bbb;cursor:pointer;font-size:14px;padding:0 2px;line-height:1}
+  .ep-clear:hover{color:#999}
+  .ep-drop{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid #e0e0e0;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.1);max-height:240px;overflow-y:auto;z-index:10}
+  .ep-hint{padding:14px 16px;font-size:12px;color:#aaa;text-align:center}
+  .ep-item{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;transition:background .1s}
+  .ep-item:hover{background:#fef3c7}
+  .ep-item-av{width:30px;height:30px;border-radius:8px;background:#f3f4f6;color:#888;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .ep-item-info{display:flex;flex-direction:column;min-width:0}
+  .ep-item-name{font-size:13px;font-weight:600;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ep-item-dept{font-size:11px;color:#aaa}
+  .ep-selected{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid #e0e0e0;border-radius:8px;background:#fafbfa}
+  .ep-sel-av{width:32px;height:32px;border-radius:8px;background:#fef3c7;color:#d97706;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .ep-sel-info{display:flex;flex-direction:column;flex:1;min-width:0}
+  .ep-sel-name{font-size:13px;font-weight:600;color:#222}
+  .ep-sel-dept{font-size:11px;color:#aaa}
+  .ep-sel-clear{background:none;border:none;color:#ccc;cursor:pointer;font-size:14px;padding:4px;line-height:1;border-radius:4px}
+  .ep-sel-clear:hover{color:#999;background:#f0f0f0}
   .ob-lbl{font-size:12px;font-weight:600;color:#666;margin-bottom:5px;display:block}
   .ob-req{color:#ef4444}
   .ob-inp{width:100%;padding:9px 12px;border:1px solid #e0e0e0;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;color:#333;outline:none;background:#fff;box-sizing:border-box}
@@ -831,9 +926,10 @@ const CSS = `
   .tpl-title{font-size:20px;font-weight:700;color:#222;flex:1;margin:0}
   .tpl-desc{font-size:12px;color:#aaa;margin-bottom:18px}
 
-  .tpl-layout{display:grid;grid-template-columns:300px 1fr;gap:16px;min-height:440px}
-  .tpl-list{display:flex;flex-direction:column;gap:6px}
-  .tpl-empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:40px 16px;text-align:center;color:#ccc}
+  .tpl-wrap{display:flex;flex-direction:column;min-height:calc(100vh - 54px - 48px)}
+  .tpl-layout{display:grid;grid-template-columns:300px 1fr;grid-template-rows:1fr;gap:16px;flex:1}
+  .tpl-list{display:flex;flex-direction:column;gap:6px;background:#fff;border-radius:10px;padding:12px}
+  .tpl-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:40px 16px;text-align:center;color:#ccc;background:#fff;border-radius:10px}
   .tpl-empty p{font-weight:600;color:#aaa;margin:4px 0 0}
   .tpl-empty span{font-size:12px;color:#ccc;max-width:220px}
 
@@ -886,6 +982,6 @@ const CSS = `
     .ob-board{flex-direction:column}
     .ob-col{min-width:100%;max-width:100%}
     .tpl-layout{grid-template-columns:1fr}
-    .sp-panel{width:100%}
+    .ob-modal-cl{width:95vw}
   }
 `;

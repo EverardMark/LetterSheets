@@ -114,7 +114,7 @@ export default function LeaveTab({ employees = [] }) {
         return true;
     });
 
-    return (<>
+    return (<div className="lv-wrap">
         {/* Bar */}
         <div className="lv-bar">
             <div className="lv-bar-left">
@@ -160,7 +160,6 @@ export default function LeaveTab({ employees = [] }) {
                         <th>End</th>
                         <th>Days</th>
                         <th>Status</th>
-                        <th>Actions</th>
                     </tr>
                     </thead>
                     <tbody>
@@ -178,21 +177,11 @@ export default function LeaveTab({ employees = [] }) {
                                     </div>
                                 </td>
                                 <td className="lv-td-dept">{l.department || "—"}</td>
-                                <td className="lv-td-type"><I name="file-text" size={12} /> {l.leave_type}</td>
+                                <td><span className="lv-td-type"><I name="file-text" size={12} /> {l.leave_type}</span></td>
                                 <td className="lv-td-date">{fmtDate(l.start_date)}</td>
                                 <td className="lv-td-date">{fmtDate(l.end_date)}</td>
                                 <td className="lv-td-days">{l.days} day{l.days !== 1 ? "s" : ""}</td>
                                 <td><span className="lv-badge" style={{ background: sc + "18", color: sc }}><I name={STATUS_ICONS[l.status] || "circle"} size={11} /> {l.status}</span></td>
-                                <td onClick={e => e.stopPropagation()}>
-                                    {l.status === "Pending" ? (
-                                        <div className="lv-tbl-actions">
-                                            <button className="lv-act lv-act-ok" onClick={() => approveLeave(l.id)} title="Approve"><I name="check" size={13} /></button>
-                                            <button className="lv-act lv-act-no" onClick={() => openReject(l.id)} title="Reject"><I name="x" size={13} /></button>
-                                        </div>
-                                    ) : (
-                                        <span className="lv-td-na">—</span>
-                                    )}
-                                </td>
                             </tr>
                         );
                     })}
@@ -228,7 +217,7 @@ export default function LeaveTab({ employees = [] }) {
         />
 
         <style>{lvCSS}</style>
-    </>);
+    </div>);
 }
 
 /* ================================================================
@@ -509,6 +498,7 @@ function LeavePanel({ open, mode, leave, employees, onClose, onSave, onDelete, o
    STYLES
 ================================================================ */
 const lvCSS = `
+  .lv-wrap{display:flex;flex-direction:column;min-height:calc(100vh - 54px - 48px)}
   .lv-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
   .lv-bar-left{display:flex;align-items:center;gap:8px}
   .lv-search-wrap{display:flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;flex:1;max-width:200px;color:#aaa}
@@ -543,13 +533,6 @@ const lvCSS = `
   .lv-td-days{font-weight:600;color:#555;font-size:12px}
   .lv-td-na{color:#ccc;font-size:12px}
   .lv-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
-
-  .lv-tbl-actions{display:flex;gap:6px}
-  .lv-act{width:30px;height:30px;border-radius:6px;border:1px solid #e0e0e0;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .12s}
-  .lv-act-ok{color:#22c55e;border-color:#bbf7d0}
-  .lv-act-ok:hover{background:#22c55e;color:#fff;border-color:#22c55e}
-  .lv-act-no{color:#ef4444;border-color:#fecaca}
-  .lv-act-no:hover{background:#ef4444;color:#fff;border-color:#ef4444}
 
   /* Add Leave Modal */
   .lm-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:400;animation:bpFade .15s}
