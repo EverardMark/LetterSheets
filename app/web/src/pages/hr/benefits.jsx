@@ -5,7 +5,7 @@ import Modal from "../components/Modal";
 /* ================================================================
    API HELPER
 ================================================================ */
-const API_URL = "http://localhost:8080/api/execute";
+const API_URL = "/api/execute";
 
 async function api(action, body = {}) {
     const session = localStorage.getItem("ls_session");
@@ -68,6 +68,16 @@ function freqShort(f) {
 
 function typeName(t) { return BENEFIT_TYPES.find(b => b.value === t)?.label || t || "Benefit"; }
 
+function toMonthly(cost, frequency) {
+    const c = Number(cost) || 0;
+    switch(frequency) {
+        case "Yearly": return c / 12;
+        case "Quarterly": return c / 3;
+        case "Semi-Annual": return c / 6;
+        default: return c;
+    }
+}
+
 // Get the cheapest tier employer cost for card display
 function minTierCost(tiers = []) {
     if (!tiers.length) return 0;
@@ -90,6 +100,9 @@ function costRange(tiers = [], freq) {
    MAIN COMPONENT
 ================================================================ */
 export default function BenefitsTab({ benefits, setBenefits, employees = [] }) {
+    const company = JSON.parse(localStorage.getItem("ls_company") || "{}");
+    const isEmployee = company.role === "employee";
+
     const [panel, setPanel] = useState({ open: false, mode: "add", benefit: null, idx: -1 });
 
     useEffect(() => {
@@ -147,10 +160,10 @@ export default function BenefitsTab({ benefits, setBenefits, employees = [] }) {
         }
     }
 
-    return (<div className="bf-wrap">
+    return (<>
         <div className="bf-bar">
             <span className="bf-bar-count">{benefits.length} benefit plans</span>
-            <button className="bf-btn-p" onClick={openAdd}><I name="plus" size={14}/> Add Benefit</button>
+            {!isEmployee && <button className="bf-btn-p" onClick={openAdd}><I name="plus" size={14}/> Add Benefit</button>}
         </div>
 
         {benefits.length > 0 ? (
@@ -175,9 +188,25 @@ export default function BenefitsTab({ benefits, setBenefits, employees = [] }) {
                                 {tiers.length > 1 && (
                                     <div className="bf-card-row"><span className="bf-card-rl">Tiers</span><span className="bf-card-rv">{tiers.map(t=>t.name).join(", ")}</span></div>
                                 )}
-                                <div className="bf-card-row"><span className="bf-card-rl">Enrolled</span><span className="bf-card-rv" style={{color:"#2d9e8b"}}>{b.enrolled||0}{employees.length>0?` / ${employees.length}`:""}</span></div>
+                                <div className="bf-card-row"><span className="bf-card-rl">Enrolled</span><span className="bf-card-rv" style={{color:"#2d9e8b"}}>{(() => { const enrolled = employees.filter(e => { try { const eb = typeof e.enrolled_benefits === "string" ? JSON.parse(e.enrolled_benefits) : (e.enrolled_benefits || []); return Array.isArray(eb) && eb.includes(b.id); } catch { return false; } }); return `${enrolled.length} / ${employees.length}`; })()}</span></div>
+                                {(() => {
+                                    const enrolled = employees.filter(e => { try { const eb = typeof e.enrolled_benefits === "string" ? JSON.parse(e.enrolled_benefits) : (e.enrolled_benefits || []); return Array.isArray(eb) && eb.includes(b.id); } catch { return false; } });
+                                    if (enrolled.length === 0) return null;
+                                    return (
+                                        <div className="bf-enrolled-list">
+                                            {enrolled.map(e => (
+                                                <div key={e.id} className="bf-enrolled-item">
+                                                    <span className="bf-enrolled-av">{(e.first_name?.[0] || "") + (e.last_name?.[0] || "")}</span>
+                                                    <div className="bf-enrolled-info">
+                                                        <span className="bf-enrolled-name">{e.first_name} {e.last_name}</span>
+                                                        <span className="bf-enrolled-dept">{e.department || e.position || "—"}</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
+                                })()}
                             </div>
-                            <div className="bf-card-foot"><span>{typeName(b.type)}</span><span style={{color:"#2d9e8b",fontWeight:600}}>View →</span></div>
                         </div>
                     );
                 })}
@@ -192,17 +221,17 @@ export default function BenefitsTab({ benefits, setBenefits, employees = [] }) {
 
         <BenefitPanel
             open={panel.open}
-            mode={panel.mode}
+            mode={isEmployee ? "view" : panel.mode}
             benefit={panel.benefit}
             idx={panel.idx}
             employees={employees}
             onClose={closePanel}
             onSave={saveBenefit}
-            onDelete={deleteBenefit}
+            onDelete={isEmployee ? null : deleteBenefit}
         />
 
         <style>{benefitsCSS}</style>
-    </div>);
+    </>);
 }
 
 /* ================================================================
@@ -211,6 +240,7 @@ export default function BenefitsTab({ benefits, setBenefits, employees = [] }) {
 function BenefitPanel({ open, mode, benefit, idx, employees, onClose, onSave, onDelete }) {
     const [form, setForm] = useState({});
     const [currentMode, setCurrentMode] = useState(mode);
+    const [detailTab, setDetailTab] = useState("details");
 
     useEffect(() => {
         if (benefit && (mode === "view" || mode === "edit")) {
@@ -219,6 +249,7 @@ function BenefitPanel({ open, mode, benefit, idx, employees, onClose, onSave, on
             setForm({ type: "health", frequency: "Monthly", status: "Active", tiers: [{ name: "Default", employer_cost: 0, employee_cost: 0 }] });
         }
         setCurrentMode(mode);
+        setDetailTab("details");
     }, [benefit, mode, open]);
 
     if (!open) return null;
@@ -251,107 +282,231 @@ function BenefitPanel({ open, mode, benefit, idx, employees, onClose, onSave, on
 
     return (
         <Modal
-            title={isAdd ? "Add Benefit" : currentMode === "edit" ? "Edit Benefit" : displayName}
-            subtitle={isAdd ? "Configure a new employee benefit plan" : isView ? (form.provider || typeName(form.type)) : "Editing benefit plan"}
+            title={isAdd ? "Add Benefit" : currentMode === "edit" ? "Edit Benefit" : (displayName || "Benefit")}
+            subtitle={isAdd ? "Configure a new employee benefit plan" : (form.provider || typeName(form.type))}
             onClose={currentMode === "edit" ? switchToView : onClose}
         >
-            <div className="bp-modal-layout">
-                <div className="bp-modal-scroll">
-                    <div className="bp-section">
-                        <h4 className="bp-sec-title">Benefit Details</h4>
-                        <div className="bp-fields">
-                            <div className="bp-field">
-                                <label className="bp-label">Benefit Type {!isView && <span className="bp-req">*</span>}</label>
-                                <select className="bp-input" value={form.type||""} onChange={e=>set("type",e.target.value)} disabled={isView}>
-                                    {BENEFIT_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}
-                                </select>
+            <div className="ap-modal-layout">
+                <div className="ap-modal-scroll">
+                    {isView ? (
+                        <>
+                            {/* Tab Navigation */}
+                            <div className="bf-detail-tabs">
+                                <button className={`bf-detail-tab ${detailTab === "details" ? "bf-detail-tab-a" : ""}`} onClick={() => setDetailTab("details")}>Details</button>
+                                <button className={`bf-detail-tab ${detailTab === "employees" ? "bf-detail-tab-a" : ""}`} onClick={() => setDetailTab("employees")}>
+                                    Employees {(() => { try { return `(${employees.filter(e => { const eb = typeof e.enrolled_benefits === "string" ? JSON.parse(e.enrolled_benefits) : (e.enrolled_benefits || []); return Array.isArray(eb) && eb.includes(form.id); }).length})`; } catch { return "(0)"; } })()}
+                                </button>
                             </div>
-                            <div className="bp-field">
-                                <label className="bp-label">Benefit Name</label>
-                                <input className="bp-input" value={form.name||""} onChange={e=>set("name",e.target.value)} placeholder={typeName(form.type)} disabled={isView}/>
-                            </div>
-                            <div className="bp-field">
-                                <label className="bp-label">Provider / Carrier</label>
-                                <input className="bp-input" value={form.provider||""} onChange={e=>set("provider",e.target.value)} placeholder="e.g. Maxicare, Sun Life" disabled={isView}/>
-                            </div>
-                            <div className="bp-field">
-                                <label className="bp-label">Status</label>
-                                <select className="bp-input" value={form.status||"Active"} onChange={e=>set("status",e.target.value)} disabled={isView}>
-                                    <option value="Active">Active</option><option value="Inactive">Inactive</option><option value="Pending">Pending</option>
-                                </select>
-                            </div>
-                            <div className="bp-field bp-field-full">
-                                <label className="bp-label">Coverage Description</label>
-                                <input className="bp-input" value={form.coverage||""} onChange={e=>set("coverage",e.target.value)} placeholder="e.g. Employee + Dependents, ₱1M coverage" disabled={isView}/>
-                            </div>
-                            <div className="bp-field">
-                                <label className="bp-label">Frequency</label>
-                                <select className="bp-input" value={form.frequency||"Monthly"} onChange={e=>set("frequency",e.target.value)} disabled={isView}>
-                                    {FREQUENCIES.map(f=><option key={f} value={f}>{f}</option>)}
-                                </select>
-                            </div>
-                            <div className="bp-field">
-                                <label className="bp-label">Enrolled Employees</label>
-                                <input className="bp-input" type="number" value={form.enrolled||""} onChange={e=>set("enrolled",e.target.value)} placeholder="0" disabled={isView}/>
-                            </div>
-                        </div>
-                    </div>
 
-                    <div className="bp-section">
-                        <h4 className="bp-sec-title">Tiers & Costs {!isView && <span className="bp-req">*</span>}</h4>
-                        {!isView && <p className="bp-sec-desc">Add one or more tiers with different cost levels (e.g. Basic, Premium, Family).</p>}
+                            {detailTab === "details" ? (
+                                <>
+                                    <div className="ap-section">
+                                        <h4 className="ap-sec-title">Benefit Details</h4>
+                                        <div className="ap-fields">
+                                            <div className="ap-field">
+                                                <label className="ap-label">Type</label>
+                                                <input className="ap-input" value={typeName(form.type)} disabled />
+                                            </div>
+                                            <div className="ap-field">
+                                                <label className="ap-label">Status</label>
+                                                <span className={`bf-badge ${form.status === "Active" ? "bf-b-active" : "bf-b-inactive"}`}>{form.status || "Active"}</span>
+                                            </div>
+                                            {form.name && <div className="ap-field ap-field-full">
+                                                <label className="ap-label">Name</label>
+                                                <input className="ap-input" value={form.name} disabled />
+                                            </div>}
+                                            {form.provider && <div className="ap-field">
+                                                <label className="ap-label">Provider</label>
+                                                <input className="ap-input" value={form.provider} disabled />
+                                            </div>}
+                                            {form.coverage && <div className="ap-field">
+                                                <label className="ap-label">Coverage</label>
+                                                <input className="ap-input" value={form.coverage} disabled />
+                                            </div>}
+                                            {form.frequency && <div className="ap-field">
+                                                <label className="ap-label">Frequency</label>
+                                                <input className="ap-input" value={form.frequency} disabled />
+                                            </div>}
+                                        </div>
+                                    </div>
 
-                        {tiers.map((t, i) => (
-                            <div key={i} className="bp-tier-edit">
-                                <div className="bp-tier-edit-head">
-                                    <span className="bp-tier-edit-num">Tier {i + 1}</span>
-                                    {!isView && tiers.length > 1 && (
-                                        <button className="bp-tier-edit-rm" onClick={() => removeTier(i)}>✕</button>
+                                    <div className="ap-section">
+                                        <h4 className="ap-sec-title">Tiers & Costs</h4>
+                                        {tiers.length > 0 ? (
+                                            <div className="bp-tier-table">
+                                                <div className="bp-tier-hdr">
+                                                    <span className="bp-tier-hc" style={{flex:2}}>Tier</span>
+                                                    <span className="bp-tier-hc">Employer</span>
+                                                    <span className="bp-tier-hc">Employee</span>
+                                                </div>
+                                                {tiers.map((t, i) => (
+                                                    <div key={i} className="bp-tier-row">
+                                                        <span className="bp-tier-name" style={{flex:2}}>{t.name}</span>
+                                                        <span className="bp-tier-cost">₱{Number(t.employer_cost).toLocaleString()}</span>
+                                                        <span className="bp-tier-cost">₱{Number(t.employee_cost).toLocaleString()}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="bp-tier-none">No tiers configured</div>
+                                        )}
+                                    </div>
+
+                                    {(form.eligibility || form.description) && (
+                                        <div className="ap-section">
+                                            <h4 className="ap-sec-title">Additional Info</h4>
+                                            <div className="ap-fields">
+                                                {form.eligibility && <div className="ap-field ap-field-full">
+                                                    <label className="ap-label">Eligibility</label>
+                                                    <input className="ap-input" value={form.eligibility} disabled />
+                                                </div>}
+                                                {form.description && <div className="ap-field ap-field-full">
+                                                    <label className="ap-label">Notes</label>
+                                                    <textarea className="ap-input ap-textarea" value={form.description} disabled rows={2} />
+                                                </div>}
+                                            </div>
+                                        </div>
                                     )}
+                                </>
+                            ) : (
+                                /* Employees Tab */
+                                (() => {
+                                    const enrolled = employees.filter(e => { try { const eb = typeof e.enrolled_benefits === "string" ? JSON.parse(e.enrolled_benefits) : (e.enrolled_benefits || []); return Array.isArray(eb) && eb.includes(form.id); } catch { return false; } });
+                                    const notEnrolled = employees.filter(e => !enrolled.some(en => en.id === e.id));
+                                    return (
+                                        <>
+                                            <div className="ap-section">
+                                                <h4 className="ap-sec-title">Enrolled ({enrolled.length})</h4>
+                                                {enrolled.length > 0 ? (
+                                                    <div className="bf-detail-employees">
+                                                        {enrolled.map(e => (
+                                                            <div key={e.id} className="bf-detail-emp bf-detail-emp-enrolled">
+                                                                <span className="bf-detail-emp-av">{(e.first_name?.[0] || "") + (e.last_name?.[0] || "")}</span>
+                                                                <div className="bf-detail-emp-info">
+                                                                    <span className="bf-detail-emp-name">{e.first_name} {e.last_name}</span>
+                                                                    <span className="bf-detail-emp-dept">{e.department || e.position || "—"}</span>
+                                                                </div>
+                                                                <span className="bf-emp-badge bf-emp-badge-yes"><I name="check" size={10}/> Enrolled</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div style={{textAlign:"center",padding:"16px 0",color:"#ccc",fontSize:13}}>No employees enrolled yet.</div>
+                                                )}
+                                            </div>
+                                            {notEnrolled.length > 0 && (
+                                                <div className="ap-section">
+                                                    <h4 className="ap-sec-title">Not Enrolled ({notEnrolled.length})</h4>
+                                                    <div className="bf-detail-employees">
+                                                        {notEnrolled.map(e => (
+                                                            <div key={e.id} className="bf-detail-emp">
+                                                                <span className="bf-detail-emp-av" style={{background:"#f3f4f6",color:"#999"}}>{(e.first_name?.[0] || "") + (e.last_name?.[0] || "")}</span>
+                                                                <div className="bf-detail-emp-info">
+                                                                    <span className="bf-detail-emp-name" style={{color:"#888"}}>{e.first_name} {e.last_name}</span>
+                                                                    <span className="bf-detail-emp-dept">{e.department || e.position || "—"}</span>
+                                                                </div>
+                                                                <span className="bf-emp-badge bf-emp-badge-no">Not Enrolled</span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>
+                                    );
+                                })()
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            <div className="ap-section">
+                                <h4 className="ap-sec-title">Benefit Details</h4>
+                                <div className="ap-fields">
+                                    <div className="ap-field">
+                                        <label className="ap-label">Benefit Type <span className="ap-req"/></label>
+                                        <select className="ap-input" value={form.type||""} onChange={e=>set("type",e.target.value)}>
+                                            {BENEFIT_TYPES.map(t=><option key={t.value} value={t.value}>{t.label}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="ap-field">
+                                        <label className="ap-label">Benefit Name</label>
+                                        <input className="ap-input" value={form.name||""} onChange={e=>set("name",e.target.value)} placeholder={typeName(form.type)}/>
+                                    </div>
+                                    <div className="ap-field">
+                                        <label className="ap-label">Provider / Carrier</label>
+                                        <input className="ap-input" value={form.provider||""} onChange={e=>set("provider",e.target.value)} placeholder="e.g. Maxicare, Sun Life"/>
+                                    </div>
+                                    <div className="ap-field">
+                                        <label className="ap-label">Status</label>
+                                        <select className="ap-input" value={form.status||"Active"} onChange={e=>set("status",e.target.value)}>
+                                            <option value="Active">Active</option><option value="Inactive">Inactive</option><option value="Pending">Pending</option>
+                                        </select>
+                                    </div>
+                                    <div className="ap-field ap-field-full">
+                                        <label className="ap-label">Coverage Description</label>
+                                        <input className="ap-input" value={form.coverage||""} onChange={e=>set("coverage",e.target.value)} placeholder="e.g. Employee + Dependents, ₱1M coverage"/>
+                                    </div>
+                                    <div className="ap-field">
+                                        <label className="ap-label">Frequency</label>
+                                        <select className="ap-input" value={form.frequency||"Monthly"} onChange={e=>set("frequency",e.target.value)}>
+                                            {FREQUENCIES.map(f=><option key={f} value={f}>{f}</option>)}
+                                        </select>
+                                    </div>
                                 </div>
-                                <div className="bp-tier-edit-fields">
-                                    <div className="bp-field" style={{flex:2}}>
-                                        <label className="bp-label">Tier Name</label>
-                                        <input className="bp-input" value={t.name||""} onChange={e=>setTier(i,"name",e.target.value)} placeholder={tiers.length === 1 ? "Default" : `e.g. ${["Basic","Premium","Family"][i] || "Tier "+(i+1)}`} disabled={isView}/>
+                            </div>
+
+                            <div className="ap-section">
+                                <h4 className="ap-sec-title">Tiers & Costs <span className="ap-req"/></h4>
+                                <p style={{fontSize:12,color:"#bbb",margin:"-6px 0 12px"}}>Add one or more tiers with different cost levels.</p>
+                                {tiers.map((t, i) => (
+                                    <div key={i} className="bp-tier-edit">
+                                        <div className="bp-tier-edit-head">
+                                            <span className="bp-tier-edit-num">Tier {i + 1}</span>
+                                            {tiers.length > 1 && <button className="bp-tier-edit-rm" onClick={() => removeTier(i)}>✕</button>}
+                                        </div>
+                                        <div className="bp-tier-edit-fields">
+                                            <div className="ap-field" style={{flex:2}}>
+                                                <label className="ap-label">Tier Name</label>
+                                                <input className="ap-input" value={t.name||""} onChange={e=>setTier(i,"name",e.target.value)} placeholder={tiers.length === 1 ? "Default" : `e.g. ${["Basic","Premium","Family"][i] || "Tier "+(i+1)}`}/>
+                                            </div>
+                                            <div className="ap-field">
+                                                <label className="ap-label">Employer ₱</label>
+                                                <input className="ap-input" type="number" value={t.employer_cost||""} onChange={e=>setTier(i,"employer_cost",e.target.value)} placeholder="0"/>
+                                            </div>
+                                            <div className="ap-field">
+                                                <label className="ap-label">Employee ₱</label>
+                                                <input className="ap-input" type="number" value={t.employee_cost||""} onChange={e=>setTier(i,"employee_cost",e.target.value)} placeholder="0"/>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <div className="bp-field">
-                                        <label className="bp-label">Employer ₱</label>
-                                        <input className="bp-input" type="number" value={t.employer_cost||""} onChange={e=>setTier(i,"employer_cost",e.target.value)} placeholder="0" disabled={isView}/>
+                                ))}
+                                <button className="bp-tier-add" onClick={addTier}><I name="plus" size={13}/> Add Tier</button>
+                            </div>
+
+                            <div className="ap-section">
+                                <h4 className="ap-sec-title">Additional Information</h4>
+                                <div className="ap-fields">
+                                    <div className="ap-field ap-field-full">
+                                        <label className="ap-label">Eligibility Requirements</label>
+                                        <textarea className="ap-input ap-textarea" value={form.eligibility||""} onChange={e=>set("eligibility",e.target.value)} placeholder="e.g. After 6 months, regular employees only" rows={2}/>
                                     </div>
-                                    <div className="bp-field">
-                                        <label className="bp-label">Employee ₱</label>
-                                        <input className="bp-input" type="number" value={t.employee_cost||""} onChange={e=>setTier(i,"employee_cost",e.target.value)} placeholder="0" disabled={isView}/>
+                                    <div className="ap-field ap-field-full">
+                                        <label className="ap-label">Notes / Description</label>
+                                        <textarea className="ap-input ap-textarea" value={form.description||""} onChange={e=>set("description",e.target.value)} placeholder="Additional details..." rows={2}/>
                                     </div>
                                 </div>
                             </div>
-                        ))}
-
-                        {!isView && <button className="bp-tier-add" onClick={addTier}><I name="plus" size={13}/> Add Tier</button>}
-                    </div>
-
-                    <div className="bp-section">
-                        <h4 className="bp-sec-title">Additional Information</h4>
-                        <div className="bp-fields">
-                            <div className="bp-field bp-field-full">
-                                <label className="bp-label">Eligibility Requirements</label>
-                                <textarea className="bp-input bp-textarea" value={form.eligibility||""} onChange={e=>set("eligibility",e.target.value)} placeholder="e.g. After 6 months, regular employees only" rows={2} disabled={isView}/>
-                            </div>
-                            <div className="bp-field bp-field-full">
-                                <label className="bp-label">Notes / Description</label>
-                                <textarea className="bp-input bp-textarea" value={form.description||""} onChange={e=>set("description",e.target.value)} placeholder="Additional details..." rows={2} disabled={isView}/>
-                            </div>
-                        </div>
-                    </div>
+                        </>
+                    )}
                 </div>
 
-                <div className="bp-modal-foot">
-                    <div className="bp-foot-btns">
+                <div className="ap-modal-foot">
+                    <div className="ap-foot-btns">
                         {isView ? (<>
-                            {onDelete && <button className="bp-btn-danger" onClick={() => onDelete(idx)}>Delete</button>}
-                            <button className="bp-btn-primary" onClick={switchToEdit}><I name="briefcase" size={13}/> Edit Benefit</button>
+                            {onDelete && <button className="ap-btn-danger" onClick={() => onDelete(idx)}>Delete</button>}
+                            <button className="ap-btn-primary" onClick={switchToEdit}><I name="briefcase" size={13}/> Edit</button>
                         </>) : (<>
-                            <button className="bp-btn-cancel" onClick={currentMode === "edit" ? switchToView : onClose}>Cancel</button>
-                            <button className="bp-btn-primary" onClick={handleSave}>{isAdd ? "Add Benefit" : "Save Changes"}</button>
+                            <button className="ap-btn-cancel" onClick={currentMode === "edit" ? switchToView : onClose}>Cancel</button>
+                            <button className="ap-btn-primary" onClick={handleSave}>{isAdd ? "Add Benefit" : "Save Changes"}</button>
                         </>)}
                     </div>
                 </div>
@@ -364,14 +519,13 @@ function BenefitPanel({ open, mode, benefit, idx, employees, onClose, onSave, on
    STYLES
 ================================================================ */
 const benefitsCSS = `
-  .bf-wrap{display:flex;flex-direction:column;min-height:calc(100vh - 54px - 48px);max-height:calc(100vh - 54px - 48px);overflow-y:auto;background:#fff;border-radius:10px;padding:20px}
   .bf-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px}
   .bf-bar-count{font-size:13px;color:#888}
   .bf-btn-p{display:flex;align-items:center;gap:5px;padding:9px 18px;border:none;border-radius:8px;background:#2d9e8b;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s}
   .bf-btn-p:hover{background:#268a79}
 
-  .bf-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
-  .bf-card{background:#fff;border:1px solid #eee;border-radius:12px;padding:18px;border-top:3px solid;cursor:pointer;transition:all .15s}
+  .bf-grid{display:grid;grid-template-columns:1fr;gap:14px}
+  .bf-card{background:#fff;border:none;border-radius:12px;padding:18px;cursor:pointer;transition:all .15s}
   .bf-card:hover{border-color:#d4e8e2;box-shadow:0 2px 8px rgba(45,158,139,.06)}
   .bf-card-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:14px}
   .bf-card-ic{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
@@ -379,40 +533,78 @@ const benefitsCSS = `
   .bf-card-name{font-size:15px;font-weight:700;color:#222}
   .bf-card-provider{font-size:12px;color:#aaa;margin-top:1px}
   .bf-card-body{display:flex;flex-direction:column}
+  .bf-enrolled-list{margin-top:8px;padding-top:8px;border-top:1px solid #f0f0f0;display:flex;flex-direction:column;gap:6px}
+  .bf-enrolled-item{display:flex;align-items:center;gap:8px;padding:4px 0}
+  .bf-enrolled-av{width:26px;height:26px;border-radius:6px;background:#edf8f5;color:#2d9e8b;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .bf-enrolled-info{display:flex;flex-direction:column;min-width:0}
+  .bf-enrolled-name{font-size:12px;font-weight:600;color:#333}
+  .bf-enrolled-dept{font-size:10px;color:#aaa}
+
+  .bf-detail-employees{display:flex;flex-direction:column;gap:4px}
+  .bf-detail-emp{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fafbfa;border:1px solid #f0f0f0;border-radius:8px}
+  .bf-detail-emp-av{width:30px;height:30px;border-radius:7px;background:#edf8f5;color:#2d9e8b;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .bf-detail-emp-info{display:flex;flex-direction:column;min-width:0}
+  .bf-detail-emp-name{font-size:13px;font-weight:600;color:#333}
+  .bf-detail-emp-dept{font-size:11px;color:#aaa}
+  .bf-detail-emp-enrolled{background:#f0fdf4;border-color:#bbf7d0}
+
+  .bf-detail-tabs{display:flex;gap:0;padding:0;overflow-x:auto;justify-content:center;margin-bottom:16px}
+  .bf-detail-tab{display:flex;align-items:center;gap:5px;padding:10px 14px;border:none;outline:none;background:none;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;color:#aaa;cursor:pointer;transition:all .15s;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+  .bf-detail-tab:focus{outline:none;box-shadow:none}
+  .bf-detail-tab:hover{color:#666}
+  .bf-detail-tab-a{color:#2d9e8b;font-weight:600}
+
+  .bf-emp-badge{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600;margin-left:auto;flex-shrink:0}
+  .bf-emp-badge-yes{background:#dcfce7;color:#16a34a}
+  .bf-emp-badge-no{background:#f3f4f6;color:#999}
   .bf-card-row{display:flex;justify-content:space-between;padding:7px 0;font-size:13px;border-bottom:1px solid #f8f8f8}
   .bf-card-row:last-child{border-bottom:none}
   .bf-card-rl{color:#888}
   .bf-card-rv{font-weight:600;color:#333}
-  .bf-card-foot{display:flex;justify-content:space-between;margin-top:12px;padding-top:10px;border-top:1px solid #f3f3f3;font-size:11px;color:#bbb}
+
   .bf-badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
   .bf-b-active{background:#e0faf1;color:#0d9488}
   .bf-b-inactive{background:#f3f4f6;color:#999}
 
-  .bf-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px 20px;background:#fff;border-radius:10px}
+  .bf-empty{text-align:center;padding:60px 20px}
   .bf-empty-ic{width:72px;height:72px;border-radius:50%;background:#fef2f2;color:#ef4444;display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
   .bf-empty-t{font-size:18px;font-weight:700;color:#333;margin-bottom:6px}
   .bf-empty-d{font-size:13px;color:#999;max-width:340px;margin:0 auto}
 
-  /* Modal fixed-height layout */
-  .bp-modal-layout{display:flex;flex-direction:column;min-height:200px;max-height:60vh}
-  .bp-modal-scroll{flex:1;overflow-y:auto;padding:16px 0 0}
-  .bp-modal-foot{flex-shrink:0;padding:16px 0 0;margin-top:auto}
-  .bp-section{margin-bottom:20px}
-  .bp-sec-title{font-size:13px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px}
-  .bp-sec-desc{font-size:12px;color:#bbb;margin:-6px 0 12px}
-  .bp-req{color:#ef4444}
+  /* Panel form styles */
+  .ap-section{margin-bottom:20px}
+  .ap-sec-title{font-size:13px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px}
+  .ap-req{width:6px;height:6px;border-radius:50%;background:#ef4444;flex-shrink:0;display:inline-block}
+  .ap-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .ap-field{display:flex;flex-direction:column}
+  .ap-field-full{grid-column:1/-1}
+  .ap-label{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:#666;margin-bottom:5px}
+  .ap-input{width:100%;padding:9px 12px;border:1px solid #e0e0e0;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;color:#333;outline:none;transition:border-color .15s;background:#fff;box-sizing:border-box}
+  .ap-input:focus{border-color:#2d9e8b;box-shadow:0 0 0 2px rgba(45,158,139,.1)}
+  .ap-input:disabled{background:#fafbfa;color:#555;cursor:default}
+  .ap-textarea{resize:vertical;min-height:56px}
+  select.ap-input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;cursor:pointer}
+  select.ap-input:disabled{cursor:default}
+  .ap-foot-btns{display:flex;justify-content:flex-end;gap:8px}
+  .ap-btn-cancel{padding:9px 18px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#666;cursor:pointer}
+  .ap-btn-cancel:hover{background:#f5f5f5}
+  .ap-btn-primary{display:flex;align-items:center;gap:5px;padding:9px 22px;border:none;border-radius:8px;background:#2d9e8b;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s}
+  .ap-btn-primary:hover{background:#268a79}
+  .ap-btn-danger{padding:9px 16px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#ef4444;cursor:pointer;margin-right:auto}
+  .ap-btn-danger:hover{background:#ef4444;color:#fff}
+  .ap-modal-layout{display:flex;flex-direction:column;height:55vh;max-height:55vh}
+  .ap-modal-scroll{flex:1;overflow-y:auto;padding:16px 0 0}
+  .ap-modal-foot{flex-shrink:0;padding:16px 0 0;margin-top:auto}
 
-  .bp-input:disabled{background:#f9fafb;color:#888;cursor:default;border-color:#eee}
-  select.bp-input:disabled{cursor:default}
-
-  .bp-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .bp-field{display:flex;flex-direction:column}
-  .bp-field-full{grid-column:1/-1}
-  .bp-label{font-size:12px;font-weight:600;color:#666;margin-bottom:5px}
-  .bp-input{width:100%;padding:9px 12px;border:1px solid #e0e0e0;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;color:#333;outline:none;transition:border-color .15s;background:#fff;box-sizing:border-box}
-  .bp-input:focus{border-color:#2d9e8b;box-shadow:0 0 0 2px rgba(45,158,139,.1)}
-  .bp-textarea{resize:vertical;min-height:56px}
-  select.bp-input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;cursor:pointer}
+  /* Tier view table */
+  .bp-tier-table{border:1px solid #eee;border-radius:10px;overflow:hidden}
+  .bp-tier-hdr{display:flex;background:#fafbfa;padding:8px 14px;border-bottom:1px solid #eee}
+  .bp-tier-hc{flex:1;font-size:11px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.03em}
+  .bp-tier-row{display:flex;padding:12px 14px;border-bottom:1px solid #f5f5f5}
+  .bp-tier-row:last-child{border-bottom:none}
+  .bp-tier-name{flex:1;font-size:13px;font-weight:600;color:#333}
+  .bp-tier-cost{flex:1;font-size:13px;color:#555}
+  .bp-tier-none{font-size:13px;color:#ccc;text-align:center;padding:16px}
 
   /* Tier editor */
   .bp-tier-edit{border:1px solid #eee;border-radius:10px;padding:12px;margin-bottom:10px;background:#fafbfa}
@@ -421,18 +613,10 @@ const benefitsCSS = `
   .bp-tier-edit-rm{width:22px;height:22px;border:1px solid #e0e0e0;border-radius:6px;background:#fff;cursor:pointer;font-size:12px;color:#999;display:flex;align-items:center;justify-content:center}
   .bp-tier-edit-rm:hover{background:#fef2f2;border-color:#fecaca;color:#ef4444}
   .bp-tier-edit-fields{display:flex;gap:10px}
-  .bp-tier-edit-fields .bp-field{flex:1;margin-bottom:0}
+  .bp-tier-edit-fields .ap-field{flex:1;margin-bottom:0}
   .bp-tier-add{display:flex;align-items:center;gap:5px;padding:8px 14px;border:1px dashed #d4e8e2;border-radius:8px;background:#fafffe;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;color:#2d9e8b;cursor:pointer;width:100%;justify-content:center;transition:all .15s}
   .bp-tier-add:hover{background:#edf8f5;border-color:#2d9e8b}
 
-  .bp-foot-btns{display:flex;justify-content:flex-end;gap:8px}
-  .bp-btn-cancel{padding:9px 18px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#666;cursor:pointer}
-  .bp-btn-cancel:hover{background:#f5f5f5}
-  .bp-btn-primary{display:flex;align-items:center;gap:5px;padding:9px 22px;border:none;border-radius:8px;background:#2d9e8b;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s}
-  .bp-btn-primary:hover{background:#268a79}
-  .bp-btn-danger{padding:9px 16px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#ef4444;cursor:pointer;margin-right:auto}
-  .bp-btn-danger:hover{background:#ef4444;color:#fff}
-
   @media(max-width:768px){.bf-grid{grid-template-columns:1fr}}
-  @media(max-width:600px){.bp-fields{grid-template-columns:1fr}.bp-tier-edit-fields{flex-direction:column}.bp-modal-layout{max-height:65vh}}
+  @media(max-width:600px){.ap-modal-layout{max-height:65vh}.ap-fields{grid-template-columns:1fr}.bp-tier-edit-fields{flex-direction:column}}
 `;

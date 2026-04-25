@@ -31,11 +31,14 @@ func (r *EmployeeRepo) GetByCompany(ctx context.Context, companyID string) ([]mo
 		var enrolledJSON sql.NullString
 		var joinedDate, createdAt, updatedAt sql.NullString
 		var workScheduleID, scheduleName, scheduleType, scheduleColor sql.NullString
+		var userID, accountUsername sql.NullString
+		var accountActive sql.NullInt64
 		err := rows.Scan(
 			&e.ID, &e.CompanyID, &e.FirstName, &e.LastName, &e.MiddleName,
 			&e.Department, &e.Position, &joinedDate, &e.EmploymentType, &e.Status,
 			&enrolledJSON, &workScheduleID,
 			&createdAt, &updatedAt,
+			&userID, &accountUsername, &accountActive,
 			&scheduleName, &scheduleType, &scheduleColor,
 		)
 		if err != nil {
@@ -67,6 +70,16 @@ func (r *EmployeeRepo) GetByCompany(ctx context.Context, companyID string) ([]mo
 		if scheduleColor.Valid {
 			e.ScheduleColor = &scheduleColor.String
 		}
+		if userID.Valid {
+			e.UserID = &userID.String
+		}
+		if accountUsername.Valid {
+			e.AccountUsername = &accountUsername.String
+		}
+		if accountActive.Valid {
+			b := accountActive.Int64 != 0
+			e.AccountActive = &b
+		}
 		employees = append(employees, e)
 	}
 	return employees, nil
@@ -89,6 +102,8 @@ func (r *EmployeeRepo) GetByID(ctx context.Context, id, companyID string) (*mode
 	var enrolledJSON sql.NullString
 	var joinedDate, createdAt, updatedAt sql.NullString
 	var workScheduleID, scheduleName, scheduleType, scheduleColor sql.NullString
+	var userID, accountEmail, accountUsername, accountLastLoginAt sql.NullString
+	var accountActive sql.NullInt64
 	err = rows.Scan(
 		&ef.ID, &ef.CompanyID, &ef.FirstName, &ef.LastName, &ef.MiddleName,
 		&ef.Department, &ef.Position, &joinedDate, &ef.EmploymentType, &ef.Status,
@@ -97,6 +112,7 @@ func (r *EmployeeRepo) GetByID(ctx context.Context, id, companyID string) (*mode
 		&ef.PagibigEnc, &ef.TinEnc, &ef.BankNameEnc, &ef.BankAccountEnc,
 		&enrolledJSON, &workScheduleID,
 		&createdAt, &updatedAt,
+		&userID, &accountEmail, &accountUsername, &accountActive, &accountLastLoginAt,
 		&scheduleName, &scheduleType, &scheduleColor,
 	)
 	if err != nil {
@@ -127,6 +143,22 @@ func (r *EmployeeRepo) GetByID(ctx context.Context, id, companyID string) (*mode
 	}
 	if scheduleColor.Valid {
 		ef.ScheduleColor = &scheduleColor.String
+	}
+	if userID.Valid {
+		ef.UserID = &userID.String
+	}
+	if accountEmail.Valid {
+		ef.AccountEmail = &accountEmail.String
+	}
+	if accountUsername.Valid {
+		ef.AccountUsername = &accountUsername.String
+	}
+	if accountActive.Valid {
+		b := accountActive.Int64 != 0
+		ef.AccountActive = &b
+	}
+	if accountLastLoginAt.Valid {
+		ef.AccountLastLoginAt = &accountLastLoginAt.String
 	}
 
 	// Build encrypted map for frontend
@@ -254,4 +286,31 @@ func (r *EmployeeRepo) Delete(ctx context.Context, id string, meta *models.Reque
 		id, meta.CompanyID, meta.SessionID, meta.UserID, meta.IPAddress, meta.UserAgent,
 	)
 	return err
+}
+
+func (r *EmployeeRepo) LinkUser(ctx context.Context, employeeID, userID string, meta *models.RequestMeta) error {
+	_, err := r.db.ExecContext(ctx,
+		"UPDATE employees SET user_id = ? WHERE id = ? AND company_id = ?",
+		userID, employeeID, meta.CompanyID,
+	)
+	return err
+}
+
+// FindByUserID returns the ID of the employee linked to the given user in
+// this company, or an empty string if no such employee exists. Used by the
+// account creation handler to detect whether an existing user is already
+// attached to another employee.
+func (r *EmployeeRepo) FindByUserID(ctx context.Context, userID, companyID string) (string, error) {
+	var id string
+	err := r.db.QueryRowContext(ctx,
+		"SELECT id FROM employees WHERE user_id = ? AND company_id = ? AND is_deleted = 0 LIMIT 1",
+		userID, companyID,
+	).Scan(&id)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return id, nil
 }

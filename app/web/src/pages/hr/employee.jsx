@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faUsers, faBriefcase, faPesoSign, faShieldHalved, faMoneyBill1,
     faHeart, faFaceSmile, faEye, faMugSaucer, faTruck, faPhone,
     faBook, faHeartPulse, faStar, faCheck, faMagnifyingGlass, faPlus,
-    faLock, faCircleQuestion,
+    faLock, faCircleQuestion, faRotate, faKey,
 } from "@fortawesome/pro-light-svg-icons";
 
 /* Icon mapping for dynamic lookups */
@@ -15,8 +15,10 @@ const FA = {
     smile: faFaceSmile, eye: faEye, coffee: faMugSaucer, truck: faTruck,
     phone: faPhone, book: faBook, activity: faHeartPulse, star: faStar,
     check: faCheck, search: faMagnifyingGlass, plus: faPlus, lock: faLock,
+    key: faKey,
 };
 import Modal from "../components/Modal";
+import PermissionEditor from "../components/PermissionEditor";
 
 /* ================================================================
    COUNTRY CODES & PHONE FORMATTING
@@ -517,6 +519,19 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
     const [errors, setErrors] = useState({});
     const [activeSection, setActiveSection] = useState(sections[0].id);
     const [currentMode, setCurrentMode] = useState(mode);
+    const [createAccount, setCreateAccount] = useState(false);
+    const [accountUsername, setAccountUsername] = useState("");
+    const [tempPassword, setTempPassword] = useState("");
+    const [createdAccount, setCreatedAccount] = useState(null);
+    const [resetResult, setResetResult] = useState(null);
+    const [resetting, setResetting] = useState(false);
+    const [showLinkAccount, setShowLinkAccount] = useState(false);
+    const [linkEmail, setLinkEmail] = useState("");
+    const [linkUsername, setLinkUsername] = useState("");
+    const [linkPassword, setLinkPassword] = useState("");
+    const [empPermissions, setEmpPermissions] = useState(null);
+    const empPermissionsRef = useRef(null);
+    const [savingPerms, setSavingPerms] = useState(false);
 
     // Populate form when employee changes
     useEffect(() => {
@@ -526,7 +541,7 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
             if (employee.id) {
                 (async () => {
                     try {
-                        const API_URL = "http://localhost:8080/api/execute";
+                        const API_URL = "/api/execute";
                         const session = localStorage.getItem("ls_session");
                         const res = await fetch(`${API_URL}?action=get_employee`, {
                             method: "POST",
@@ -576,7 +591,186 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
         setCurrentMode(mode);
         setErrors({});
         setActiveSection(sections[0].id);
+        setCreateAccount(false);
+        setAccountUsername("");
+        setTempPassword("");
+        setCreatedAccount(null);
+        setResetResult(null);
+        setShowLinkAccount(false);
+        setLinkEmail("");
+        setLinkUsername("");
+        setLinkPassword("");
+        setEmpPermissions(employee?.permissions || null);
+        empPermissionsRef.current = employee?.permissions || null;
+        setSavingPerms(false);
+        // Load permissions if employee has account
+        if (employee?.id && (mode === "view" || mode === "edit")) {
+            (async () => {
+                try {
+                    const API_URL = "/api/execute";
+                    const session = localStorage.getItem("ls_session");
+                    const res = await fetch(`${API_URL}?action=get_permissions`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", ...(session ? { Authorization: `Bearer ${session}` } : {}) },
+                        body: JSON.stringify({ employee_id: employee.id }),
+                    });
+                    const json = await res.json();
+                    alert("Load permissions result: " + JSON.stringify(json));
+                    if (res.ok && json.success) {
+                        setEmpPermissions(json.data?.permissions || null);
+                        empPermissionsRef.current = json.data?.permissions || null;
+                    }
+                } catch (err) { alert("Load permissions error: " + err.message); }
+            })();
+        }
     }, [employee, mode, open]);
+
+    const generateTempPassword = useCallback(() => {
+        const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+        let pw = "";
+        const arr = crypto.getRandomValues(new Uint8Array(12));
+        for (let i = 0; i < 12; i++) pw += chars[arr[i] % chars.length];
+        setTempPassword(pw);
+        return pw;
+    }, []);
+
+    const handleResetEmployeePassword = async () => {
+        const userId = form.user_id || employee?.user_id;
+        if (!userId) return;
+        setResetting(true);
+        try {
+            const newPassword = generateTempPassword();
+            const newSalt = crypto.randomUUID();
+
+            const keyB64 = sessionStorage.getItem("ls_company_key");
+            if (!keyB64) {
+                alert("Company key not found. Please re-login.");
+                setResetting(false);
+                return;
+            }
+            const keyRaw = Uint8Array.from(atob(keyB64), c => c.charCodeAt(0));
+            const existingCompanyKey = await crypto.subtle.importKey("raw", keyRaw, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+
+            const { deriveKEK, wrapCompanyKey, generateKEMKeyPair, generateDSAKeyPair } = await import("../../utils/crypto");
+            const kek = await deriveKEK(newPassword, newSalt);
+            const wrappedKey = await wrapCompanyKey(existingCompanyKey, kek);
+
+            const kemPair = generateKEMKeyPair();
+            const dsaPair = generateDSAKeyPair();
+
+            const API_URL = "/api/execute";
+            const session = localStorage.getItem("ls_session");
+            const res = await fetch(`${API_URL}?action=admin_reset_password`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(session ? { Authorization: `Bearer ${session}` } : {}),
+                },
+                body: JSON.stringify({
+                    user_id: userId,
+                    password: newPassword,
+                    salt: newSalt,
+                    wrapped_company_key: Array.from(new Uint8Array(wrappedKey)),
+                    key_wrap_algorithm: "AES-KW",
+                    key_exchange_algorithm: "ML-KEM-768",
+                    public_key: Array.from(kemPair.encapsulationKey),
+                    signing_public_key: Array.from(dsaPair.verificationKey),
+                }),
+            });
+            const json = await res.json();
+            if (!res.ok || !json.success) throw new Error(json.error || "Reset failed");
+
+            setResetResult({
+                email: form.email || "unknown",
+                username: json.data?.username || "unknown",
+                tempPassword: newPassword,
+            });
+        } catch (err) {
+            alert("Failed to reset password: " + err.message);
+        }
+        setResetting(false);
+    };
+
+    const handleSavePermissions = async (newPerms) => {
+        const empId = employee?.id || form.id;
+        if (!empId) { alert("No employee_id found"); return; }
+        try {
+            const API_URL = "/api/execute";
+            const session = localStorage.getItem("ls_session");
+            const body = JSON.stringify({ employee_id: empId, permissions: newPerms });
+            alert("Saving permissions: " + body);
+            const res = await fetch(`${API_URL}?action=update_permissions`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...(session ? { Authorization: `Bearer ${session}` } : {}) },
+                body,
+            });
+            const json = await res.json();
+            alert("Save result: " + JSON.stringify(json));
+        } catch (err) {
+            alert("Save error: " + err.message);
+        }
+    };
+
+    const handleCreateAccountForExisting = async () => {
+        if (!linkEmail || !linkUsername || !linkPassword) {
+            alert("Email, username, and password are required.");
+            return;
+        }
+        setSaving(true);
+        try {
+            const accountSalt = crypto.randomUUID();
+
+            const keyB64 = sessionStorage.getItem("ls_company_key");
+            if (!keyB64) {
+                alert("Company key not found. Please re-login.");
+                setSaving(false);
+                return;
+            }
+            const keyRaw = Uint8Array.from(atob(keyB64), c => c.charCodeAt(0));
+            const existingCompanyKey = await crypto.subtle.importKey("raw", keyRaw, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+
+            const { deriveKEK, wrapCompanyKey, generateKEMKeyPair, generateDSAKeyPair } = await import("../../utils/crypto");
+            const kek = await deriveKEK(linkPassword, accountSalt);
+            const wrappedKey = await wrapCompanyKey(existingCompanyKey, kek);
+            const kemPair = generateKEMKeyPair();
+            const dsaPair = generateDSAKeyPair();
+
+            const API_URL = "/api/execute";
+            const session = localStorage.getItem("ls_session");
+            const res = await fetch(`${API_URL}?action=create_employee_account`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(session ? { Authorization: `Bearer ${session}` } : {}),
+                },
+                body: JSON.stringify({
+                    employee_id: employee.id,
+                    email: linkEmail,
+                    username: linkUsername,
+                    password: linkPassword,
+                    salt: accountSalt,
+                    wrapped_company_key: Array.from(new Uint8Array(wrappedKey)),
+                    key_wrap_algorithm: "AES-KW",
+                    key_exchange_algorithm: "ML-KEM-768",
+                    public_key: Array.from(kemPair.encapsulationKey),
+                    signing_public_key: Array.from(dsaPair.verificationKey),
+                }),
+            });
+            const json = await res.json();
+            if (!res.ok || !json.success) throw new Error(json.error || "Failed");
+
+            setShowLinkAccount(false);
+            setCreatedAccount({
+                email: linkEmail,
+                username: json.data?.username || linkUsername,
+                tempPassword: linkPassword,
+                reused: !!json.data?.reused,
+            });
+        } catch (err) {
+            alert("Failed to create account: " + err.message);
+        }
+        setSaving(false);
+    };
 
     if (!open) return null;
 
@@ -651,9 +845,42 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
             if (form.phone_country_code) payload.phone_country_code = form.phone_country_code;
             if (isEdit && employee?.id) payload.id = employee.id;
 
+            // Account creation: wrap EXISTING company key for new user
+            if (isAdd && createAccount && form.email && accountUsername && tempPassword) {
+                const accountSalt = crypto.randomUUID();
+
+                const keyB64 = sessionStorage.getItem("ls_company_key");
+                if (!keyB64) {
+                    alert("Company key not found in session. Please re-login.");
+                    setSaving(false);
+                    return;
+                }
+                const keyRaw2 = Uint8Array.from(atob(keyB64), c => c.charCodeAt(0));
+                const existingCompanyKey = await crypto.subtle.importKey("raw", keyRaw2, { name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"]);
+
+                const { deriveKEK, wrapCompanyKey } = await import("../../utils/crypto");
+                const kek = await deriveKEK(tempPassword, accountSalt);
+                const wrappedKey = await wrapCompanyKey(existingCompanyKey, kek);
+
+                const { generateKEMKeyPair, generateDSAKeyPair } = await import("../../utils/crypto");
+                const kemPair = generateKEMKeyPair();
+                const dsaPair = generateDSAKeyPair();
+
+                payload.create_account = true;
+                payload.account_email = form.email;
+                payload.account_username = accountUsername;
+                payload.account_password = tempPassword;
+                payload.account_salt = accountSalt;
+                payload.wrapped_company_key = Array.from(new Uint8Array(wrappedKey));
+                payload.key_wrap_algorithm = "AES-KW";
+                payload.key_exchange_algorithm = "ML-KEM-768";
+                payload.public_key = Array.from(kemPair.encapsulationKey);
+                payload.signing_public_key = Array.from(dsaPair.verificationKey);
+            }
+
             // Call API (separate try/catch for clearer errors)
             try {
-                const API_URL = "http://localhost:8080/api/execute";
+                const API_URL = "/api/execute";
                 const session = localStorage.getItem("ls_session");
                 const action = isAdd ? "create_employee" : "update_employee";
                 const res = await fetch(`${API_URL}?action=${action}`, {
@@ -667,9 +894,25 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                 const json = await res.json();
                 if (!res.ok || !json.success) throw new Error(json.error || "Save failed");
 
-                onSave?.(json.data || payload);
-                if (isAdd) setForm({ status: "Active", employment_type: "Regular" });
-                onClose();
+                if (json.data?.account_created) {
+                    setCreatedAccount({
+                        email: form.email,
+                        username: accountUsername,
+                        tempPassword: tempPassword,
+                    });
+                    onSave?.(json.data?.employee || payload);
+                } else {
+                    // Save permissions if changed
+                    const empId = form.id || employee?.id;
+                    const permsToSave = empPermissionsRef.current;
+                    alert("handleSave perms check: empId=" + empId + " perms=" + JSON.stringify(permsToSave));
+                    if (empId && permsToSave && Object.keys(permsToSave).length > 0) {
+                        await handleSavePermissions(permsToSave);
+                    }
+                    onSave?.(json.data || payload);
+                    if (isAdd) setForm({ status: "Active", employment_type: "Regular" });
+                    onClose();
+                }
             } catch (apiErr) {
                 console.error("API save failed:", apiErr);
                 alert("Failed to save employee: " + apiErr.message);
@@ -703,6 +946,7 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
 
     const sensitiveCount = sections.flatMap(s => s.fields).filter(f => f.sensitive).length;
     const currentSection = sections.find(s => s.id === activeSection);
+    const hasAccount = !!(form.user_id || employee?.user_id);
 
     /* ── Shared form content (used in both modal and panel) ── */
     const renderTabs = () => (
@@ -718,108 +962,221 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                     <FontAwesomeIcon icon={FA[s.icon] || faStar} style={{fontSize:13}} /> {s.title.split(" ")[0]}
                 </button>
             ))}
-        </div>
-    );
-
-    const renderSectionBody = () => currentSection && (
-        <div className="ep-sec">
-            <div className="ep-sec-head">
-                <h3 className="ep-sec-title">{currentSection.title}</h3>
-                {currentSection.encrypted && (
-                    <span className="ep-enc-tag"><FontAwesomeIcon icon={faLock} style={{fontSize:11}} /> Encrypted</span>
-                )}
-            </div>
-
-            <div className="ep-fields">
-                {currentSection.fields.map(f => (
-                    <div key={f.id} className={`ep-field ${f.type === "textarea" ? "ep-field-full" : ""}`}>
-                        <label className="ep-label">
-                            {f.label}
-                            {f.required && <span className="ep-req"/>}
-                            {f.sensitive && <span className="ep-lock-dot"/>}
-                        </label>
-                        {f.type === "select" ? (() => {
-                            const opts = f.options === "__departments__"
-                                ? departments.map(d => d.name)
-                                : f.options === "__positions__"
-                                    ? positions.map(p => p.name)
-                                    : f.options;
-                            return (
-                                <select
-                                    className={`ep-input ${errors[f.id] ? "ep-input-err" : ""}`}
-                                    value={form[f.id] || ""}
-                                    onChange={e => set(f.id, e.target.value)}
-                                    disabled={isView}
-                                >
-                                    <option value="">Select...</option>
-                                    {opts.map(o => <option key={o} value={o}>{o}</option>)}
-                                </select>
-                            );
-                        })() : f.type === "textarea" ? (
-                            <textarea
-                                className={`ep-input ep-textarea ${errors[f.id] ? "ep-input-err" : ""}`}
-                                value={form[f.id] || ""}
-                                onChange={e => set(f.id, e.target.value)}
-                                placeholder={f.placeholder || ""}
-                                rows={2}
-                                disabled={isView}
-                            />
-                        ) : f.id === "phone" ? (
-                            isView ? (
-                                <input
-                                    className="ep-input"
-                                    value={form[f.id] ? displayPhone(form[f.id], form.phone_country_code) : "—"}
-                                    disabled
-                                />
-                            ) : (
-                                <PhoneInput
-                                    value={form.phone || ""}
-                                    countryCode={form.phone_country_code || "PH"}
-                                    onChange={(val) => set("phone", val)}
-                                    onCountryChange={(cc) => set("phone_country_code", cc)}
-                                    error={errors.phone}
-                                />
-                            )
-                        ) : (
-                            <div className="ep-input-wrap">
-                                {f.prefix && !isView && <span className="ep-prefix">{f.prefix}</span>}
-                                <input
-                                    className={`ep-input ${f.prefix && !isView ? "ep-input-prefixed" : ""} ${errors[f.id] ? "ep-input-err" : ""}`}
-                                    type={isView ? "text" : f.type}
-                                    value={
-                                        isView
-                                            ? (f.prefix && form[f.id] ? `${f.prefix}${Number(form[f.id]).toLocaleString()}` :
-                                                f.type === "date" && form[f.id] ? new Date(form[f.id]).toLocaleDateString("en-PH", {year:"numeric",month:"long",day:"numeric"}) :
-                                                    (form[f.id] || "—"))
-                                            : (f.type === "date" && form[f.id] ? form[f.id].substring(0, 10) : (form[f.id] || ""))
-                                    }
-                                    onChange={e => set(f.id, e.target.value)}
-                                    placeholder={f.placeholder || ""}
-                                    disabled={isView}
-                                />
-                            </div>
-                        )}
-                        {errors[f.id] && <span className="ep-err">{errors[f.id]}</span>}
-                    </div>
-                ))}
-            </div>
-
-            {/* Benefits list — shown below salary in Compensation tab */}
-            {currentSection.hasBenefits && (
-                <>
-                    <div className="ep-benefits-divider">
-                        <span className="ep-benefits-divider-label">Benefits</span>
-                    </div>
-                    <BenefitsSection
-                        benefits={benefits}
-                        enrolled={form.enrolled_benefits || []}
-                        isView={isView}
-                        onChange={(ids) => set("enrolled_benefits", ids)}
-                    />
-                </>
+            {hasAccount && (
+                <button
+                    className={`ep-tab ${activeSection === "account" ? "ep-tab-on" : ""}`}
+                    onClick={() => setActiveSection("account")}
+                >
+                    <FontAwesomeIcon icon={faKey} style={{fontSize:13}} /> Account
+                </button>
+            )}
+            {hasAccount && (
+                <button
+                    className={`ep-tab ${activeSection === "permissions" ? "ep-tab-on" : ""}`}
+                    onClick={() => setActiveSection("permissions")}
+                >
+                    <FontAwesomeIcon icon={faShieldHalved} style={{fontSize:13}} /> Permissions
+                </button>
             )}
         </div>
     );
+
+    const renderSectionBody = () => {
+        if (activeSection === "permissions" && hasAccount) {
+            return (
+                <div className="ep-sec">
+                    <div className="ep-sec-head">
+                        <h3 className="ep-sec-title">Permissions</h3>
+                    </div>
+                    <p style={{fontSize:12, color:"#999", marginBottom:14}}>
+                        Toggle modules and functions this employee can access. Self-service is always included.
+                    </p>
+                    <PermissionEditor
+                        permissions={empPermissions}
+                        onChange={(newPerms) => { setEmpPermissions(newPerms); empPermissionsRef.current = newPerms; }}
+                        disabled={isView}
+                    />
+                </div>
+            );
+        }
+        if (activeSection === "account" && hasAccount) {
+            return (
+                <div className="ep-sec">
+                    <div className="ep-sec-head">
+                        <h3 className="ep-sec-title">Account</h3>
+                        <span className="ep-enc-tag"><FontAwesomeIcon icon={faLock} style={{fontSize:11}} /> PQ Encrypted</span>
+                    </div>
+                    <div className="ep-fields">
+                        <div className="ep-field">
+                            <label className="ep-label">Email</label>
+                            <input className="ep-input" type="email" value={form.account_email || employee?.account_email || form.email || ""} readOnly disabled />
+                        </div>
+                        <div className="ep-field">
+                            <label className="ep-label">Username</label>
+                            <input className="ep-input" type="text" value={form.account_username || employee?.account_username || ""} readOnly disabled />
+                        </div>
+                        <div className="ep-field ep-field-full">
+                            <label className="ep-label">Password</label>
+                            <input className="ep-input" type="password" value="••••••••••••" readOnly disabled style={{fontFamily:"monospace", letterSpacing:2}} />
+                            <span style={{fontSize:11, color:"#999", marginTop:3, display:"block"}}>Password is hashed and cannot be displayed.</span>
+                            <button
+                                className="ep-btn-warn"
+                                onClick={handleResetEmployeePassword}
+                                disabled={resetting}
+                                style={{marginTop:10}}
+                            >
+                                <FontAwesomeIcon icon={faKey} style={{fontSize:13}} /> {resetting ? "Resetting..." : "Reset Password"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        return currentSection && (
+            <div className="ep-sec">
+                <div className="ep-sec-head">
+                    <h3 className="ep-sec-title">{currentSection.title}</h3>
+                    {currentSection.encrypted && (
+                        <span className="ep-enc-tag"><FontAwesomeIcon icon={faLock} style={{fontSize:11}} /> Encrypted</span>
+                    )}
+                </div>
+
+                <div className="ep-fields">
+                    {currentSection.fields.map(f => (
+                        <div key={f.id} className={`ep-field ${f.type === "textarea" ? "ep-field-full" : ""}`}>
+                            <label className="ep-label">
+                                {f.label}
+                                {f.required && <span className="ep-req"/>}
+                                {f.sensitive && <span className="ep-lock-dot"/>}
+                            </label>
+                            {f.type === "select" ? (() => {
+                                const opts = f.options === "__departments__"
+                                    ? departments.map(d => d.name)
+                                    : f.options === "__positions__"
+                                        ? positions.map(p => p.name)
+                                        : f.options;
+                                return (
+                                    <select
+                                        className={`ep-input ${errors[f.id] ? "ep-input-err" : ""}`}
+                                        value={form[f.id] || ""}
+                                        onChange={e => set(f.id, e.target.value)}
+                                        disabled={isView}
+                                    >
+                                        <option value="">Select...</option>
+                                        {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                                    </select>
+                                );
+                            })() : f.type === "textarea" ? (
+                                <textarea
+                                    className={`ep-input ep-textarea ${errors[f.id] ? "ep-input-err" : ""}`}
+                                    value={form[f.id] || ""}
+                                    onChange={e => set(f.id, e.target.value)}
+                                    placeholder={f.placeholder || ""}
+                                    rows={2}
+                                    disabled={isView}
+                                />
+                            ) : f.id === "phone" ? (
+                                isView ? (
+                                    <input
+                                        className="ep-input"
+                                        value={form[f.id] ? displayPhone(form[f.id], form.phone_country_code) : "—"}
+                                        disabled
+                                    />
+                                ) : (
+                                    <PhoneInput
+                                        value={form.phone || ""}
+                                        countryCode={form.phone_country_code || "PH"}
+                                        onChange={(val) => set("phone", val)}
+                                        onCountryChange={(cc) => set("phone_country_code", cc)}
+                                        error={errors.phone}
+                                    />
+                                )
+                            ) : (
+                                <div className="ep-input-wrap">
+                                    {f.prefix && !isView && <span className="ep-prefix">{f.prefix}</span>}
+                                    <input
+                                        className={`ep-input ${f.prefix && !isView ? "ep-input-prefixed" : ""} ${errors[f.id] ? "ep-input-err" : ""}`}
+                                        type={isView ? "text" : f.type}
+                                        value={
+                                            isView
+                                                ? (f.prefix && form[f.id] ? `${f.prefix}${Number(form[f.id]).toLocaleString()}` :
+                                                    f.type === "date" && form[f.id] ? new Date(form[f.id]).toLocaleDateString("en-PH", {year:"numeric",month:"long",day:"numeric"}) :
+                                                        (form[f.id] || "—"))
+                                                : (f.type === "date" && form[f.id] ? form[f.id].substring(0, 10) : (form[f.id] || ""))
+                                        }
+                                        onChange={e => set(f.id, e.target.value)}
+                                        placeholder={f.placeholder || ""}
+                                        disabled={isView}
+                                    />
+                                </div>
+                            )}
+                            {errors[f.id] && <span className="ep-err">{errors[f.id]}</span>}
+                        </div>
+                    ))}
+                </div>
+
+                {/* Benefits list — shown below salary in Compensation tab */}
+                {currentSection.hasBenefits && (
+                    <>
+                        <div className="ep-benefits-divider">
+                            <span className="ep-benefits-divider-label">Benefits</span>
+                        </div>
+                        <BenefitsSection
+                            benefits={benefits}
+                            enrolled={form.enrolled_benefits || []}
+                            isView={isView}
+                            onChange={(ids) => set("enrolled_benefits", ids)}
+                        />
+                    </>
+                )}
+
+                {/* Account creation — only in add mode, last section */}
+                {isAdd && activeSection === sections[sections.length - 1].id && (
+                    <div style={{marginTop: 16, borderTop: "1px solid #eee", paddingTop: 16}}>
+                        <div className="ep-sec-head">
+                            <h3 className="ep-sec-title">System Account</h3>
+                            <span className="ep-enc-tag"><FontAwesomeIcon icon={faLock} style={{fontSize:11}} /> PQ Encrypted</span>
+                        </div>
+                        <div style={{padding: "12px 0"}}>
+                            <label style={{display:"flex", alignItems:"center", gap:10, cursor:"pointer", fontSize:14}}>
+                                <input type="checkbox" checked={createAccount} onChange={e => {
+                                    setCreateAccount(e.target.checked);
+                                    if (e.target.checked && !tempPassword) generateTempPassword();
+                                    if (e.target.checked && !accountUsername && form.first_name) {
+                                        setAccountUsername((form.first_name + (form.last_name || "")).toLowerCase().replace(/\s+/g, ""));
+                                    }
+                                }} style={{width:18, height:18, accentColor:"#2d6a4f"}} />
+                                <span style={{fontWeight:500, color:"#333"}}>Create login account for this employee</span>
+                            </label>
+                        </div>
+                        {createAccount && (
+                            <div className="ep-fields">
+                                <div className="ep-field">
+                                    <label className="ep-label">Account Email<span className="ep-req"/></label>
+                                    <input className="ep-input" type="email" value={form.email || ""} onChange={e => set("email", e.target.value)} placeholder="employee@company.com" />
+                                    <span style={{fontSize:11, color:"#999", marginTop:3}}>Uses the email from Personal Information</span>
+                                </div>
+                                <div className="ep-field">
+                                    <label className="ep-label">Username<span className="ep-req"/></label>
+                                    <input className="ep-input" type="text" value={accountUsername} onChange={e => setAccountUsername(e.target.value)} placeholder="jdoe" />
+                                </div>
+                                <div className="ep-field">
+                                    <label className="ep-label">Temporary Password</label>
+                                    <div className="ep-input-wrap">
+                                        <input className="ep-input" type="text" value={tempPassword} readOnly style={{fontFamily:"monospace", letterSpacing:1}} />
+                                        <button onClick={generateTempPassword} type="button" title="Regenerate" style={{position:"absolute", right:8, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:"#888", cursor:"pointer", padding:4}}>
+                                            <FontAwesomeIcon icon={faRotate} />
+                                        </button>
+                                    </div>
+                                    <span style={{fontSize:11, color:"#999", marginTop:3}}>Share this password with the employee. They should change it on first login.</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        );
+    };
 
     /* ── ADD / EDIT MODE → Modal ── */
     if (isAdd || isEdit) {
@@ -846,7 +1203,7 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                         <div className="ep-foot-btns">
                             <button className="ep-btn-cancel" onClick={isEdit ? switchToView : onClose}>Cancel</button>
                             <button className="ep-btn-primary" onClick={handleSave} disabled={saving}>
-                                {saving ? "Encrypting..." : isAdd ? "Save Employee" : "Save Changes"}
+                                {saving ? "Encrypting..." : isAdd ? (createAccount ? "Save & Create Account" : "Save Employee") : "Save Changes"}
                             </button>
                         </div>
                     </div>
@@ -879,11 +1236,98 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                         <span className="ep-legend-item"><span className="ep-legend-dot ep-legend-dot-enc"></span> Encrypted</span>
                     </div>
                     <div className="ep-foot-btns">
+                        {!hasAccount && (
+                            <button className="ep-btn-accent" style={{marginRight:"auto"}} onClick={() => {
+                                setShowLinkAccount(true);
+                                setLinkEmail(form.email || "");
+                                setLinkUsername((form.first_name + (form.last_name || "")).toLowerCase().replace(/\s+/g, ""));
+                                const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+                                let pw = "";
+                                const arr = crypto.getRandomValues(new Uint8Array(12));
+                                for (let i = 0; i < 12; i++) pw += chars[arr[i] % chars.length];
+                                setLinkPassword(pw);
+                            }}>
+                                Create Account
+                            </button>
+                        )}
                         {onDelete && <button className="ep-btn-danger" onClick={() => { onDelete(employee); onClose(); }}>Delete</button>}
                         <button className="ep-btn-primary" onClick={switchToEdit}>Edit</button>
                     </div>
                 </div>
             </div>
+
+            {/* Create Account for Existing Employee Dialog */}
+            {showLinkAccount && (
+                <div className="ep-dialog-overlay">
+                    <div className="ep-dialog" style={{textAlign:"left"}}>
+                        <h3 style={{textAlign:"center", marginBottom:16}}>Create Account for {form.first_name} {form.last_name}</h3>
+                        <div style={{display:"flex", flexDirection:"column", gap:14}}>
+                            <div>
+                                <label className="ep-label">Email<span className="ep-req"/></label>
+                                <input className="ep-input" type="email" value={linkEmail} onChange={e => setLinkEmail(e.target.value)} placeholder="employee@company.com" />
+                            </div>
+                            <div>
+                                <label className="ep-label">Username<span className="ep-req"/></label>
+                                <input className="ep-input" type="text" value={linkUsername} onChange={e => setLinkUsername(e.target.value)} placeholder="jdoe" />
+                            </div>
+                            <div>
+                                <label className="ep-label">Temporary Password</label>
+                                <input className="ep-input" type="text" value={linkPassword} readOnly style={{fontFamily:"monospace", letterSpacing:1}} />
+                                <span style={{fontSize:11, color:"#999", marginTop:3, display:"block"}}>Share this with the employee after creation.</span>
+                            </div>
+                        </div>
+                        <div style={{display:"flex", gap:8, marginTop:20, justifyContent:"flex-end"}}>
+                            <button className="ep-btn-cancel" onClick={() => setShowLinkAccount(false)}>Cancel</button>
+                            <button className="ep-btn-primary" onClick={handleCreateAccountForExisting} disabled={saving}>
+                                {saving ? "Creating..." : "Create Account"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Account Created Dialog */}
+            {createdAccount && (
+                <div className="ep-dialog-overlay">
+                    <div className="ep-dialog">
+                        <div style={{color:"#2d6a4f", marginBottom:12}}><FontAwesomeIcon icon={faCheck} style={{fontSize:32}} /></div>
+                        <h3>Employee and Account Created</h3>
+                        <p>Share these credentials with the employee:</p>
+                        <div className="ep-cred-box">
+                            <div className="ep-cred-row"><span>Email</span><strong>{createdAccount.email}</strong></div>
+                            <div className="ep-cred-row"><span>Username</span><strong>{createdAccount.username}</strong></div>
+                            <div className="ep-cred-row"><span>Temporary Password</span><strong style={{fontFamily:"monospace"}}>{createdAccount.tempPassword}</strong></div>
+                        </div>
+                        <p style={{fontSize:12, color:"#e67700", marginTop:8}}>This password will not be shown again. Make sure to copy it now.</p>
+                        <button className="ep-btn-primary" style={{marginTop:16, width:"100%"}} onClick={() => {
+                            setCreatedAccount(null);
+                            setForm({ status: "Active", employment_type: "Regular" });
+                            setCreateAccount(false);
+                            setAccountUsername("");
+                            setTempPassword("");
+                            onClose();
+                        }}>Done</button>
+                    </div>
+                </div>
+            )}
+
+            {/* Reset Password Dialog */}
+            {resetResult && (
+                <div className="ep-dialog-overlay">
+                    <div className="ep-dialog">
+                        <div style={{color:"#b45309", marginBottom:12}}><FontAwesomeIcon icon={faKey} style={{fontSize:32}} /></div>
+                        <h3>Password Reset Complete</h3>
+                        <p>Share these new credentials with the employee:</p>
+                        <div className="ep-cred-box">
+                            <div className="ep-cred-row"><span>Email</span><strong>{resetResult.email}</strong></div>
+                            <div className="ep-cred-row"><span>Username</span><strong>{resetResult.username}</strong></div>
+                            <div className="ep-cred-row"><span>New Password</span><strong style={{fontFamily:"monospace"}}>{resetResult.tempPassword}</strong></div>
+                        </div>
+                        <p style={{fontSize:12, color:"#e67700", marginTop:8}}>This password will not be shown again. Make sure to copy it now.</p>
+                        <button className="ep-btn-primary" style={{marginTop:16, width:"100%"}} onClick={() => setResetResult(null)}>Done</button>
+                    </div>
+                </div>
+            )}
 
             <style>{panelCSS}</style>
         </Modal>
@@ -1011,4 +1455,19 @@ const panelCSS = `
   .ep-phone-dd-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ep-phone-dd-dial{font-size:11px;color:#999;flex-shrink:0}
   .ep-phone-dd-empty{padding:16px;text-align:center;font-size:12px;color:#bbb}
+
+  .ep-btn-warn{padding:9px 16px;background:#fef3c7;color:#92400e;border:1px solid #fde68a;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:6px}
+  .ep-btn-warn:hover{background:#fde68a}
+  .ep-btn-warn:disabled{opacity:0.5;cursor:not-allowed}
+  .ep-btn-accent{padding:9px 16px;background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:6px}
+  .ep-btn-accent:hover{background:#bae6fd}
+
+  .ep-dialog-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;z-index:9999}
+  .ep-dialog{background:#fff;border-radius:16px;padding:30px;max-width:380px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.15)}
+  .ep-dialog h3{font-size:18px;font-weight:700;color:#222;margin-bottom:6px}
+  .ep-dialog p{font-size:13px;color:#666;margin-bottom:14px}
+  .ep-cred-box{background:#f8faf9;border:1px solid #e0ebe4;border-radius:10px;padding:14px;text-align:left}
+  .ep-cred-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;font-size:13px}
+  .ep-cred-row span{color:#888}
+  .ep-cred-row strong{color:#222}
 `;

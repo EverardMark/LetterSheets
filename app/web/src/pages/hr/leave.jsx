@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
+import Modal from "../components/Modal";
 
 const API_URL = "http://localhost:8080/api/execute";
 
@@ -40,32 +41,28 @@ function daysBetween(a, b) {
 }
 
 export default function LeaveTab({ employees = [] }) {
+    const company = JSON.parse(localStorage.getItem("ls_company") || "{}");
+    const currentUser = JSON.parse(localStorage.getItem("ls_user") || "{}");
+    const isEmployee = company.role === "employee";
+    const myEmployee = isEmployee ? employees.find(e => e.user_id === currentUser.id) : null;
+
     const [leaves, setLeaves] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [search, setSearch] = useState("");
-    const [debouncedSearch, setDebouncedSearch] = useState("");
-    const [searching, setSearching] = useState(false);
     const [statusFilter, setStatusFilter] = useState("");
+    const [search, setSearch] = useState("");
     const [panel, setPanel] = useState({ open: false, mode: "add", leave: null });
     const [rejectModal, setRejectModal] = useState({ open: false, id: null, note: "" });
 
     const load = useCallback(async () => {
         setLoading(true);
         try {
-            const data = await api("get_leaves", {});
+            const data = await api("get_leaves", { status: statusFilter });
             setLeaves(data.leaves || []);
         } catch { setLeaves([]); }
         setLoading(false);
-    }, []);
+    }, [statusFilter]);
 
     useEffect(() => { load(); }, [load]);
-
-    useEffect(() => {
-        if (!search) { setDebouncedSearch(""); setSearching(false); return; }
-        setSearching(true);
-        const t = setTimeout(() => { setDebouncedSearch(search); setSearching(false); }, 300);
-        return () => clearTimeout(t);
-    }, [search]);
 
     const openAdd = () => setPanel({ open: true, mode: "add", leave: null });
     const openView = (l) => setPanel({ open: true, mode: "view", leave: l });
@@ -104,84 +101,86 @@ export default function LeaveTab({ employees = [] }) {
         } catch (e) { alert("Delete failed: " + e.message); }
     };
 
-    // Search + status filter
-    const filtered = leaves.filter(l => {
-        if (debouncedSearch) {
-            const name = `${l.first_name} ${l.last_name}`.toLowerCase();
-            if (!name.includes(debouncedSearch.toLowerCase()) && !(l.leave_type || "").toLowerCase().includes(debouncedSearch.toLowerCase())) return false;
-        }
-        if (statusFilter && l.status !== statusFilter) return false;
-        return true;
+    // Stats — filter to own leaves for employee role
+    const myLeaves = isEmployee && myEmployee
+        ? leaves.filter(l => l.employee_id === myEmployee.id)
+        : leaves;
+    // Search filter
+    const filtered = myLeaves.filter(l => {
+        if (!search) return true;
+        const name = `${l.first_name} ${l.last_name}`.toLowerCase();
+        return name.includes(search.toLowerCase()) || (l.leave_type || "").toLowerCase().includes(search.toLowerCase());
     });
 
-    return (<div className="lv-wrap">
+    return (<>
         {/* Bar */}
         <div className="lv-bar">
             <div className="lv-bar-left">
-                <div className="lv-search-wrap">
-                    {searching
-                        ? <div className="lv-spinner" />
-                        : <I name="search" size={14} />
-                    }
-                    <input className="lv-search" placeholder="Search leaves..." value={search} onChange={e => setSearch(e.target.value)} />
+                <span className="lv-bar-count">{filtered.length} requests</span>
+                <div className="lv-tabs">
+                    {["", "Pending", "Approved", "Rejected"].map(s => (
+                        <button key={s} className={`lv-tab ${statusFilter === s ? "lv-tab-a" : ""}`} onClick={() => setStatusFilter(s)}>
+                            {s || "All"}
+                        </button>
+                    ))}
                 </div>
-                <select className="lv-status-filter" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-                    <option value="">All Status</option>
-                    <option value="Pending">Requests</option>
-                    <option value="Approved">Approved</option>
-                    <option value="Rejected">Denied</option>
-                </select>
             </div>
-            <button className="lv-btn-p" onClick={openAdd}><I name="plus" size={14} /> New Request</button>
+            <div className="lv-bar-right">
+                {!isEmployee && <input className="lv-search" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />}
+                <button className="lv-btn-p" onClick={openAdd}><I name="plus" size={14} /> New Request</button>
+            </div>
         </div>
 
         {/* Table */}
-        {loading || searching ? (
-            <div className="lv-empty">
-                <div className="lv-loading-spinner" />
-                <div className="lv-empty-t">{loading ? "Loading..." : "Searching..."}</div>
-                <div className="lv-empty-d">{loading ? "Fetching leave records" : "Looking for matching results"}</div>
-            </div>
+        {loading ? (
+            <div className="lv-loading">Loading...</div>
         ) : filtered.length === 0 ? (
             <div className="lv-empty">
-                <div className="lv-empty-ic"><I name="calendar" size={28} /></div>
-                <div className="lv-empty-t">{debouncedSearch || statusFilter ? "No matches found" : "No leave requests"}</div>
-                <div className="lv-empty-d">{debouncedSearch || statusFilter ? "Try a different search term or filter." : "No leave requests have been filed yet."}</div>
+                <div className="lv-empty-ic"><I name="calendar" size={32} /></div>
+                <h3 className="lv-empty-t">No leave requests</h3>
+                <p className="lv-empty-d">{statusFilter ? `No ${statusFilter.toLowerCase()} requests.` : "Create a leave request to get started."}</p>
             </div>
         ) : (
-            <div style={{overflowX:"auto",flex:1,background:"#fff",borderRadius:10}}>
+            <div className="lv-tbl-wrap">
                 <table className="lv-tbl">
                     <thead>
                     <tr>
                         <th>Employee</th>
-                        <th>Department</th>
-                        <th>Leave Type</th>
-                        <th>Start</th>
-                        <th>End</th>
+                        <th>Type</th>
+                        <th>Dates</th>
                         <th>Days</th>
                         <th>Status</th>
+                        <th>Reason</th>
+                        <th>Actions</th>
                     </tr>
                     </thead>
                     <tbody>
                     {filtered.map(l => {
                         const sc = STATUS_COLORS[l.status] || "#ccc";
                         return (
-                            <tr key={l.id} onClick={() => openView(l)}>
+                            <tr key={l.id} className="lv-row" onClick={() => openView(l)}>
                                 <td>
                                     <div className="lv-emp">
-                                        <span className="lv-emp-av" style={{background: sc + "18", color: sc}}>{(l.first_name?.[0] || "") + (l.last_name?.[0] || "")}</span>
+                                        <span className="lv-emp-av">{(l.first_name?.[0] || "") + (l.last_name?.[0] || "")}</span>
                                         <div>
                                             <div className="lv-emp-name">{l.first_name} {l.last_name}</div>
-                                            <div className="lv-emp-pos">{l.position || "—"}</div>
+                                            <div className="lv-emp-dept">{l.department || "—"}</div>
                                         </div>
                                     </div>
                                 </td>
-                                <td className="lv-td-dept">{l.department || "—"}</td>
-                                <td><span className="lv-td-type"><I name="file-text" size={12} /> {l.leave_type}</span></td>
-                                <td className="lv-td-date">{fmtDate(l.start_date)}</td>
-                                <td className="lv-td-date">{fmtDate(l.end_date)}</td>
-                                <td className="lv-td-days">{l.days} day{l.days !== 1 ? "s" : ""}</td>
+                                <td><span className="lv-type">{l.leave_type}</span></td>
+                                <td className="lv-td-date">{fmtDate(l.start_date)} — {fmtDate(l.end_date)}</td>
+                                <td className="lv-td-days">{l.days}</td>
                                 <td><span className="lv-badge" style={{ background: sc + "18", color: sc }}><I name={STATUS_ICONS[l.status] || "circle"} size={11} /> {l.status}</span></td>
+                                <td className="lv-td-reason">{l.reason || "—"}</td>
+                                <td onClick={e => e.stopPropagation()}>
+                                    <div className="lv-actions">
+                                        {l.status === "Pending" && (<>
+                                            <button className="lv-act lv-act-ok" onClick={() => approveLeave(l.id)} title="Approve"><I name="check" size={14} /></button>
+                                            <button className="lv-act lv-act-no" onClick={() => openReject(l.id)} title="Reject"><I name="x" size={14} /></button>
+                                        </>)}
+                                    </div>
+                                </td>
                             </tr>
                         );
                     })}
@@ -198,7 +197,7 @@ export default function LeaveTab({ employees = [] }) {
                 <p className="lv-modal-d">Provide a reason for rejection (optional):</p>
                 <textarea className="lv-modal-ta" value={rejectModal.note} onChange={e => setRejectModal(prev => ({ ...prev, note: e.target.value }))} placeholder="Reason for rejection..." rows={3} />
                 <div className="lv-modal-btns">
-                    <button className="bp-btn-cancel" onClick={closeReject}>Cancel</button>
+                    <button className="ap-btn-cancel" onClick={closeReject}>Cancel</button>
                     <button className="lv-modal-reject" onClick={confirmReject}>Reject</button>
                 </div>
             </div>
@@ -208,110 +207,23 @@ export default function LeaveTab({ employees = [] }) {
             open={panel.open}
             mode={panel.mode}
             leave={panel.leave}
-            employees={employees}
+            employees={isEmployee && myEmployee ? [myEmployee] : employees}
             onClose={closePanel}
             onSave={saveLeave}
             onDelete={deleteLeave}
             onApprove={approveLeave}
             onReject={openReject}
+            readOnly={isEmployee}
         />
 
         <style>{lvCSS}</style>
-    </div>);
+    </>);
 }
 
 /* ================================================================
-   SEARCHABLE EMPLOYEE PICKER (handles 1000+ employees)
+   PANEL
 ================================================================ */
-function EmployeePicker({ employees, value, onChange }) {
-    const [query, setQuery] = useState("");
-    const [showDrop, setShowDrop] = useState(false);
-    const wrapRef = useState(null);
-
-    const selected = employees.find(e => String(e.id) === String(value));
-
-    const filtered = query.trim()
-        ? employees.filter(e => {
-            const full = `${e.first_name} ${e.last_name} ${e.department || ""}`.toLowerCase();
-            return full.includes(query.toLowerCase());
-        }).slice(0, 50)
-        : [];
-
-    const pick = (emp) => {
-        onChange(emp.id);
-        setQuery("");
-        setShowDrop(false);
-    };
-
-    const clear = () => {
-        onChange("");
-        setQuery("");
-    };
-
-    // close dropdown on outside click
-    useEffect(() => {
-        const handler = (e) => {
-            if (wrapRef[0] && !wrapRef[0].contains(e.target)) setShowDrop(false);
-        };
-        document.addEventListener("mousedown", handler);
-        return () => document.removeEventListener("mousedown", handler);
-    }, []);
-
-    if (selected && !showDrop) {
-        return (
-            <div className="ep-selected">
-                <span className="ep-sel-av">{(selected.first_name?.[0] || "") + (selected.last_name?.[0] || "")}</span>
-                <div className="ep-sel-info">
-                    <span className="ep-sel-name">{selected.first_name} {selected.last_name}</span>
-                    {selected.department && <span className="ep-sel-dept">{selected.department}</span>}
-                </div>
-                <button type="button" className="ep-sel-clear" onClick={clear} title="Change employee">✕</button>
-            </div>
-        );
-    }
-
-    return (
-        <div className="ep-wrap" ref={el => wrapRef[0] = el}>
-            <div className="ep-input-wrap">
-                <I name="search" size={13} style={{ color: "#bbb", flexShrink: 0 }} />
-                <input
-                    className="ep-input"
-                    placeholder="Type to search employees..."
-                    value={query}
-                    onChange={e => { setQuery(e.target.value); setShowDrop(true); }}
-                    onFocus={() => setShowDrop(true)}
-                    autoComplete="off"
-                />
-                {query && <button type="button" className="ep-clear" onClick={() => setQuery("")}>✕</button>}
-            </div>
-            {showDrop && (
-                <div className="ep-drop">
-                    {!query.trim() ? (
-                        <div className="ep-hint">Start typing a name to search {employees.length.toLocaleString()} employees...</div>
-                    ) : filtered.length === 0 ? (
-                        <div className="ep-hint">No employees match "{query}"</div>
-                    ) : (<>
-                        {filtered.map(emp => (
-                            <div key={emp.id} className="ep-item" onClick={() => pick(emp)}>
-                                <span className="ep-item-av">{(emp.first_name?.[0] || "") + (emp.last_name?.[0] || "")}</span>
-                                <div className="ep-item-info">
-                                    <span className="ep-item-name">{emp.first_name} {emp.last_name}</span>
-                                    {emp.department && <span className="ep-item-dept">{emp.department}</span>}
-                                </div>
-                            </div>
-                        ))}
-                        {filtered.length === 50 && <div className="ep-hint">Showing first 50 results. Keep typing to narrow down...</div>}
-                    </>)}
-                </div>
-            )}
-        </div>
-    );
-}
-
-/* ================================================================
-   PANEL (view/edit) + MODAL (add)
-================================================================ */
-function LeavePanel({ open, mode, leave, employees, onClose, onSave, onDelete, onApprove, onReject }) {
+function LeavePanel({ open, mode, leave, employees, onClose, onSave, onDelete, onApprove, onReject, readOnly }) {
     const [form, setForm] = useState({});
     const [currentMode, setCurrentMode] = useState(mode);
 
@@ -333,6 +245,7 @@ function LeavePanel({ open, mode, leave, employees, onClose, onSave, onDelete, o
 
     const isView = currentMode === "view";
     const isAdd = currentMode === "add";
+    const isEdit = currentMode === "edit";
     const set = (k, v) => {
         const next = { ...form, [k]: v };
         if ((k === "start_date" || k === "end_date") && next.start_date && next.end_date) {
@@ -353,206 +266,159 @@ function LeavePanel({ open, mode, leave, employees, onClose, onSave, onDelete, o
     };
 
     const sc = STATUS_COLORS[form.status] || "#ccc";
+    const empName = form.first_name ? `${form.first_name} ${form.last_name}` : "";
 
-    /* ── Form fields (shared across add, edit, view) ── */
-    const ro = isView;
-    const renderFields = () => (
-        <div className="bp-section">
-            <h4 className="bp-sec-title">Leave Details</h4>
-            <div className="bp-fields">
-                {isAdd ? (
-                    <div className="bp-field bp-field-full">
-                        <label className="bp-label">Employee <span className="bp-req">*</span></label>
-                        <EmployeePicker employees={employees} value={form.employee_id || ""} onChange={v => set("employee_id", v)} />
-                    </div>
-                ) : (
-                    <div className="bp-field bp-field-full">
-                        <label className="bp-label">Employee</label>
-                        <input className="bp-input" value={`${form.first_name || ""} ${form.last_name || ""}`} disabled />
+    const renderFormFields = () => (
+        <div className="ap-section">
+            <h4 className="ap-sec-title">Leave Details</h4>
+            <div className="ap-fields">
+                {isAdd && (
+                    <div className="ap-field ap-field-full">
+                        <label className="ap-label">Employee <span className="ap-req"/></label>
+                        <select className="ap-input" value={form.employee_id || ""} onChange={e => set("employee_id", e.target.value)}>
+                            <option value="">Select employee...</option>
+                            {employees.map(emp => (
+                                <option key={emp.id} value={emp.id}>{emp.first_name} {emp.last_name}</option>
+                            ))}
+                        </select>
                     </div>
                 )}
-                {ro && form.department && (
-                    <div className="bp-field bp-field-full">
-                        <label className="bp-label">Department</label>
-                        <input className="bp-input" value={form.department} disabled />
+                {isView && (
+                    <div className="ap-field ap-field-full">
+                        <label className="ap-label">Employee</label>
+                        <input className="ap-input" value={empName || "—"} disabled />
                     </div>
                 )}
-                <div className="bp-field bp-field-full">
-                    <label className="bp-label">Leave Type {!ro && <span className="bp-req">*</span>}</label>
-                    {ro ? (
-                        <input className="bp-input" value={form.leave_type || ""} disabled />
-                    ) : (
-                        <select className="bp-input" value={form.leave_type || ""} onChange={e => set("leave_type", e.target.value)}>
+                <div className="ap-field ap-field-full">
+                    <label className="ap-label">Leave Type {!isView && <span className="ap-req"/>}</label>
+                    {isView
+                        ? <input className="ap-input" value={form.leave_type || "—"} disabled />
+                        : <select className="ap-input" value={form.leave_type || ""} onChange={e => set("leave_type", e.target.value)}>
                             {LEAVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                         </select>
-                    )}
+                    }
                 </div>
-                <div className="bp-field">
-                    <label className="bp-label">Start Date {!ro && <span className="bp-req">*</span>}</label>
-                    {ro ? (
-                        <input className="bp-input" value={fmtDate(form.start_date)} disabled />
-                    ) : (
-                        <input type="date" className="bp-input" value={form.start_date || ""} onChange={e => set("start_date", e.target.value)} />
-                    )}
+                <div className="ap-field">
+                    <label className="ap-label">Start Date {!isView && <span className="ap-req"/>}</label>
+                    <input type={isView ? "text" : "date"} className="ap-input" value={isView ? fmtDate(form.start_date) : (form.start_date || "")} onChange={e => set("start_date", e.target.value)} disabled={isView} />
                 </div>
-                <div className="bp-field">
-                    <label className="bp-label">End Date {!ro && <span className="bp-req">*</span>}</label>
-                    {ro ? (
-                        <input className="bp-input" value={fmtDate(form.end_date)} disabled />
-                    ) : (
-                        <input type="date" className="bp-input" value={form.end_date || ""} onChange={e => set("end_date", e.target.value)} />
-                    )}
+                <div className="ap-field">
+                    <label className="ap-label">End Date {!isView && <span className="ap-req"/>}</label>
+                    <input type={isView ? "text" : "date"} className="ap-input" value={isView ? fmtDate(form.end_date) : (form.end_date || "")} onChange={e => set("end_date", e.target.value)} disabled={isView} />
                 </div>
-                <div className="bp-field">
-                    <label className="bp-label">Days</label>
-                    <input type={ro ? "text" : "number"} className="bp-input" value={form.days || ""} onChange={e => set("days", parseFloat(e.target.value) || 0)} step="0.5" min="0.5" disabled={ro} />
+                <div className="ap-field">
+                    <label className="ap-label">Days</label>
+                    <input type={isView ? "text" : "number"} className="ap-input" value={form.days || ""} onChange={e => set("days", parseFloat(e.target.value) || 0)} step="0.5" min="0.5" disabled={isView} />
                 </div>
-                {ro && (
-                    <div className="bp-field">
-                        <label className="bp-label">Status</label>
-                        <div style={{paddingTop:4}}>
-                            <span className="lv-badge" style={{ background: sc + "18", color: sc }}><I name={STATUS_ICONS[form.status] || "circle"} size={11} /> {form.status}</span>
-                        </div>
+                <div className="ap-field">
+                    <label className="ap-label">Status</label>
+                    {isView
+                        ? <span className="lv-badge" style={{ background: sc + "18", color: sc }}><I name={STATUS_ICONS[form.status] || "circle"} size={11} /> {form.status}</span>
+                        : <input className="ap-input" value={form.status || "Pending"} disabled />
+                    }
+                </div>
+                {isView && form.department && (
+                    <div className="ap-field ap-field-full">
+                        <label className="ap-label">Department</label>
+                        <input className="ap-input" value={form.department} disabled />
                     </div>
                 )}
-                <div className="bp-field bp-field-full">
-                    <label className="bp-label">Reason</label>
-                    <textarea className="bp-input bp-textarea" value={form.reason || ""} onChange={e => set("reason", e.target.value)} placeholder={ro ? "—" : "Why are you taking leave?"} rows={3} disabled={ro} />
+                <div className="ap-field ap-field-full">
+                    <label className="ap-label">Reason</label>
+                    <textarea className="ap-input ap-textarea" value={form.reason || ""} onChange={e => set("reason", e.target.value)} placeholder="Why are you taking leave?" rows={2} disabled={isView} />
                 </div>
-                {ro && form.rejection_note && (
-                    <div className="bp-field bp-field-full">
-                        <label className="bp-label">Rejection Note</label>
-                        <textarea className="bp-input bp-textarea" value={form.rejection_note} rows={2} disabled />
+                {isView && form.rejection_note && (
+                    <div className="ap-field ap-field-full">
+                        <label className="ap-label">Rejection Note</label>
+                        <textarea className="ap-input ap-textarea" value={form.rejection_note} disabled rows={2} />
                     </div>
                 )}
             </div>
         </div>
     );
 
-    /* ── ADD MODE → Centered Modal ── */
-    if (isAdd) {
-        return (<>
-            <div className="lm-bg" onClick={onClose} />
-            <div className="lm-modal">
-                <div className="lm-head">
-                    <div className="lm-head-left">
-                        <div className="lm-head-ic"><I name="calendar" size={18} /></div>
-                        <div>
-                            <h2 className="lm-title">New Leave Request</h2>
-                            <p className="lm-sub">File a leave request for an employee</p>
-                        </div>
-                    </div>
-                    <button className="bp-close" onClick={onClose}>✕</button>
+    return (
+        <Modal
+            title={isAdd ? "New Leave Request" : isEdit ? "Edit Leave" : "Leave Request"}
+            subtitle={isAdd ? "File a leave request" : empName}
+            onClose={isEdit ? () => setCurrentMode("view") : onClose}
+        >
+            <div className="ap-modal-layout">
+                <div className="ap-modal-scroll">
+                    {renderFormFields()}
                 </div>
-                <div className="lm-body">
-                    {renderFields()}
-                </div>
-                <div className="lm-foot">
-                    <button className="bp-btn-cancel" onClick={onClose}>Cancel</button>
-                    <button className="bp-btn-primary" onClick={handleSave}>Submit Request</button>
-                </div>
-            </div>
-        </>);
-    }
-
-    /* ── VIEW / EDIT MODE → Centered Modal ── */
-    return (<>
-        <div className="lm-bg" onClick={onClose} />
-        <div className="lm-modal">
-            <div className="lm-head">
-                <div className="lm-head-left">
-                    <div className="lm-head-ic" style={{ background: sc + "20", color: sc }}><I name={STATUS_ICONS[form.status] || "calendar"} size={18} /></div>
-                    <div>
-                        <h2 className="lm-title">{isView ? `${form.first_name} ${form.last_name}` : "Edit Leave"}</h2>
-                        <p className="lm-sub">{isView ? form.leave_type : `${form.first_name} ${form.last_name}`}</p>
+                <div className="ap-modal-foot">
+                    <div className="ap-foot-btns">
+                        {isView && form.status === "Pending" ? (<>
+                            <button className="ap-btn-danger" onClick={() => onDelete(form.id)}>Delete</button>
+                            {!readOnly && <button className="lv-foot-reject" onClick={() => { onClose(); onReject(form.id); }}>Reject</button>}
+                            {!readOnly && <button className="lv-foot-approve" onClick={() => { onApprove(form.id); onClose(); }}><I name="check" size={13} /> Approve</button>}
+                        </>) : isView ? (
+                            <button className="ap-btn-cancel" onClick={onClose}>Close</button>
+                        ) : (<>
+                            <button className="ap-btn-cancel" onClick={isEdit ? () => setCurrentMode("view") : onClose}>Cancel</button>
+                            <button className="ap-btn-primary" onClick={handleSave}>{isAdd ? "Submit Request" : "Save Changes"}</button>
+                        </>)}
                     </div>
                 </div>
-                <div style={{display:'flex',gap:6,alignItems:'center'}}>
-                    {isView && form.status === "Pending" && (
-                        <button className="bp-btn-edit" onClick={() => setCurrentMode("edit")}><I name="edit-2" size={13} /> Edit</button>
-                    )}
-                    <button className="bp-close" onClick={onClose}>✕</button>
-                </div>
             </div>
-            <div className="lm-body">
-                {renderFields()}
-            </div>
-            <div className="lm-foot">
-                {isView && form.status === "Pending" ? (<>
-                    <button className="bp-btn-danger" onClick={() => onDelete(form.id)}>Delete</button>
-                    <div style={{flex:1}} />
-                    <button className="lv-foot-reject" onClick={() => { onClose(); onReject(form.id); }}>Reject</button>
-                    <button className="lv-foot-approve" onClick={() => { onApprove(form.id); onClose(); }}><I name="check" size={13} /> Approve</button>
-                </>) : isView ? (
-                    <button className="bp-btn-cancel" onClick={onClose}>Close</button>
-                ) : (<>
-                    <button className="bp-btn-cancel" onClick={currentMode === "edit" ? () => setCurrentMode("view") : onClose}>Cancel</button>
-                    <button className="bp-btn-primary" onClick={handleSave}>Save Changes</button>
-                </>)}
-            </div>
-        </div>
-    </>);
+        </Modal>
+    );
 }
 
 /* ================================================================
    STYLES
 ================================================================ */
 const lvCSS = `
-  .lv-wrap{display:flex;flex-direction:column;min-height:calc(100vh - 54px - 48px)}
-  .lv-bar{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
-  .lv-bar-left{display:flex;align-items:center;gap:8px}
-  .lv-search-wrap{display:flex;align-items:center;gap:8px;padding:8px 14px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;flex:1;max-width:200px;color:#aaa}
-  .lv-search{border:none;outline:none;font-family:'DM Sans',sans-serif;font-size:13px;color:#333;flex:1;background:transparent}
-  .lv-search::placeholder{color:#bbb}
-  .lv-status-filter{padding:7px 12px;border:1px solid #e0e0e0;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:12px;color:#555;background:#fff;outline:none}
-  .lv-btn-p{display:flex;align-items:center;gap:5px;padding:9px 18px;border:none;border-radius:8px;background:#f59e0b;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:background .15s;white-space:nowrap}
+  .lv-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px}
+  .lv-bar-left{display:flex;align-items:center;gap:12px}
+  .lv-bar-right{display:flex;align-items:center;gap:8px}
+  .lv-bar-count{font-size:13px;color:#888}
+  .lv-tabs{display:flex;gap:2px;background:#f3f4f6;border-radius:8px;padding:2px}
+  .lv-tab{padding:6px 14px;border:none;border-radius:6px;background:transparent;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;color:#666;cursor:pointer;transition:all .12s}
+  .lv-tab:hover{color:#333}
+  .lv-tab-a{background:#fff;color:#222;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+  .lv-search{padding:7px 12px;border:1px solid #e0e0e0;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:12px;color:#333;width:160px;outline:none}
+  .lv-search:focus{border-color:#f59e0b}
+  .lv-btn-p{display:flex;align-items:center;gap:5px;padding:9px 18px;border:none;border-radius:8px;background:#f59e0b;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s}
   .lv-btn-p:hover{background:#d97706}
+  .lv-loading{text-align:center;padding:40px;color:#999;font-size:14px}
 
-  @keyframes lv-spin{to{transform:rotate(360deg)}}
-  .lv-spinner{width:14px;height:14px;border:2px solid #e0e0e0;border-top-color:#f59e0b;border-radius:50%;animation:lv-spin .6s linear infinite;flex-shrink:0}
-  .lv-loading-spinner{width:36px;height:36px;border:3px solid #fef3c7;border-top-color:#f59e0b;border-radius:50%;animation:lv-spin .7s linear infinite;margin:0 auto 12px}
+  .lv-empty{text-align:center;padding:60px 20px}
+  .lv-empty-ic{width:72px;height:72px;border-radius:50%;background:#fef3c7;color:#f59e0b;display:flex;align-items:center;justify-content:center;margin:0 auto 16px}
+  .lv-empty-t{font-size:18px;font-weight:700;color:#333;margin-bottom:6px}
+  .lv-empty-d{font-size:13px;color:#999;max-width:340px;margin:0 auto}
 
-  .lv-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px 20px;background:#fff;border-radius:10px}
-  .lv-empty-ic{width:56px;height:56px;border-radius:50%;background:#fef3c7;color:#f59e0b;display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
-  .lv-empty-t{font-size:15px;font-weight:700;color:#333;margin-bottom:4px}
-  .lv-empty-d{font-size:13px;color:#999}
-
-  .lv-tbl{width:100%;border-collapse:collapse;font-size:13px;background:#fff;border-radius:10px;overflow:hidden}
-  .lv-tbl thead th{text-align:left;padding:10px 14px;font-size:11px;font-weight:600;color:#999;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #eee;background:#fafbfa;vertical-align:middle}
-  .lv-tbl tbody td{padding:12px 14px;border-bottom:1px solid #f5f5f5;color:#444;vertical-align:middle}
-  .lv-tbl tbody tr{transition:background .1s;cursor:pointer}
+  .lv-tbl-wrap{overflow-x:auto;background:#fff;border:1px solid #eee;border-radius:12px}
+  .lv-tbl{width:100%;border-collapse:collapse;font-size:13px}
+  .lv-tbl thead th{text-align:left;padding:12px 14px;color:#888;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #eee;white-space:nowrap}
+  .lv-tbl tbody tr{border-bottom:1px solid #f5f5f5;transition:background .1s;cursor:pointer}
   .lv-tbl tbody tr:hover{background:#fffbeb}
+  .lv-tbl tbody tr:last-child{border-bottom:none}
+  .lv-tbl td{padding:10px 14px;vertical-align:middle}
 
   .lv-emp{display:flex;align-items:center;gap:10px}
-  .lv-emp-av{width:34px;height:34px;border-radius:8px;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .lv-emp-av{width:34px;height:34px;border-radius:8px;background:#fef3c7;color:#d97706;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
   .lv-emp-name{font-weight:600;color:#222;font-size:13px}
-  .lv-emp-pos{font-size:11px;color:#aaa;margin-top:1px}
-  .lv-td-dept{color:#666;font-size:12px}
-  .lv-td-type{display:inline-flex;align-items:center;gap:5px;color:#555;font-size:12px}
-  .lv-td-date{font-weight:500;color:#333;font-size:12px;white-space:nowrap}
-  .lv-td-days{font-weight:600;color:#555;font-size:12px}
-  .lv-td-na{color:#ccc;font-size:12px}
-  .lv-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
+  .lv-emp-dept{font-size:11px;color:#aaa;margin-top:1px}
+  .lv-type{font-size:12px;font-weight:500;color:#555}
+  .lv-td-date{font-size:12px;color:#555;white-space:nowrap}
+  .lv-td-days{font-weight:700;color:#333;text-align:center}
+  .lv-td-reason{font-size:12px;color:#aaa;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lv-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600}
 
-  /* Add Leave Modal */
-  .lm-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:400;animation:bpFade .15s}
-  .lm-modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:16px;width:520px;max-width:92vw;max-height:85vh;z-index:401;box-shadow:0 20px 60px rgba(0,0,0,.15);display:flex;flex-direction:column;animation:lmPop .2s ease-out}
-  @keyframes lmPop{from{opacity:0;transform:translate(-50%,-50%) scale(.96)}to{opacity:1;transform:translate(-50%,-50%) scale(1)}}
-  @keyframes bpFade{from{opacity:0}to{opacity:1}}
-  .lm-head{display:flex;align-items:flex-start;justify-content:space-between;padding:20px 24px;border-bottom:1px solid #eee}
-  .lm-head-left{display:flex;align-items:center;gap:12px}
-  .lm-head-ic{width:40px;height:40px;border-radius:10px;background:#fef3c7;color:#f59e0b;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-  .lm-title{font-size:18px;font-weight:700;color:#222;margin:0}
-  .lm-sub{font-size:12px;color:#999;margin:3px 0 0}
-  .lm-body{flex:1;overflow-y:auto;padding:20px 24px}
-  .lm-foot{display:flex;justify-content:flex-end;gap:8px;padding:16px 24px;border-top:1px solid #eee;background:#fafbfa;border-radius:0 0 16px 16px}
+  .lv-actions{display:flex;gap:4px}
+  .lv-act{width:30px;height:30px;border-radius:6px;border:1px solid #e0e0e0;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .12s}
+  .lv-act-ok{color:#22c55e;border-color:#bbf7d0}
+  .lv-act-ok:hover{background:#22c55e;color:#fff}
+  .lv-act-no{color:#ef4444;border-color:#fecaca}
+  .lv-act-no:hover{background:#ef4444;color:#fff}
 
-  @media(max-width:768px){
-    .lm-modal{width:96vw;max-height:90vh}
-  }
+  .lv-row{cursor:pointer}
 
   /* Reject modal */
   .lv-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:400;animation:bpFade .12s}
+  @keyframes bpFade{from{opacity:0}to{opacity:1}}
   .lv-modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:16px;padding:28px;width:420px;max-width:90vw;z-index:401;box-shadow:0 12px 40px rgba(0,0,0,.12)}
   .lv-modal-t{font-size:18px;font-weight:700;color:#222;margin-bottom:6px}
   .lv-modal-d{font-size:13px;color:#888;margin-bottom:14px}
@@ -568,56 +434,37 @@ const lvCSS = `
   .lv-foot-reject{padding:9px 16px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#ef4444;cursor:pointer}
   .lv-foot-reject:hover{background:#ef4444;color:#fff}
 
+  /* Panel form styles */
+  .ap-section{margin-bottom:20px}
+  .ap-sec-title{font-size:13px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px}
+  .ap-req{width:6px;height:6px;border-radius:50%;background:#ef4444;flex-shrink:0;display:inline-block}
+  .ap-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .ap-field{display:flex;flex-direction:column}
+  .ap-field-full{grid-column:1/-1}
+  .ap-label{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:#666;margin-bottom:5px}
+  .ap-input{width:100%;padding:9px 12px;border:1px solid #e0e0e0;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;color:#333;outline:none;transition:border-color .15s;background:#fff;box-sizing:border-box}
+  .ap-input:focus{border-color:#2d9e8b;box-shadow:0 0 0 2px rgba(45,158,139,.1)}
+  .ap-input:disabled{background:#fafbfa;color:#555;cursor:default}
+  .ap-textarea{resize:vertical;min-height:56px}
+  select.ap-input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;cursor:pointer}
+  select.ap-input:disabled{cursor:default}
+  .ap-foot-btns{display:flex;justify-content:flex-end;gap:8px}
+  .ap-btn-cancel{padding:9px 18px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#666;cursor:pointer}
+  .ap-btn-cancel:hover{background:#f5f5f5}
+  .ap-btn-primary{display:flex;align-items:center;gap:5px;padding:9px 22px;border:none;border-radius:8px;background:#2d9e8b;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s}
+  .ap-btn-primary:hover{background:#268a79}
+  .ap-btn-danger{padding:9px 16px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#ef4444;cursor:pointer}
+  .ap-btn-danger:hover{background:#ef4444;color:#fff}
+  .ap-modal-layout{display:flex;flex-direction:column;min-height:200px;max-height:60vh}
+  .ap-modal-scroll{flex:1;overflow-y:auto;padding:16px 0 0}
+  .ap-modal-foot{flex-shrink:0;padding:16px 0 0;margin-top:auto}
+
   @media(max-width:768px){
     .lv-bar{flex-direction:column;align-items:stretch}
-    .lv-bar-left{flex-wrap:wrap}
-    .lv-search-wrap{max-width:100%}
+    .lv-bar-left,.lv-bar-right{flex-wrap:wrap}
   }
-
-  /* Shared panel/modal classes */
-  .bp-close{width:32px;height:32px;border-radius:8px;border:1px solid #eee;background:#fff;cursor:pointer;font-size:16px;color:#999;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-
-  /* Employee Picker */
-  .ep-wrap{position:relative}
-  .ep-input-wrap{display:flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;transition:border-color .15s}
-  .ep-input-wrap:focus-within{border-color:#f59e0b;box-shadow:0 0 0 2px rgba(245,158,11,.1)}
-  .ep-input{border:none;outline:none;font-family:'DM Sans',sans-serif;font-size:13px;color:#333;flex:1;background:transparent}
-  .ep-input::placeholder{color:#bbb}
-  .ep-clear{background:none;border:none;color:#bbb;cursor:pointer;font-size:14px;padding:0 2px;line-height:1}
-  .ep-clear:hover{color:#999}
-  .ep-drop{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid #e0e0e0;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.1);max-height:240px;overflow-y:auto;z-index:10}
-  .ep-hint{padding:14px 16px;font-size:12px;color:#aaa;text-align:center}
-  .ep-item{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;transition:background .1s}
-  .ep-item:hover{background:#fef3c7}
-  .ep-item-av{width:30px;height:30px;border-radius:8px;background:#f3f4f6;color:#888;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-  .ep-item-info{display:flex;flex-direction:column;min-width:0}
-  .ep-item-name{font-size:13px;font-weight:600;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .ep-item-dept{font-size:11px;color:#aaa}
-  .ep-selected{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid #e0e0e0;border-radius:8px;background:#fafbfa}
-  .ep-sel-av{width:32px;height:32px;border-radius:8px;background:#fef3c7;color:#d97706;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-  .ep-sel-info{display:flex;flex-direction:column;flex:1;min-width:0}
-  .ep-sel-name{font-size:13px;font-weight:600;color:#222}
-  .ep-sel-dept{font-size:11px;color:#aaa}
-  .ep-sel-clear{background:none;border:none;color:#ccc;cursor:pointer;font-size:14px;padding:4px;line-height:1;border-radius:4px}
-  .ep-sel-clear:hover{color:#999;background:#f0f0f0}
-  .bp-close:hover{background:#f5f5f5;color:#333}
-  .bp-btn-edit{display:flex;align-items:center;gap:4px;padding:6px 12px;border:1px solid #fde68a;border-radius:6px;background:#fef3c7;font-family:'DM Sans',sans-serif;font-size:11px;font-weight:600;color:#d97706;cursor:pointer;transition:all .12s}
-  .bp-btn-edit:hover{background:#f59e0b;color:#fff}
-  .bp-section{margin-bottom:20px}
-  .bp-sec-title{font-size:13px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px}
-  .bp-req{color:#ef4444}
-  .bp-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .bp-field{display:flex;flex-direction:column}
-  .bp-field-full{grid-column:1/-1}
-  .bp-label{font-size:12px;font-weight:600;color:#666;margin-bottom:5px}
-  .bp-input{width:100%;padding:9px 12px;border:1px solid #e0e0e0;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;color:#333;outline:none;transition:border-color .15s;background:#fff;box-sizing:border-box}
-  .bp-input:focus{border-color:#f59e0b;box-shadow:0 0 0 2px rgba(245,158,11,.1)}
-  .bp-input:disabled{background:#fafbfa;color:#555;cursor:default}
-  .bp-textarea{resize:vertical;min-height:56px}
-  .bp-btn-cancel{padding:9px 18px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#666;cursor:pointer}
-  .bp-btn-cancel:hover{background:#f5f5f5}
-  .bp-btn-primary{display:flex;align-items:center;gap:5px;padding:9px 22px;border:none;border-radius:8px;background:#f59e0b;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s}
-  .bp-btn-primary:hover{background:#d97706}
-  .bp-btn-danger{padding:9px 16px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#ef4444;cursor:pointer;margin-right:auto}
-  .bp-btn-danger:hover{background:#ef4444;color:#fff}
+  @media(max-width:600px){
+    .ap-modal-layout{max-height:65vh}
+    .ap-fields{grid-template-columns:1fr}
+  }
 `;

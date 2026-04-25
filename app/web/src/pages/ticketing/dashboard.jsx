@@ -46,7 +46,7 @@ export default function TicketingDashboard() {
     const navigate = useNavigate();
     const tab = getTab(location.pathname);
 
-    const API_URL = "http://localhost:8080/api/execute";
+    const API_URL = "/api/execute";
     const apiCall = async (action, body = {}) => {
         const session = localStorage.getItem("ls_session");
         const res = await fetch(`${API_URL}?action=${action}`, {

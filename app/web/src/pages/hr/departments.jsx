@@ -5,7 +5,7 @@ import Modal from "../components/Modal";
 /* ================================================================
    API
 ================================================================ */
-const API_URL = "http://localhost:8080/api/execute";
+const API_URL = "/api/execute";
 
 async function api(action, body = {}) {
     const session = localStorage.getItem("ls_session");

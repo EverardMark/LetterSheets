@@ -71,7 +71,7 @@ export default function HR() {
     const [positions, setPositions] = useState([]);
     const [loans, setLoans] = useState([]);
 
-    const API_URL = "http://localhost:8080/api/execute";
+    const API_URL = "/api/execute";
     const apiCall = async (action, body = {}) => {
         const session = localStorage.getItem("ls_session");
         const res = await fetch(`${API_URL}?action=${action}`, {

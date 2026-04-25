@@ -11,7 +11,7 @@
  Target Server Version : 90300 (9.3.0)
  File Encoding         : 65001
 
- Date: 23/03/2026 13:10:50
+ Date: 25/04/2026 17:00:35
 */
 
 SET NAMES utf8mb4;
@@ -894,6 +894,7 @@ DROP TABLE IF EXISTS `employees`;
 CREATE TABLE `employees` (
   `id` varchar(36) NOT NULL,
   `company_id` varchar(36) NOT NULL,
+  `user_id` varchar(36) DEFAULT NULL,
   `first_name` varchar(100) NOT NULL,
   `last_name` varchar(100) NOT NULL,
   `middle_name` varchar(100) NOT NULL DEFAULT '',
@@ -923,6 +924,7 @@ CREATE TABLE `employees` (
   KEY `idx_employees_dept` (`company_id`,`department`,`is_deleted`),
   KEY `idx_employees_status` (`company_id`,`status`,`is_deleted`),
   KEY `idx_employees_schedule` (`work_schedule_id`),
+  KEY `idx_employees_user_id` (`user_id`),
   CONSTRAINT `employees_ibfk_1` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE,
   CONSTRAINT `employees_ibfk_schedule` FOREIGN KEY (`work_schedule_id`) REFERENCES `work_schedules` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -1154,8 +1156,9 @@ CREATE TABLE `onboarding_checklists` (
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_onb_employee` (`employee_id`,`is_deleted`),
   KEY `idx_onb_cl_company` (`company_id`,`is_deleted`),
+  KEY `idx_onb_employee` (`employee_id`),
+  KEY `idx_onb_cl_employee` (`employee_id`),
   CONSTRAINT `onboarding_checklists_ibfk_1` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE CASCADE,
   CONSTRAINT `onboarding_checklists_ibfk_2` FOREIGN KEY (`employee_id`) REFERENCES `employees` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
@@ -4473,7 +4476,7 @@ delimiter ;
 DROP PROCEDURE IF EXISTS `sp_get_employee`;
 delimiter ;;
 CREATE PROCEDURE `sp_get_employee`(IN p_id         VARCHAR(36),
-    IN p_company_id VARCHAR(36))
+                                   IN p_company_id VARCHAR(36))
 BEGIN
     SELECT e.id, e.company_id, e.first_name, e.last_name, e.middle_name,
            e.department, e.position, e.joined_date, e.employment_type, e.status,
@@ -4482,8 +4485,16 @@ BEGIN
            e.pagibig_no_enc, e.tin_enc, e.bank_name_enc, e.bank_account_enc,
            e.enrolled_benefits, e.work_schedule_id,
            e.created_at, e.updated_at,
-           ws.name AS schedule_name, ws.type AS schedule_type, ws.color AS schedule_color
+           e.user_id,
+           u.email          AS account_email,
+           u.username       AS account_username,
+           u.is_active      AS account_active,
+           u.last_login_at  AS account_last_login_at,
+           ws.name  AS schedule_name,
+           ws.type  AS schedule_type,
+           ws.color AS schedule_color
     FROM employees e
+    LEFT JOIN users          u  ON u.id  = e.user_id
     LEFT JOIN work_schedules ws ON ws.id = e.work_schedule_id AND ws.is_deleted = 0
     WHERE e.id = p_id AND e.company_id = p_company_id AND e.is_deleted = 0;
 END
@@ -4501,8 +4512,14 @@ BEGIN
            e.department, e.position, e.joined_date, e.employment_type, e.status,
            e.enrolled_benefits, e.work_schedule_id,
            e.created_at, e.updated_at,
-           ws.name AS schedule_name, ws.type AS schedule_type, ws.color AS schedule_color
+           e.user_id,
+           u.username  AS account_username,
+           u.is_active AS account_active,
+           ws.name  AS schedule_name,
+           ws.type  AS schedule_type,
+           ws.color AS schedule_color
     FROM employees e
+    LEFT JOIN users          u  ON u.id  = e.user_id
     LEFT JOIN work_schedules ws ON ws.id = e.work_schedule_id AND ws.is_deleted = 0
     WHERE e.company_id = p_company_id AND e.is_deleted = 0
     ORDER BY e.last_name, e.first_name;
@@ -5651,9 +5668,11 @@ delimiter ;;
 CREATE PROCEDURE `sp_reset_password_with_key`(IN p_user_id VARCHAR(36),
     IN p_password_hash VARCHAR(255),
     IN p_salt VARCHAR(255),
-    IN p_wrapped_company_key TEXT,
+    IN p_wrapped_company_key BLOB,
     IN p_key_wrap_algorithm VARCHAR(50),
-    IN p_public_key TEXT,
+    IN p_key_exchange_algorithm VARCHAR(50),
+    IN p_public_key BLOB,
+    IN p_signing_public_key BLOB,
     IN p_ip_address VARCHAR(45),
     IN p_user_agent VARCHAR(500))
 BEGIN
@@ -5667,13 +5686,15 @@ BEGIN
 
     UPDATE user_company_access
     SET wrapped_company_key = p_wrapped_company_key,
-        key_wrap_algorithm = p_key_wrap_algorithm,
+        key_wrap_algorithm = IFNULL(p_key_wrap_algorithm, 'AES-KW'),
+        key_exchange_algorithm = IFNULL(p_key_exchange_algorithm, 'ML-KEM-768'),
         public_key = p_public_key,
+        signing_public_key = p_signing_public_key,
         updated_at = NOW()
     WHERE user_id = p_user_id AND is_active = 1;
 
-    INSERT INTO change_history (id, company_id, changed_by, table_name, record_id, action, field_name, ip_address, user_agent)
-    SELECT UUID(), company_id, p_user_id, 'users', p_user_id, 'update', 'password_reset', p_ip_address, p_user_agent
+    INSERT INTO change_history (id, company_id, changed_by, session_id, table_name, record_id, change_type, field_name, old_value, new_value, is_encrypted, ip_address, user_agent)
+    SELECT UUID(), company_id, p_user_id, NULL, 'users', p_user_id, 'update', 'password_reset', NULL, NULL, 0, p_ip_address, p_user_agent
     FROM user_company_access WHERE user_id = p_user_id AND is_active = 1 LIMIT 1;
 END
 ;;

@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { recoverKeys } from "../../utils/crypto";
 
-const API_URL = "http://localhost:8080/api/execute";
+const API_URL = "/api/execute";
 
 export default function ForgotPassword({ onNavigate }) {
     const [loading, setLoading] = useState(false);
@@ -37,11 +37,11 @@ export default function ForgotPassword({ onNavigate }) {
             try {
                 const data = JSON.parse(ev.target.result);
 
-                if (!data.keys?.privateKey || !data.keys?.recoveryWrappedKey) {
+                if (!data.keys?.kemPrivateKey || !data.keys?.recoveryKemCiphertext || !data.keys?.recoveryWrappedKey) {
                     setError("Invalid recovery key file. Missing required keys.");
                     return;
                 }
-                if (data._format !== "Lettersheets Recovery Key v1") {
+                if (data._format !== "Lettersheets Recovery Key v2 (Post-Quantum)" && data._format !== "Lettersheets Recovery Key v1") {
                     setError("Unrecognized recovery key format.");
                     return;
                 }
@@ -79,13 +79,15 @@ export default function ForgotPassword({ onNavigate }) {
             const newSalt = crypto.randomUUID();
 
             const keys = await recoverKeys(
+                recoveryData.keys.recoveryKemCiphertext,
                 recoveryData.keys.recoveryWrappedKey,
-                recoveryData.keys.privateKey,
+                recoveryData.keys.kemPrivateKey,
                 form.password,
                 newSalt
             );
 
-            localStorage.setItem("ls_private_key", keys.privateKey);
+            localStorage.setItem("ls_kem_private_key", keys.kemPrivateKey);
+            localStorage.setItem("ls_dsa_private_key", keys.dsaPrivateKey);
 
             const res = await fetch(`${API_URL}?action=reset_password`, {
                 method: "POST",
@@ -96,7 +98,9 @@ export default function ForgotPassword({ onNavigate }) {
                     salt: newSalt,
                     wrapped_company_key: keys.wrappedCompanyKey,
                     key_wrap_algorithm: "AES-KW",
-                    public_key: keys.publicKey,
+                    key_exchange_algorithm: "ML-KEM-768",
+                    public_key: keys.kemPublicKey,
+                    signing_public_key: keys.dsaPublicKey,
                 }),
             });
 
@@ -108,9 +112,12 @@ export default function ForgotPassword({ onNavigate }) {
             }
 
             setNewRecoveryKeys({
-                privateKey: keys.privateKey,
+                kemPrivateKey: keys.kemPrivateKey,
+                dsaPrivateKey: keys.dsaPrivateKey,
+                kemPublicKey: keys.kemPublicKey,
+                dsaPublicKey: keys.dsaPublicKey,
+                recoveryKemCiphertext: keys.recoveryKemCiphertext,
                 recoveryWrappedKey: keys.recoveryWrappedKey,
-                publicKey: keys.publicKey,
                 salt: newSalt,
             });
 
@@ -126,20 +133,24 @@ export default function ForgotPassword({ onNavigate }) {
 
         const keyFile = {
             _warning: "KEEP THIS FILE SAFE. Anyone with this file can access your encrypted data. Do not share it.",
-            _format: "Lettersheets Recovery Key v1",
+            _format: "Lettersheets Recovery Key v2 (Post-Quantum)",
             _created: new Date().toISOString(),
             company: recoveryData.company,
             email: form.email,
             username: recoveryData.username,
             keys: {
-                privateKey: newRecoveryKeys.privateKey,
+                kemPrivateKey: newRecoveryKeys.kemPrivateKey,
+                dsaPrivateKey: newRecoveryKeys.dsaPrivateKey,
+                kemPublicKey: newRecoveryKeys.kemPublicKey,
+                dsaPublicKey: newRecoveryKeys.dsaPublicKey,
+                recoveryKemCiphertext: newRecoveryKeys.recoveryKemCiphertext,
                 recoveryWrappedKey: newRecoveryKeys.recoveryWrappedKey,
-                publicKey: newRecoveryKeys.publicKey,
                 salt: newRecoveryKeys.salt,
                 keyAlgorithm: "AES-256-GCM",
                 keyWrapAlgorithm: "AES-KW",
+                keyExchangeAlgorithm: "ML-KEM-768",
+                signatureAlgorithm: "ML-DSA-65",
                 kdfAlgorithm: "PBKDF2-SHA256-600000",
-                publicKeyAlgorithm: "RSA-OAEP-2048-SHA256",
             },
         };
 

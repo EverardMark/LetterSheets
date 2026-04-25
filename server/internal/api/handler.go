@@ -1,6 +1,8 @@
 package api
 
 import (
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -14,6 +16,7 @@ import (
 )
 
 type Handler struct {
+	db             *sql.DB
 	regRepo        *repository.RegistrationRepo
 	companyRepo    *repository.CompanyRepo
 	userRepo       *repository.UserRepo
@@ -42,6 +45,7 @@ type Handler struct {
 }
 
 func NewHandler(
+	db *sql.DB,
 	regRepo *repository.RegistrationRepo,
 	companyRepo *repository.CompanyRepo,
 	userRepo *repository.UserRepo,
@@ -69,6 +73,7 @@ func NewHandler(
 	cfg *config.AppConfig,
 ) *Handler {
 	return &Handler{
+		db:             db,
 		regRepo:        regRepo,
 		companyRepo:    companyRepo,
 		userRepo:       userRepo,
@@ -179,6 +184,18 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 
 	case "reset_password":
 		h.resetPassword(w, r)
+
+	case "admin_reset_password":
+		h.withAuth(w, r, h.adminResetPassword)
+
+	case "create_employee_account":
+		h.withAuth(w, r, h.createEmployeeAccount)
+
+	case "update_permissions":
+		h.withAuth(w, r, h.updatePermissions)
+
+	case "get_permissions":
+		h.withAuth(w, r, h.getPermissions)
 
 	// Benefits
 	case "get_benefits":
@@ -2198,7 +2215,21 @@ func (h *Handler) getEmployee(w http.ResponseWriter, r *http.Request, session *m
 }
 
 func (h *Handler) createEmployee(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
-	var req models.Employee
+	var req struct {
+		models.Employee
+
+		// Optional: auto-create user account
+		CreateAccount        bool   `json:"create_account"`
+		AccountEmail         string `json:"account_email"`
+		AccountUsername      string `json:"account_username"`
+		AccountPassword      string `json:"account_password"`
+		AccountSalt          string `json:"account_salt"`
+		WrappedCompanyKey    []byte `json:"wrapped_company_key"`
+		KeyWrapAlgorithm     string `json:"key_wrap_algorithm"`
+		KeyExchangeAlgorithm string `json:"key_exchange_algorithm"`
+		PublicKey            []byte `json:"public_key"`
+		SigningPublicKey     []byte `json:"signing_public_key"`
+	}
 	if err := Decode(r, &req); err != nil {
 		Error(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
@@ -2209,16 +2240,85 @@ func (h *Handler) createEmployee(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 
-	req.ID = uuid.New().String()
-	req.CompanyID = session.CompanyID
+	req.Employee.ID = uuid.New().String()
+	req.Employee.CompanyID = session.CompanyID
 	meta := getMeta(r, session)
 
-	if err := h.employeeRepo.Create(r.Context(), &req, meta); err != nil {
+	if err := h.employeeRepo.Create(r.Context(), &req.Employee, meta); err != nil {
 		Error(w, http.StatusInternalServerError, "failed to create employee: "+err.Error())
 		return
 	}
 
-	JSON(w, http.StatusCreated, req)
+	result := map[string]interface{}{
+		"employee": req.Employee,
+	}
+
+	// Auto-create user account if requested
+	if req.CreateAccount {
+		if req.AccountEmail == "" || req.AccountUsername == "" || req.AccountPassword == "" || req.AccountSalt == "" {
+			Error(w, http.StatusBadRequest, "account_email, account_username, account_password, and account_salt are required for account creation")
+			return
+		}
+		if len(req.WrappedCompanyKey) == 0 || len(req.PublicKey) == 0 {
+			Error(w, http.StatusBadRequest, "wrapped_company_key and public_key are required for account creation")
+			return
+		}
+
+		existing, err := h.userRepo.GetByEmail(r.Context(), req.AccountEmail)
+		if err != nil {
+			Error(w, http.StatusInternalServerError, "failed to check existing user")
+			return
+		}
+		if existing != nil {
+			Error(w, http.StatusConflict, "email already registered")
+			return
+		}
+
+		userID := uuid.New().String()
+		accessID := uuid.New().String()
+		accountHash := hashPassword(req.AccountPassword, req.AccountSalt)
+
+		err = h.userRepo.Create(r.Context(), &models.User{
+			ID:           userID,
+			Email:        req.AccountEmail,
+			Username:     req.AccountUsername,
+			PasswordHash: accountHash,
+			Salt:         req.AccountSalt,
+		}, meta)
+		if err != nil {
+			Error(w, http.StatusInternalServerError, "failed to create user account: "+err.Error())
+			return
+		}
+
+		kexAlgorithm := req.KeyExchangeAlgorithm
+		if kexAlgorithm == "" {
+			kexAlgorithm = "ML-KEM-768"
+		}
+
+		err = h.accessRepo.Create(r.Context(), &models.UserCompanyAccess{
+			ID:                   accessID,
+			UserID:               userID,
+			CompanyID:            session.CompanyID,
+			WrappedCompanyKey:    req.WrappedCompanyKey,
+			KeyWrapAlgorithm:     req.KeyWrapAlgorithm,
+			KeyExchangeAlgorithm: kexAlgorithm,
+			PublicKey:            req.PublicKey,
+			SigningPublicKey:     req.SigningPublicKey,
+			Role:                 models.RoleEmployee,
+		}, meta)
+		if err != nil {
+			Error(w, http.StatusInternalServerError, "failed to grant company access: "+err.Error())
+			return
+		}
+
+		h.employeeRepo.LinkUser(r.Context(), req.Employee.ID, userID, meta)
+
+		result["user_id"] = userID
+		result["access_id"] = accessID
+		result["account_created"] = true
+	}
+
+	JSON(w, http.StatusCreated, result)
 }
 
 func (h *Handler) updateEmployee(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
@@ -2398,7 +2498,8 @@ func (h *Handler) resetPassword(w http.ResponseWriter, r *http.Request) {
 	passwordHash := hashPassword(req.Password, req.Salt)
 
 	err = h.userRepo.ResetPasswordWithKey(r.Context(), user.ID, passwordHash, req.Salt,
-		req.WrappedCompanyKey, req.KeyWrapAlgorithm, req.PublicKey,
+		req.WrappedCompanyKey, req.KeyWrapAlgorithm, req.KeyExchangeAlgorithm,
+		req.PublicKey, req.SigningPublicKey,
 		r.RemoteAddr, r.UserAgent())
 	if err != nil {
 		Error(w, http.StatusInternalServerError, "password reset failed: "+err.Error())
@@ -2406,6 +2507,292 @@ func (h *Handler) resetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 
 	JSON(w, http.StatusOK, map[string]string{"status": "password reset successful"})
+}
+
+// ==================== ADMIN RESET EMPLOYEE PASSWORD ====================
+
+func (h *Handler) adminResetPassword(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	if session.Role != models.RoleSuperAdmin && session.Role != models.RoleAdmin {
+		Error(w, http.StatusForbidden, "insufficient permissions")
+		return
+	}
+
+	var req struct {
+		UserID               string `json:"user_id"`
+		Password             string `json:"password"`
+		Salt                 string `json:"salt"`
+		WrappedCompanyKey    []byte `json:"wrapped_company_key"`
+		KeyWrapAlgorithm     string `json:"key_wrap_algorithm"`
+		KeyExchangeAlgorithm string `json:"key_exchange_algorithm"`
+		PublicKey            []byte `json:"public_key"`
+		SigningPublicKey     []byte `json:"signing_public_key"`
+	}
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.UserID == "" || req.Password == "" || req.Salt == "" {
+		Error(w, http.StatusBadRequest, "user_id, password, and salt are required")
+		return
+	}
+	if len(req.WrappedCompanyKey) == 0 || len(req.PublicKey) == 0 {
+		Error(w, http.StatusBadRequest, "wrapped_company_key and public_key are required")
+		return
+	}
+
+	user, err := h.userRepo.GetByID(r.Context(), req.UserID)
+	if err != nil || user == nil {
+		Error(w, http.StatusNotFound, "user not found")
+		return
+	}
+
+	passwordHash := hashPassword(req.Password, req.Salt)
+
+	kexAlg := req.KeyExchangeAlgorithm
+	if kexAlg == "" {
+		kexAlg = "ML-KEM-768"
+	}
+	kwAlg := req.KeyWrapAlgorithm
+	if kwAlg == "" {
+		kwAlg = "AES-KW"
+	}
+
+	err = h.userRepo.AdminResetPassword(r.Context(), req.UserID, passwordHash, req.Salt,
+		req.WrappedCompanyKey, kwAlg, kexAlg,
+		req.PublicKey, req.SigningPublicKey,
+		r.RemoteAddr, r.UserAgent(),
+	)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "password reset failed: "+err.Error())
+		return
+	}
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"status":   "password reset successful",
+		"username": user.Username,
+	})
+}
+
+func (h *Handler) createEmployeeAccount(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	if session.Role != models.RoleSuperAdmin && session.Role != models.RoleAdmin {
+		Error(w, http.StatusForbidden, "insufficient permissions")
+		return
+	}
+
+	var req struct {
+		EmployeeID           string `json:"employee_id"`
+		Email                string `json:"email"`
+		Username             string `json:"username"`
+		Password             string `json:"password"`
+		Salt                 string `json:"salt"`
+		WrappedCompanyKey    []byte `json:"wrapped_company_key"`
+		KeyWrapAlgorithm     string `json:"key_wrap_algorithm"`
+		KeyExchangeAlgorithm string `json:"key_exchange_algorithm"`
+		PublicKey            []byte `json:"public_key"`
+		SigningPublicKey     []byte `json:"signing_public_key"`
+	}
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.EmployeeID == "" || req.Email == "" || req.Username == "" || req.Password == "" || req.Salt == "" {
+		Error(w, http.StatusBadRequest, "employee_id, email, username, password, and salt are required")
+		return
+	}
+	if len(req.WrappedCompanyKey) == 0 || len(req.PublicKey) == 0 {
+		Error(w, http.StatusBadRequest, "wrapped_company_key and public_key are required")
+		return
+	}
+
+	passwordHash := hashPassword(req.Password, req.Salt)
+	meta := getMeta(r, session)
+
+	kexAlg := req.KeyExchangeAlgorithm
+	if kexAlg == "" {
+		kexAlg = "ML-KEM-768"
+	}
+	kwAlg := req.KeyWrapAlgorithm
+	if kwAlg == "" {
+		kwAlg = "AES-KW"
+	}
+
+	// Branch on whether a user with this email already exists.
+	existing, err := h.userRepo.GetByEmail(r.Context(), req.Email)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to check existing user")
+		return
+	}
+
+	if existing != nil {
+		// A user with that email already exists. Three sub-cases.
+		linkedEmpID, err := h.employeeRepo.FindByUserID(r.Context(), existing.ID, session.CompanyID)
+		if err != nil {
+			Error(w, http.StatusInternalServerError, "failed to check link status: "+err.Error())
+			return
+		}
+		if linkedEmpID == req.EmployeeID {
+			// Already linked to the same employee. Idempotent success.
+			JSON(w, http.StatusOK, map[string]interface{}{
+				"user_id":  existing.ID,
+				"username": existing.Username,
+				"linked":   true,
+				"reused":   true,
+			})
+			return
+		}
+		if linkedEmpID != "" {
+			// Linked to a different employee. Real conflict.
+			Error(w, http.StatusConflict, "email already linked to another employee")
+			return
+		}
+
+		// Orphan: user exists but is not linked to any employee in this
+		// company. This happens when a previous create-account attempt
+		// partially completed. Reuse the user: refresh password and keys
+		// to match what the admin just generated, then link.
+		if err := h.userRepo.AdminResetPassword(
+			r.Context(), existing.ID, passwordHash, req.Salt,
+			req.WrappedCompanyKey, kwAlg, kexAlg,
+			req.PublicKey, req.SigningPublicKey,
+			r.RemoteAddr, r.UserAgent(),
+		); err != nil {
+			Error(w, http.StatusInternalServerError, "failed to refresh account: "+err.Error())
+			return
+		}
+		if err := h.employeeRepo.LinkUser(r.Context(), req.EmployeeID, existing.ID, meta); err != nil {
+			Error(w, http.StatusInternalServerError, "failed to link employee: "+err.Error())
+			return
+		}
+		JSON(w, http.StatusOK, map[string]interface{}{
+			"user_id":  existing.ID,
+			"username": existing.Username,
+			"linked":   true,
+			"reused":   true,
+		})
+		return
+	}
+
+	// No existing user. Normal create flow.
+	userID := uuid.New().String()
+	accessID := uuid.New().String()
+
+	err = h.userRepo.Create(r.Context(), &models.User{
+		ID:           userID,
+		Email:        req.Email,
+		Username:     req.Username,
+		PasswordHash: passwordHash,
+		Salt:         req.Salt,
+	}, meta)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to create user: "+err.Error())
+		return
+	}
+
+	err = h.accessRepo.Create(r.Context(), &models.UserCompanyAccess{
+		ID:                   accessID,
+		UserID:               userID,
+		CompanyID:            session.CompanyID,
+		WrappedCompanyKey:    req.WrappedCompanyKey,
+		KeyWrapAlgorithm:     kwAlg,
+		KeyExchangeAlgorithm: kexAlg,
+		PublicKey:            req.PublicKey,
+		SigningPublicKey:     req.SigningPublicKey,
+		Role:                 models.RoleEmployee,
+	}, meta)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to grant access: "+err.Error())
+		return
+	}
+
+	if err := h.employeeRepo.LinkUser(r.Context(), req.EmployeeID, userID, meta); err != nil {
+		Error(w, http.StatusInternalServerError, "failed to link employee: "+err.Error())
+		return
+	}
+
+	JSON(w, http.StatusCreated, map[string]interface{}{
+		"user_id":   userID,
+		"username":  req.Username,
+		"access_id": accessID,
+		"linked":    true,
+		"reused":    false,
+	})
+}
+
+// ==================== PERMISSION HANDLERS ====================
+
+func (h *Handler) updatePermissions(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	if session.Role != models.RoleSuperAdmin && session.Role != models.RoleAdmin {
+		Error(w, http.StatusForbidden, "insufficient permissions")
+		return
+	}
+
+	var req struct {
+		EmployeeID  string      `json:"employee_id"`
+		Permissions interface{} `json:"permissions"`
+	}
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.EmployeeID == "" {
+		Error(w, http.StatusBadRequest, "employee_id is required")
+		return
+	}
+
+	var permsJSON []byte
+	if req.Permissions != nil {
+		var err error
+		permsJSON, err = json.Marshal(req.Permissions)
+		if err != nil {
+			Error(w, http.StatusBadRequest, "invalid permissions format")
+			return
+		}
+	}
+
+	result, err := h.db.ExecContext(r.Context(),
+		"UPDATE employees SET permissions = ? WHERE id = ? AND company_id = ?",
+		permsJSON, req.EmployeeID, session.CompanyID,
+	)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to update permissions: "+err.Error())
+		return
+	}
+	rows, _ := result.RowsAffected()
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"status":        "permissions updated",
+		"rows_affected": rows,
+	})
+}
+
+func (h *Handler) getPermissions(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		EmployeeID string `json:"employee_id"`
+	}
+	if err := Decode(r, &req); err != nil || req.EmployeeID == "" {
+		Error(w, http.StatusBadRequest, "employee_id is required")
+		return
+	}
+
+	var perms sql.NullString
+	err := h.db.QueryRowContext(r.Context(),
+		"SELECT permissions FROM employees WHERE id = ? AND company_id = ?",
+		req.EmployeeID, session.CompanyID,
+	).Scan(&perms)
+	if err != nil {
+		JSON(w, http.StatusOK, map[string]interface{}{"permissions": nil})
+		return
+	}
+
+	if !perms.Valid || perms.String == "" {
+		JSON(w, http.StatusOK, map[string]interface{}{"permissions": nil})
+		return
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"permissions": json.RawMessage(perms.String),
+	})
 }
 
 // ==================== LOAN HANDLERS ====================

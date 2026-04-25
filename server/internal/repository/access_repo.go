@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 
 	"lettersheets/internal/models"
 )
@@ -17,9 +18,10 @@ func NewAccessRepo(db *sql.DB) *AccessRepo {
 
 func (r *AccessRepo) Create(ctx context.Context, access *models.UserCompanyAccess, meta *models.RequestMeta) error {
 	_, err := r.db.ExecContext(ctx,
-		"CALL sp_create_user_company_access(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		"CALL sp_create_user_company_access(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		access.ID, access.UserID, access.CompanyID,
-		access.WrappedCompanyKey, access.KeyWrapAlgorithm, access.PublicKey,
+		access.WrappedCompanyKey, access.KeyWrapAlgorithm, access.KeyExchangeAlgorithm,
+		access.PublicKey, access.SigningPublicKey,
 		access.Role, access.Permissions,
 		meta.UserID, meta.SessionID, meta.IPAddress, meta.UserAgent,
 	)
@@ -95,4 +97,34 @@ func (r *AccessRepo) Delete(ctx context.Context, id string, meta *models.Request
 		id, meta.CompanyID, meta.UserID, meta.SessionID, meta.IPAddress, meta.UserAgent,
 	)
 	return err
+}
+
+func (r *AccessRepo) UpdatePermissions(ctx context.Context, userID, companyID string, permissions []byte) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		"UPDATE user_company_access SET permissions = ? WHERE user_id = ? AND company_id = ? AND is_active = 1",
+		permissions, userID, companyID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	rows, _ := result.RowsAffected()
+	return rows, nil
+}
+
+func (r *AccessRepo) GetPermissions(ctx context.Context, userID, companyID string) (json.RawMessage, error) {
+	var perms sql.NullString
+	err := r.db.QueryRowContext(ctx,
+		"SELECT permissions FROM user_company_access WHERE user_id = ? AND company_id = ? AND is_active = 1",
+		userID, companyID,
+	).Scan(&perms)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !perms.Valid || perms.String == "" {
+		return nil, nil
+	}
+	return json.RawMessage(perms.String), nil
 }

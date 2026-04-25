@@ -10,6 +10,7 @@ import {
     faUser, faArrowLeft, faComment, faDesktop, faHouse, faInbox,
     faChevronDown,
 } from "@fortawesome/pro-light-svg-icons";
+import { Permissions, SELF_SERVICE_MODULES } from "../utils/permissions";
 
 /* ================================================================
    MODULE REGISTRY
@@ -61,6 +62,71 @@ export const modules = [
     },
 ];
 
+/* Employee-only nav: limited sidebar */
+const employeeModules = [
+    { id: "dashboard", label: "My Profile", path: "/dashboard", icon: "grid" },
+    {
+        id: "hr", label: "Self Service", icon: "users",
+        children: [
+            { id: "hr-attendance",  label: "Attendance",  path: "/hr/attendance",     icon: "clock" },
+            { id: "hr-leave",       label: "Leave",       path: "/hr/leave",          icon: "calendar" },
+            { id: "hr-payroll",     label: "Payslips",    path: "/hr/payroll",        icon: "peso" },
+            { id: "hr-benefits",    label: "Benefits",    path: "/hr/benefits",       icon: "heart" },
+            { id: "hr-loans",       label: "Loans",       path: "/hr/loans",          icon: "banknote" },
+        ],
+    },
+];
+
+// Map permission module IDs to sidebar child IDs
+const PERM_TO_CHILD = {
+    employees: "hr-employees", departments: "hr-departments", positions: "hr-positions",
+    attendance: "hr-attendance", leave: "hr-leave", payroll: "hr-payroll",
+    benefits: "hr-benefits", loans: "hr-loans", compliance: "hr-compliance",
+    onboarding: "hr-onboarding",
+};
+
+function buildNavModules(perms) {
+    if (perms.isSuperAdmin()) return modules;
+    if (perms.isSelfServiceOnly()) return employeeModules;
+
+    const visible = perms.getVisibleModules();
+    const result = [{ id: "dashboard", label: "Dashboard", path: "/dashboard", icon: "grid" }];
+
+    // Build HR children
+    const hrFull = modules.find(m => m.id === "hr");
+    if (hrFull) {
+        const visibleChildIds = new Set();
+        for (const mod of visible) {
+            if (PERM_TO_CHILD[mod]) visibleChildIds.add(PERM_TO_CHILD[mod]);
+        }
+        // Always include self-service modules
+        for (const mod of SELF_SERVICE_MODULES) {
+            if (PERM_TO_CHILD[mod]) visibleChildIds.add(PERM_TO_CHILD[mod]);
+        }
+        const children = hrFull.children.filter(c => visibleChildIds.has(c.id));
+        if (children.length > 0) {
+            // Add overview if they have any non-self-service HR permission
+            const hasAdminHR = visible.some(m => PERM_TO_CHILD[m] && !SELF_SERVICE_MODULES.includes(m));
+            if (hasAdminHR) children.unshift({ id: "hr-overview", label: "Overview", path: "/hr", icon: "grid" });
+            result.push({ id: "hr", label: "Human Resource", icon: "users", children });
+        }
+    }
+
+    // Accounting
+    if (visible.includes("accounting")) {
+        const acc = modules.find(m => m.id === "accounting");
+        if (acc) result.push(acc);
+    }
+
+    // Ticketing
+    if (visible.includes("ticketing")) {
+        const tk = modules.find(m => m.id === "ticketing");
+        if (tk) result.push(tk);
+    }
+
+    return result;
+}
+
 /* ================================================================
    ICON COMPONENT — Font Awesome 6 Pro Light
 ================================================================ */
@@ -109,25 +175,24 @@ export const I = ({ name, size = 16 }) => {
 /* ================================================================
    HELPERS
 ================================================================ */
-function getAllLeaves() {
+function getAllLeaves(mods) {
     const leaves = [];
-    for (const mod of modules) {
+    for (const mod of mods) {
         if (mod.path) leaves.push(mod);
         if (mod.children) leaves.push(...mod.children);
     }
     return leaves;
 }
 
-function findActive(pathname) {
-    const leaves = getAllLeaves();
-    // exact match first, then longest prefix
+function findActive(pathname, mods) {
+    const leaves = getAllLeaves(mods);
     return leaves.find(m => m.path === pathname)
         || [...leaves].sort((a,b) => b.path.length - a.path.length).find(m => pathname.startsWith(m.path))
         || leaves[0];
 }
 
-function findParent(activeId) {
-    for (const mod of modules) {
+function findParent(activeId, mods) {
+    for (const mod of mods) {
         if (mod.children?.some(c => c.id === activeId)) return mod;
     }
     return null;
@@ -142,6 +207,9 @@ export default function ERPLayout() {
     const user = JSON.parse(localStorage.getItem("ls_user") || "{}");
     const company = JSON.parse(localStorage.getItem("ls_company") || "{}");
     const hasKey = !!sessionStorage.getItem("ls_company_key");
+    const perms = new Permissions(company.permissions, company.role);
+    const isEmployee = perms.isSelfServiceOnly();
+    const navModules = buildNavModules(perms);
     const [collapsed, setCollapsed] = useState(false);
     const [rightOpen, setRightOpen] = useState(true);
     const [mobileMenu, setMobileMenu] = useState(false);
@@ -159,13 +227,13 @@ export default function ERPLayout() {
 
     if (!hasKey) return null;
 
-    const active = findActive(location.pathname);
-    const activeParent = findParent(active.id);
+    const active = findActive(location.pathname, navModules);
+    const activeParent = findParent(active.id, navModules);
 
     // Track expanded parents
     const [expanded, setExpanded] = useState(() => {
         const init = {};
-        modules.forEach(m => { if (m.children) init[m.id] = !!activeParent && activeParent.id === m.id; });
+        navModules.forEach(m => { if (m.children) init[m.id] = !!activeParent && activeParent.id === m.id; });
         return init;
     });
 
@@ -206,7 +274,7 @@ export default function ERPLayout() {
                 </div>
 
                 <nav className="sb-nav">
-                    {modules.map((mod) => {
+                    {navModules.map((mod) => {
                         // Simple link
                         if (mod.path) {
                             return (

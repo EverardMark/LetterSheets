@@ -11,10 +11,18 @@ type UserRepo struct {
 	db *sql.DB
 }
 
-func (r *UserRepo) ResetPasswordWithKey(ctx context.Context, userID, passwordHash, salt, wrappedCompanyKey, keyWrapAlgorithm, publicKey, ipAddress, userAgent string) error {
+func (r *UserRepo) ResetPasswordWithKey(ctx context.Context, userID, passwordHash, salt, wrappedCompanyKey, keyWrapAlgorithm, keyExchangeAlgorithm, publicKey, signingPublicKey, ipAddress, userAgent string) error {
 	_, err := r.db.ExecContext(ctx,
-		"CALL sp_reset_password_with_key(?, ?, ?, ?, ?, ?, ?, ?)",
-		userID, passwordHash, salt, wrappedCompanyKey, keyWrapAlgorithm, publicKey, ipAddress, userAgent,
+		"CALL sp_reset_password_with_key(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		userID, passwordHash, salt, wrappedCompanyKey, keyWrapAlgorithm, keyExchangeAlgorithm, publicKey, signingPublicKey, ipAddress, userAgent,
+	)
+	return err
+}
+
+func (r *UserRepo) AdminResetPassword(ctx context.Context, userID, passwordHash, salt string, wrappedCompanyKey []byte, keyWrapAlgorithm, keyExchangeAlgorithm string, publicKey, signingPublicKey []byte, ipAddress, userAgent string) error {
+	_, err := r.db.ExecContext(ctx,
+		"CALL sp_reset_password_with_key(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		userID, passwordHash, salt, wrappedCompanyKey, keyWrapAlgorithm, keyExchangeAlgorithm, publicKey, signingPublicKey, ipAddress, userAgent,
 	)
 	return err
 }

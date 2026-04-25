@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 
-const API_URL = "http://localhost:8080/api/execute";
+const API_URL = "/api/execute";
 
 async function api(action, body = {}) {
     const session = localStorage.getItem("ls_session");

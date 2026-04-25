@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 
-const API_URL = "http://localhost:8080/api/execute";
+const API_URL = "/api/execute";
 
 async function api(action, body = {}) {
     const session = localStorage.getItem("ls_session");
@@ -43,6 +43,15 @@ function dateLabel(d) {
 }
 
 export default function AttendanceTab({ employees = [] }) {
+    const company = JSON.parse(localStorage.getItem("ls_company") || "{}");
+    const currentUser = JSON.parse(localStorage.getItem("ls_user") || "{}");
+    const isEmployee = company.role === "employee";
+
+    // Employee role: only show their own record
+    const visibleEmployees = isEmployee
+        ? employees.filter(e => e.user_id === currentUser.id)
+        : employees;
+
     const [date, setDate] = useState(fmtDate(new Date()));
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -94,10 +103,10 @@ export default function AttendanceTab({ employees = [] }) {
     const attendMap = {};
     records.forEach(r => { attendMap[r.employee_id] = r; });
 
-    const depts = [...new Set(employees.map(e => e.department).filter(Boolean))];
+    const depts = [...new Set(visibleEmployees.map(e => e.department).filter(Boolean))];
 
     // Filter employees
-    let shown = employees.filter(e => {
+    let shown = visibleEmployees.filter(e => {
         const name = `${e.first_name} ${e.last_name}`.toLowerCase();
         if (debouncedFilter && !name.includes(debouncedFilter.toLowerCase())) return false;
         if (deptFilter && e.department !== deptFilter) return false;
@@ -108,19 +117,21 @@ export default function AttendanceTab({ employees = [] }) {
         {/* Bar */}
         <div className="at-bar">
             <div className="at-bar-left">
-                <div className="at-search-wrap">
-                    {searching
-                        ? <div className="at-spinner" />
-                        : <I name="search" size={14} />
-                    }
-                    <input
-                        className="at-search"
-                        placeholder="Search employees..."
-                        value={filter}
-                        onChange={e => setFilter(e.target.value)}
-                    />
-                </div>
-                {depts.length > 0 && (
+                {!isEmployee && (
+                    <div className="at-search-wrap">
+                        {searching
+                            ? <div className="at-spinner" />
+                            : <I name="search" size={14} />
+                        }
+                        <input
+                            className="at-search"
+                            placeholder="Search employees..."
+                            value={filter}
+                            onChange={e => setFilter(e.target.value)}
+                        />
+                    </div>
+                )}
+                {!isEmployee && depts.length > 0 && (
                     <select className="at-dept-filter" value={deptFilter} onChange={e => setDeptFilter(e.target.value)}>
                         <option value="">All Depts</option>
                         {depts.map(d => <option key={d} value={d}>{d}</option>)}
@@ -128,9 +139,11 @@ export default function AttendanceTab({ employees = [] }) {
                 )}
                 <input type="date" className="at-date" value={date} onChange={e => setDate(e.target.value)} />
             </div>
-            <div className="at-bar-right">
-                <button className="at-btn-p" onClick={openAdd}><I name="plus" size={14} /> Add Record</button>
-            </div>
+            {!isEmployee && (
+                <div className="at-bar-right">
+                    <button className="at-btn-p" onClick={openAdd}><I name="plus" size={14} /> Add Record</button>
+                </div>
+            )}
         </div>
 
         {/* Table */}
@@ -167,7 +180,10 @@ export default function AttendanceTab({ employees = [] }) {
                         const statusColor = STATUS_COLORS[status] || "#ccc";
 
                         return (
-                            <tr key={emp.id} onClick={() => rec ? openView(rec) : setPanel({ open: true, mode: "add", record: { employee_id: emp.id, date } })}>
+                            <tr key={emp.id} onClick={() => {
+                                if (isEmployee) { if (rec) openView(rec); return; }
+                                rec ? openView(rec) : setPanel({ open: true, mode: "add", record: { employee_id: emp.id, date } });
+                            }}>
                                 <td>
                                     <div className="at-emp">
                                         <span className="at-emp-av">{(emp.first_name?.[0] || "") + (emp.last_name?.[0] || "")}</span>
@@ -195,11 +211,12 @@ export default function AttendanceTab({ employees = [] }) {
             open={panel.open}
             mode={panel.mode}
             record={panel.record}
-            employees={employees}
+            employees={visibleEmployees}
             date={date}
             onClose={closePanel}
             onSave={saveRecord}
             onDelete={deleteRecord}
+            readOnly={isEmployee}
         />
 
         <style>{attCSS}</style>
@@ -296,7 +313,7 @@ function EmployeePicker({ employees, value, onChange }) {
 /* ================================================================
    MODAL PANEL — all modes use Modal
 ================================================================ */
-function AttendancePanel({ open, mode, record, employees, date, onClose, onSave, onDelete }) {
+function AttendancePanel({ open, mode, record, employees, date, onClose, onSave, onDelete, readOnly }) {
     const [form, setForm] = useState({});
     const [currentMode, setCurrentMode] = useState(mode);
 
@@ -409,8 +426,8 @@ function AttendancePanel({ open, mode, record, employees, date, onClose, onSave,
                     </div>
                     <div className="ap-foot-btns">
                         {isView ? (<>
-                            <button className="ap-btn-danger" onClick={() => onDelete(record.id)}>Delete</button>
-                            <button className="ap-btn-primary" onClick={switchToEdit}>Edit</button>
+                            {!readOnly && <button className="ap-btn-danger" onClick={() => onDelete(record.id)}>Delete</button>}
+                            {!readOnly && <button className="ap-btn-primary" onClick={switchToEdit}>Edit</button>}
                         </>) : (<>
                             <button className="ap-btn-cancel" onClick={isEdit ? switchToView : onClose}>Cancel</button>
                             <button className="ap-btn-primary" onClick={handleSave}>

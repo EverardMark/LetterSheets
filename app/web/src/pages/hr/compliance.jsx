@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { I } from "../../layouts/ERPLayout";
+import Modal from "../components/Modal";
 
 /* ================================================================
    API HELPER
 ================================================================ */
-const API_URL = "http://localhost:8080/api/execute";
+const API_URL = "/api/execute";
 
 async function api(action, body = {}) {
     const session = localStorage.getItem("ls_session");
@@ -100,8 +101,7 @@ const defaultColors = ["#0ea5e9","#22c55e","#8b5cf6","#f59e0b","#ef4444","#ec489
 ================================================================ */
 export default function ComplianceTab({ agencies, setAgencies, currency = "₱" }) {
     const [mode, setMode] = useState(agencies.length > 0 ? "dashboard" : "setup");
-    const [editIdx, setEditIdx] = useState(null);
-    const [showAdd, setShowAdd] = useState(false);
+    const [panel, setPanel] = useState({ open: false, mode: "view", idx: -1 });
     const [toast, setToast] = useState(null);
 
     const showToast = (msg, ok = true) => {
@@ -209,41 +209,18 @@ export default function ComplianceTab({ agencies, setAgencies, currency = "₱" 
     }
 
     // ---- SETUP MODE ----
+    const closePanel = () => setPanel({ open: false, mode: "view", idx: -1 });
+    const panelAgency = panel.open && panel.mode !== "add" && panel.idx >= 0 ? agencies[panel.idx] : null;
+    const blankAgency = {
+        name: "", fullName: "", color: defaultColors[agencies.length % defaultColors.length],
+        frequency: "Monthly", website: "",
+        fields: [{ label: "Amount", key: "amount", type: "currency" }],
+        status: "Not Filed", dueDate: "", lastFiled: "",
+        values: { amount: "" },
+    };
+
     if (mode === "setup") {
         return <Setup onSelect={applyTemplate} />;
-    }
-
-    // ---- EDIT AGENCY ----
-    if (editIdx !== null) {
-        return (
-            <AgencyEditor
-                agency={agencies[editIdx]}
-                currency={currency}
-                onSave={(updated) => { saveAgency(updated, false, editIdx); setEditIdx(null); }}
-                onDelete={() => { deleteAgency(editIdx); setEditIdx(null); }}
-                onCancel={() => setEditIdx(null)}
-            />
-        );
-    }
-
-    // ---- ADD AGENCY ----
-    if (showAdd) {
-        const blank = {
-            name: "", fullName: "", color: defaultColors[agencies.length % defaultColors.length],
-            frequency: "Monthly", website: "",
-            fields: [{ label: "Amount", key: "amount", type: "currency" }],
-            status: "Not Filed", dueDate: "", lastFiled: "",
-            values: { amount: "" },
-        };
-        return (
-            <AgencyEditor
-                agency={blank}
-                currency={currency}
-                isNew
-                onSave={(created) => { saveAgency(created, true, -1); setShowAdd(false); }}
-                onCancel={() => setShowAdd(false)}
-            />
-        );
     }
 
     // ---- DASHBOARD ----
@@ -262,14 +239,14 @@ export default function ComplianceTab({ agencies, setAgencies, currency = "₱" 
             <div className="c-bar">
                 <span className="c-bar-count">{agencies.length} agencies configured</span>
                 <div className="c-bar-btns">
-                    <button className="c-btn-sec" onClick={() => setShowAdd(true)}><I name="shield" size={14}/> Add Agency</button>
+                    <button className="c-btn-sec" onClick={() => setPanel({ open: true, mode: "add", idx: -1 })}><I name="shield" size={14}/> Add Agency</button>
                     <button className="c-btn-sec c-btn-reset" onClick={() => setMode("setup")}><I name="grid" size={14}/> Change Template</button>
                 </div>
             </div>
 
             <div className="c-grid">
                 {agencies.map((a, i) => (
-                    <div key={i} className="c-card" style={{ borderTopColor: a.color }}>
+                    <div key={i} className="c-card" style={{ borderTopColor: a.color, cursor:"pointer" }} onClick={() => setPanel({ open: true, mode: "view", idx: i })}>
                         <div className="c-card-head">
                             <div>
                                 <div className="c-card-name">{a.name}</div>
@@ -277,7 +254,7 @@ export default function ComplianceTab({ agencies, setAgencies, currency = "₱" 
                             </div>
                             <div className="c-card-actions">
                                 <span className={`c-badge ${badgeClass(a.status)}`}>{a.status}</span>
-                                <button className="c-card-edit" onClick={() => setEditIdx(i)}>Edit</button>
+                                <button className="c-card-edit" onClick={(e) => { e.stopPropagation(); setPanel({ open: true, mode: "edit", idx: i }); }}>Edit</button>
                             </div>
                         </div>
                         {a.fields.map((f, j) => (
@@ -294,6 +271,108 @@ export default function ComplianceTab({ agencies, setAgencies, currency = "₱" 
                     </div>
                 ))}
             </div>
+
+            {/* View Modal */}
+            {panel.open && panel.mode === "view" && panelAgency && (
+                <Modal
+                    title={panelAgency.name}
+                    subtitle={panelAgency.fullName}
+                    onClose={closePanel}
+                >
+                    <div className="ap-modal-layout">
+                        <div className="ap-modal-scroll">
+                            <div className="ap-section">
+                                <h4 className="ap-sec-title">Agency Details</h4>
+                                <div className="ap-fields">
+                                    <div className="ap-field">
+                                        <label className="ap-label">Short Name</label>
+                                        <input className="ap-input" value={panelAgency.name} disabled />
+                                    </div>
+                                    <div className="ap-field">
+                                        <label className="ap-label">Status</label>
+                                        <span className={`c-badge ${badgeClass(panelAgency.status)}`}>{panelAgency.status}</span>
+                                    </div>
+                                    {panelAgency.fullName && <div className="ap-field ap-field-full">
+                                        <label className="ap-label">Full Name</label>
+                                        <input className="ap-input" value={panelAgency.fullName} disabled />
+                                    </div>}
+                                    <div className="ap-field">
+                                        <label className="ap-label">Frequency</label>
+                                        <input className="ap-input" value={panelAgency.frequency} disabled />
+                                    </div>
+                                    {panelAgency.website && <div className="ap-field">
+                                        <label className="ap-label">Website</label>
+                                        <input className="ap-input" value={panelAgency.website} disabled />
+                                    </div>}
+                                    {panelAgency.dueDate && <div className="ap-field">
+                                        <label className="ap-label">Due Date</label>
+                                        <input className="ap-input" value={panelAgency.dueDate} disabled />
+                                    </div>}
+                                    {panelAgency.lastFiled && <div className="ap-field">
+                                        <label className="ap-label">Last Filed</label>
+                                        <input className="ap-input" value={panelAgency.lastFiled} disabled />
+                                    </div>}
+                                </div>
+                            </div>
+
+                            {panelAgency.fields?.length > 0 && (
+                                <div className="ap-section">
+                                    <h4 className="ap-sec-title">Contributions</h4>
+                                    <div className="ap-fields">
+                                        {panelAgency.fields.map((f, j) => (
+                                            <div key={j} className="ap-field">
+                                                <label className="ap-label">{f.label}</label>
+                                                <input className="ap-input" value={`${f.type === "currency" ? currency : ""}${panelAgency.values?.[f.key] || "—"}${f.type === "percent" ? "%" : ""}`} disabled />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="ap-modal-foot">
+                            <div className="ap-foot-btns">
+                                <button className="ap-btn-danger" onClick={() => { deleteAgency(panel.idx); closePanel(); }}>Delete</button>
+                                <button className="ap-btn-primary" onClick={() => setPanel({ ...panel, mode: "edit" })}><I name="edit-2" size={13}/> Edit</button>
+                            </div>
+                        </div>
+                    </div>
+                </Modal>
+            )}
+
+            {/* Edit Modal */}
+            {panel.open && panel.mode === "edit" && panelAgency && (
+                <Modal
+                    title={`Edit: ${panelAgency.name}`}
+                    subtitle={panelAgency.fullName}
+                    onClose={closePanel}
+                >
+                    <AgencyEditor
+                        agency={panelAgency}
+                        currency={currency}
+                        onSave={(updated) => { saveAgency(updated, false, panel.idx); closePanel(); }}
+                        onDelete={() => { deleteAgency(panel.idx); closePanel(); }}
+                        onCancel={closePanel}
+                    />
+                </Modal>
+            )}
+
+            {/* Add Modal */}
+            {panel.open && panel.mode === "add" && (
+                <Modal
+                    title="Add Agency"
+                    subtitle="Configure a new compliance agency"
+                    onClose={closePanel}
+                >
+                    <AgencyEditor
+                        agency={blankAgency}
+                        currency={currency}
+                        isNew
+                        onSave={(created) => { saveAgency(created, true, -1); closePanel(); }}
+                        onCancel={closePanel}
+                    />
+                </Modal>
+            )}
 
             <style>{complianceCSS}</style>
         </div>
@@ -475,48 +554,49 @@ function AgencyEditor({ agency, currency, isNew, onSave, onDelete, onCancel }) {
     };
 
     return (
-        <div className="c-editor">
-            <div className="c-editor-head">
-                <h3 className="c-editor-t">{isNew ? "Add Agency" : `Edit: ${agency.name}`}</h3>
-                <div className="c-editor-btns">
-                    {!isNew && onDelete && <button className="c-btn-danger" onClick={onDelete}>Delete</button>}
-                    <button className="c-btn-sec" onClick={onCancel}>Cancel</button>
-                    <button className="c-btn-p" onClick={save}>Save</button>
-                </div>
-            </div>
-
-            <div className="c-editor-section">
-                <h4 className="c-editor-sh">Agency Details</h4>
-                <div className="c-editor-grid">
-                    <div className="c-field"><label className="c-label">Short Name <span className="c-req">*</span></label><input className="c-input" value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. SSS"/></div>
-                    <div className="c-field"><label className="c-label">Full Name</label><input className="c-input" value={form.fullName} onChange={e => set("fullName", e.target.value)} placeholder="e.g. Social Security System"/></div>
-                    <div className="c-field"><label className="c-label">Frequency</label><select className="c-input" value={form.frequency} onChange={e => set("frequency", e.target.value)}>{frequencies.map(f => <option key={f} value={f}>{f}</option>)}</select></div>
-                    <div className="c-field"><label className="c-label">Color</label><div className="c-colors">{defaultColors.map(c => (<div key={c} className={`c-color ${form.color === c ? "c-color-on" : ""}`} style={{ background: c }} onClick={() => set("color", c)}/>))}</div></div>
-                    <div className="c-field"><label className="c-label">Website</label><input className="c-input" value={form.website || ""} onChange={e => set("website", e.target.value)} placeholder="https://..."/></div>
-                    <div className="c-field"><label className="c-label">Status</label><select className="c-input" value={form.status || "Not Filed"} onChange={e => set("status", e.target.value)}><option value="Remitted">Remitted</option><option value="Filed">Filed</option><option value="Due">Due</option><option value="Overdue">Overdue</option><option value="Not Filed">Not Filed</option></select></div>
-                    <div className="c-field"><label className="c-label">Due Date</label><input className="c-input" type="date" value={form.dueDate || ""} onChange={e => set("dueDate", e.target.value)}/></div>
-                    <div className="c-field"><label className="c-label">Last Filed</label><input className="c-input" type="date" value={form.lastFiled || ""} onChange={e => set("lastFiled", e.target.value)}/></div>
-                </div>
-            </div>
-
-            <div className="c-editor-section">
-                <div className="c-editor-sh-row"><h4 className="c-editor-sh">Contribution Fields</h4><button className="c-btn-sm" onClick={addField}>+ Add Field</button></div>
-                <p className="c-editor-hint">Define what values to track for this agency.</p>
-                {fields.length === 0 && <div className="c-empty-fields">No fields defined. Click "Add Field" to start.</div>}
-                {fields.map((f, i) => (
-                    <div key={i} className="c-field-row">
-                        <input className="c-input c-input-sm" value={f.label} onChange={e => updateField(i, "label", e.target.value)} placeholder="Field label"/>
-                        <select className="c-input c-input-sm c-input-type" value={f.type} onChange={e => updateField(i, "type", e.target.value)}>
-                            <option value="currency">Currency ({currency})</option><option value="text">Text</option><option value="percent">Percentage</option>
-                        </select>
-                        <div className="c-input-val-wrap">
-                            {f.type === "currency" && <span className="c-val-prefix">{currency}</span>}
-                            {f.type === "percent" && <span className="c-val-suffix">%</span>}
-                            <input className={`c-input c-input-sm ${f.type === "currency" ? "c-input-prefixed" : ""}`} value={values[f.key] || ""} onChange={e => setValues(prev => ({ ...prev, [f.key]: e.target.value }))} placeholder="Current value"/>
-                        </div>
-                        <button className="c-field-rm" onClick={() => removeField(i)}>✕</button>
+        <div className="ap-modal-layout">
+            <div className="ap-modal-scroll">
+                <div className="ap-section">
+                    <h4 className="ap-sec-title">Agency Details</h4>
+                    <div className="c-editor-grid">
+                        <div className="c-field"><label className="c-label">Short Name <span className="c-req">*</span></label><input className="c-input" value={form.name} onChange={e => set("name", e.target.value)} placeholder="e.g. SSS"/></div>
+                        <div className="c-field"><label className="c-label">Full Name</label><input className="c-input" value={form.fullName} onChange={e => set("fullName", e.target.value)} placeholder="e.g. Social Security System"/></div>
+                        <div className="c-field"><label className="c-label">Frequency</label><select className="c-input" value={form.frequency} onChange={e => set("frequency", e.target.value)}>{frequencies.map(f => <option key={f} value={f}>{f}</option>)}</select></div>
+                        <div className="c-field"><label className="c-label">Color</label><div className="c-name-row"><input type="color" className="c-color-picker" value={form.color || "#0ea5e9"} onChange={e => set("color", e.target.value)} title="Agency color"/></div></div>
+                        <div className="c-field"><label className="c-label">Website</label><input className="c-input" value={form.website || ""} onChange={e => set("website", e.target.value)} placeholder="https://..."/></div>
+                        <div className="c-field"><label className="c-label">Status</label><select className="c-input" value={form.status || "Not Filed"} onChange={e => set("status", e.target.value)}><option value="Remitted">Remitted</option><option value="Filed">Filed</option><option value="Due">Due</option><option value="Overdue">Overdue</option><option value="Not Filed">Not Filed</option></select></div>
+                        <div className="c-field"><label className="c-label">Due Date</label><input className="c-input" type="date" value={form.dueDate || ""} onChange={e => set("dueDate", e.target.value)}/></div>
+                        <div className="c-field"><label className="c-label">Last Filed</label><input className="c-input" type="date" value={form.lastFiled || ""} onChange={e => set("lastFiled", e.target.value)}/></div>
                     </div>
-                ))}
+                </div>
+
+                <div className="ap-section">
+                    <div className="c-editor-sh-row"><h4 className="ap-sec-title" style={{margin:0}}>Contribution Fields</h4><button className="c-btn-sm" onClick={addField}>+ Add Field</button></div>
+                    <p className="c-editor-hint">Define what values to track for this agency.</p>
+                    {fields.length === 0 && <div className="c-empty-fields">No fields defined. Click "Add Field" to start.</div>}
+                    {fields.map((f, i) => (
+                        <div key={i} className="c-field-row">
+                            <input className="c-input c-input-sm" value={f.label} onChange={e => updateField(i, "label", e.target.value)} placeholder="Field label"/>
+                            <select className="c-input c-input-sm c-input-type" value={f.type} onChange={e => updateField(i, "type", e.target.value)}>
+                                <option value="currency">Currency ({currency})</option><option value="text">Text</option><option value="percent">Percentage</option>
+                            </select>
+                            <div className="c-input-val-wrap">
+                                {f.type === "currency" && <span className="c-val-prefix">{currency}</span>}
+                                {f.type === "percent" && <span className="c-val-suffix">%</span>}
+                                <input className={`c-input c-input-sm ${f.type === "currency" ? "c-input-prefixed" : ""}`} value={values[f.key] || ""} onChange={e => setValues(prev => ({ ...prev, [f.key]: e.target.value }))} placeholder="Current value"/>
+                            </div>
+                            <button className="c-field-rm" onClick={() => removeField(i)}>✕</button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            <div className="ap-modal-foot">
+                <div className="ap-foot-btns">
+                    {!isNew && onDelete && <button className="ap-btn-danger" onClick={onDelete}>Delete</button>}
+                    <button className="ap-btn-cancel" onClick={onCancel}>Cancel</button>
+                    <button className="ap-btn-primary" onClick={save}>Save</button>
+                </div>
             </div>
 
             <style>{complianceCSS}</style>
@@ -573,7 +653,7 @@ const complianceCSS = `
   .c-grid::-webkit-scrollbar{width:6px}
   .c-grid::-webkit-scrollbar-track{background:transparent}
   .c-grid::-webkit-scrollbar-thumb{background:transparent;border-radius:3px}
-  .c-card{border:1px solid #eee;border-radius:12px;padding:18px;border-top:3px solid;background:#fff}
+  .c-card{border:none;border-radius:12px;padding:18px;background:#fff}
   .c-card-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;gap:8px}
   .c-card-name{font-size:18px;font-weight:700;color:#222}
   .c-card-full{font-size:11px;color:#aaa;margin-top:1px}
@@ -630,10 +710,10 @@ const complianceCSS = `
   .c-input-prefixed{padding-left:24px}
   select.c-input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;cursor:pointer}
 
-  .c-colors{display:flex;gap:6px;padding-top:4px}
-  .c-color{width:24px;height:24px;border-radius:6px;cursor:pointer;border:2px solid transparent;transition:all .12s}
-  .c-color:hover{transform:scale(1.1)}
-  .c-color-on{border-color:#222;box-shadow:0 0 0 2px #fff,0 0 0 4px #222}
+  .c-color-picker{width:38px;height:38px;border:1px solid #e0e0e0;border-radius:8px;padding:2px;cursor:pointer;background:#fff;flex-shrink:0}
+  .c-color-picker::-webkit-color-swatch-wrapper{padding:0}
+  .c-color-picker::-webkit-color-swatch{border:none;border-radius:5px}
+  .c-color-picker::-moz-color-swatch{border:none;border-radius:5px}
 
   .c-field-row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
   .c-field-row .c-input{flex:1}
@@ -650,4 +730,26 @@ const complianceCSS = `
 
   @media(max-width:768px){.c-tmpl-grid{grid-template-columns:1fr 1fr}.c-grid{grid-template-columns:1fr}.c-editor-grid{grid-template-columns:1fr}}
   @media(max-width:500px){.c-tmpl-grid{grid-template-columns:1fr}}
+
+  /* Panel form styles */
+  .ap-section{margin-bottom:20px}
+  .ap-sec-title{font-size:13px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.04em;margin-bottom:10px}
+  .ap-fields{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .ap-field{display:flex;flex-direction:column}
+  .ap-field-full{grid-column:1/-1}
+  .ap-label{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:600;color:#666;margin-bottom:5px}
+  .ap-input{width:100%;padding:9px 12px;border:1px solid #e0e0e0;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:13px;color:#333;outline:none;transition:border-color .15s;background:#fff;box-sizing:border-box}
+  .ap-input:focus{border-color:#2d9e8b;box-shadow:0 0 0 2px rgba(45,158,139,.1)}
+  .ap-input:disabled{background:#fafbfa;color:#555;cursor:default}
+  .ap-foot-btns{display:flex;justify-content:flex-end;gap:8px}
+  .ap-btn-cancel{padding:9px 18px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#666;cursor:pointer}
+  .ap-btn-cancel:hover{background:#f5f5f5}
+  .ap-btn-primary{display:flex;align-items:center;gap:5px;padding:9px 22px;border:none;border-radius:8px;background:#2d9e8b;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s}
+  .ap-btn-primary:hover{background:#268a79}
+  .ap-btn-danger{padding:9px 16px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#ef4444;cursor:pointer;margin-right:auto}
+  .ap-btn-danger:hover{background:#ef4444;color:#fff}
+  .ap-modal-layout{display:flex;flex-direction:column;min-height:200px;max-height:60vh}
+  .ap-modal-scroll{flex:1;overflow-y:auto;padding:16px 0 0}
+  .ap-modal-foot{flex-shrink:0;padding:16px 0 0;margin-top:auto}
+  @media(max-width:600px){.ap-fields{grid-template-columns:1fr}}
 `;

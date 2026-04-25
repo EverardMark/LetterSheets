@@ -25,6 +25,7 @@ func main() {
 	log.Println("Connected to database")
 
 	handler := api.NewHandler(
+		db,
 		repository.NewRegistrationRepo(db),
 		repository.NewCompanyRepo(db),
 		repository.NewUserRepo(db),

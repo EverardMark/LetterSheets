@@ -100,6 +100,7 @@ export default function Login({ onNavigate }) {
         id: company.company_id,
         name: company.company_name,
         role: company.role,
+        permissions: company.permissions || null,
       }));
 
       try {

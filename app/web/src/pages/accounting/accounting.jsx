@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 
-const API_URL = "http://localhost:8080/api/execute";
+const API_URL = "/api/execute";
 async function api(action, body = {}) {
     const session = localStorage.getItem("ls_session");
     const res = await fetch(`${API_URL}?action=${action}`, {

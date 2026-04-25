@@ -311,6 +311,7 @@ type Department struct {
 type Employee struct {
 	ID             string  `json:"id" db:"id"`
 	CompanyID      string  `json:"company_id" db:"company_id"`
+	UserID         *string `json:"user_id,omitempty" db:"user_id"`
 	FirstName      string  `json:"first_name" db:"first_name"`
 	LastName       string  `json:"last_name" db:"last_name"`
 	MiddleName     string  `json:"middle_name" db:"middle_name"`
@@ -335,6 +336,12 @@ type Employee struct {
 	ScheduleName  *string `json:"schedule_name,omitempty"`
 	ScheduleType  *string `json:"schedule_type,omitempty"`
 	ScheduleColor *string `json:"schedule_color,omitempty"`
+
+	// Joined from users (read-only)
+	AccountEmail       *string `json:"account_email,omitempty"`
+	AccountUsername    *string `json:"account_username,omitempty"`
+	AccountActive      *bool   `json:"account_active,omitempty"`
+	AccountLastLoginAt *string `json:"account_last_login_at,omitempty"`
 }
 
 // EmployeeFull includes encrypted columns for single-employee fetch
@@ -445,12 +452,14 @@ type LoginResponse struct {
 }
 
 type ResetPasswordRequest struct {
-	Email             string `json:"email"`
-	Password          string `json:"password"`
-	Salt              string `json:"salt"`
-	WrappedCompanyKey string `json:"wrapped_company_key"`
-	KeyWrapAlgorithm  string `json:"key_wrap_algorithm"`
-	PublicKey         string `json:"public_key"`
+	Email                string `json:"email"`
+	Password             string `json:"password"`
+	Salt                 string `json:"salt"`
+	WrappedCompanyKey    string `json:"wrapped_company_key"`
+	KeyWrapAlgorithm     string `json:"key_wrap_algorithm"`
+	KeyExchangeAlgorithm string `json:"key_exchange_algorithm"`
+	PublicKey            string `json:"public_key"`
+	SigningPublicKey     string `json:"signing_public_key"`
 }
 
 type SelectCompanyRequest struct {
