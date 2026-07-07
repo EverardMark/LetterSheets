@@ -2,8 +2,17 @@ package api
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 )
+
+// ServerError logs the underlying error server-side (with a context label) and
+// returns a generic message to the client, so internal SQL / stored-procedure
+// detail is never disclosed. Prefer this over Error(w, 500, err.Error()).
+func ServerError(w http.ResponseWriter, context string, err error) {
+	log.Printf("%s: %v", context, err)
+	Error(w, http.StatusInternalServerError, "internal server error")
+}
 
 type Response struct {
 	Success bool        `json:"success"`

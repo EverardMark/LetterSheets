@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { I } from "../../layouts/ERPLayout";
 
-const API = "/api/execute";
+const API = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 async function api(action, body = {}) {
     const s = localStorage.getItem("ls_session");
     const res = await fetch(`${API}?action=${action}`, { method: "POST", headers: { "Content-Type": "application/json", ...(s ? { Authorization: `Bearer ${s}` } : {}) }, body: JSON.stringify(body) });

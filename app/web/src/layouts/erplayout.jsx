@@ -8,7 +8,7 @@ import {
     faCircleCheck, faChartSimple, faScroll, faGear, faBars,
     faMagnifyingGlass, faBell, faRightFromBracket, faLock, faTag,
     faUser, faArrowLeft, faComment, faDesktop, faHouse, faInbox,
-    faChevronDown,
+    faChevronDown, faTags,
 } from "@fortawesome/pro-light-svg-icons";
 import { Permissions, SELF_SERVICE_MODULES } from "../utils/permissions";
 
@@ -57,7 +57,57 @@ export const modules = [
         children: [
             { id: "tk-overview",   label: "Overview",    path: "/ticketing",            icon: "grid" },
             { id: "tk-board",      label: "Board",       path: "/ticketing/board",      icon: "file" },
+            { id: "tk-labels",     label: "Labels",      path: "/ticketing/labels",     icon: "tags" },
             { id: "tk-categories", label: "Categories",  path: "/ticketing/categories", icon: "tag" },
+        ],
+    },
+    {
+        id: "inventory", label: "Inventory", icon: "box",
+        children: [
+            { id: "inv-overview",   label: "Overview",        path: "/inventory",            icon: "grid" },
+            { id: "inv-products",   label: "Products",        path: "/inventory/products",   icon: "box" },
+            { id: "inv-categories", label: "Categories",      path: "/inventory/categories", icon: "tags" },
+            { id: "inv-warehouses", label: "Warehouses",      path: "/inventory/warehouses", icon: "building" },
+            { id: "inv-movements",  label: "Stock Movements", path: "/inventory/movements",  icon: "scroll" },
+            { id: "inv-purchases",  label: "Purchase Orders", path: "/inventory/purchases",  icon: "cart",  group: "PROCUREMENT" },
+            { id: "inv-suppliers",  label: "Suppliers",       path: "/inventory/suppliers",  icon: "truck" },
+            { id: "inv-settings",   label: "Settings",        path: "/inventory/settings",   icon: "gear",  group: "CONFIG" },
+        ],
+    },
+    {
+        id: "fixed_assets", label: "Fixed Assets", icon: "building",
+        children: [
+            { id: "fa-overview",     label: "Overview",     path: "/fixed-assets",             icon: "grid" },
+            { id: "fa-assets",       label: "Assets",       path: "/fixed-assets/assets",       icon: "box" },
+            { id: "fa-categories",   label: "Categories",   path: "/fixed-assets/categories",   icon: "tags" },
+            { id: "fa-depreciation", label: "Depreciation", path: "/fixed-assets/depreciation", icon: "chart" },
+            { id: "fa-disposals",    label: "Disposals",    path: "/fixed-assets/disposals",    icon: "minus", group: "LIFECYCLE" },
+            { id: "fa-maintenance",  label: "Maintenance",  path: "/fixed-assets/maintenance",  icon: "scroll" },
+            { id: "fa-transfers",    label: "Transfers",    path: "/fixed-assets/transfers",    icon: "truck" },
+            { id: "fa-settings",     label: "Settings",     path: "/fixed-assets/settings",     icon: "gear",  group: "CONFIG" },
+        ],
+    },
+    {
+        id: "sales", label: "Sales", icon: "cart",
+        children: [
+            { id: "so-overview",   label: "Overview",    path: "/sales",             icon: "grid" },
+            { id: "so-quotes",     label: "Quotes",      path: "/sales/quotes",      icon: "file" },
+            { id: "so-orders",     label: "Orders",      path: "/sales/orders",      icon: "cart" },
+            { id: "so-deliveries", label: "Deliveries",  path: "/sales/deliveries",  icon: "truck" },
+            { id: "so-pricelists", label: "Price Lists", path: "/sales/price-lists", icon: "tags",  group: "PRICING" },
+            { id: "so-creditmemos",label: "Credit Memos",path: "/sales/credit-memos",icon: "scroll",group: "RETURNS" },
+            { id: "so-settings",   label: "Settings",    path: "/sales/settings",    icon: "gear",  group: "CONFIG" },
+        ],
+    },
+    {
+        id: "procurement", label: "Procurement", icon: "cart",
+        children: [
+            { id: "pr-overview",     label: "Overview",       path: "/procurement",              icon: "grid" },
+            { id: "pr-requisitions", label: "Requisitions",   path: "/procurement/requisitions", icon: "file" },
+            { id: "pr-orders",       label: "Purchase Orders", path: "/procurement/orders",      icon: "cart" },
+            { id: "pr-receipts",     label: "Goods Receipts", path: "/procurement/receipts",     icon: "truck" },
+            { id: "pr-debitmemos",   label: "Debit Memos",    path: "/procurement/debit-memos",  icon: "scroll", group: "RETURNS" },
+            { id: "pr-settings",     label: "Settings",       path: "/procurement/settings",     icon: "gear",  group: "CONFIG" },
         ],
     },
 ];
@@ -124,6 +174,30 @@ function buildNavModules(perms) {
         if (tk) result.push(tk);
     }
 
+    // Inventory
+    if (visible.includes("inventory")) {
+        const inv = modules.find(m => m.id === "inventory");
+        if (inv) result.push(inv);
+    }
+
+    // Fixed Assets
+    if (visible.includes("fixed_assets")) {
+        const fa = modules.find(m => m.id === "fixed_assets");
+        if (fa) result.push(fa);
+    }
+
+    // Sales
+    if (visible.includes("sales")) {
+        const so = modules.find(m => m.id === "sales");
+        if (so) result.push(so);
+    }
+
+    // Procurement
+    if (visible.includes("procurement")) {
+        const pr = modules.find(m => m.id === "procurement");
+        if (pr) result.push(pr);
+    }
+
     return result;
 }
 
@@ -157,6 +231,7 @@ const faMap = {
     logout: faRightFromBracket,
     lock: faLock,
     tag: faTag,
+    tags: faTags,
     user: faUser,
     "arrow-left": faArrowLeft,
     "message-circle": faComment,
@@ -221,6 +296,10 @@ export default function ERPLayout() {
             localStorage.removeItem("ls_session");
             localStorage.removeItem("ls_user");
             localStorage.removeItem("ls_company");
+            localStorage.removeItem("ls_access");
+            localStorage.removeItem("ls_kem_private_key");
+            localStorage.removeItem("ls_dsa_private_key");
+            sessionStorage.removeItem("ls_company_key");
             navigate("/");
         }
     }, [hasKey]);
@@ -252,6 +331,9 @@ export default function ERPLayout() {
         localStorage.removeItem("ls_session");
         localStorage.removeItem("ls_user");
         localStorage.removeItem("ls_company");
+        localStorage.removeItem("ls_access");
+        localStorage.removeItem("ls_kem_private_key");
+        localStorage.removeItem("ls_dsa_private_key");
         sessionStorage.removeItem("ls_company_key");
         navigate("/");
     };

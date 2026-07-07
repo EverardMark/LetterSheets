@@ -33,6 +33,8 @@ func (r *PayrollRepo) GetSettings(ctx context.Context, companyID string) (*model
 	err = rows.Scan(
 		&s.ID, &s.CompanyID, &s.PaySchedule,
 		&s.OTMultiplier,
+		&s.WorkingDays, &s.HoursPerDay,
+		&s.EnableSSS, &s.EnablePhilHealth, &s.EnablePagibig, &s.EnableTax,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -49,9 +51,11 @@ func (r *PayrollRepo) GetSettings(ctx context.Context, companyID string) (*model
 
 func (r *PayrollRepo) UpsertSettings(ctx context.Context, s *models.PayrollSettings, meta *models.RequestMeta) error {
 	_, err := r.db.ExecContext(ctx,
-		"CALL sp_upsert_payroll_settings(?, ?, ?, ?, ?, ?, ?, ?)",
+		"CALL sp_upsert_payroll_settings(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 		s.ID, meta.CompanyID, s.PaySchedule,
 		s.OTMultiplier,
+		s.WorkingDays, s.HoursPerDay,
+		s.EnableSSS, s.EnablePhilHealth, s.EnablePagibig, s.EnableTax,
 		meta.SessionID, meta.UserID, meta.IPAddress, meta.UserAgent,
 	)
 	return err

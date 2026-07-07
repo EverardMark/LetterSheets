@@ -1,0 +1,121 @@
+/* ============================================================================
+   Accounting layout system — mirrors the HR pages' layout (toolbar + table +
+   empty states + cards + modal form styling) with a teal accounting accent.
+   Every accounting page imports this and uses the `acc-*` classes instead of
+   inline styles, so the module is visually consistent with HR.
+   Accent: #2d9e8b (primary) · tint #edf8f5 · hover #268a79
+============================================================================ */
+
+/* ---- Page shell ---- */
+.acc-wrap { display:flex; flex-direction:column; min-height:calc(100vh - 54px - 48px); }
+.acc-section { margin-bottom:18px; }
+
+/* ---- Toolbar ---- */
+.acc-bar { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px; }
+.acc-bar-left { display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+.acc-bar-right { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.acc-title { font-size:16px; font-weight:700; color:#222; }
+.acc-subtitle { font-size:12px; color:#999; margin-top:2px; }
+
+.acc-search-wrap { display:flex; align-items:center; gap:8px; padding:8px 14px; border:1px solid #e0e0e0; border-radius:8px; background:#fff; flex:1; max-width:240px; color:#aaa; }
+.acc-search { border:none; outline:none; font-family:'DM Sans',sans-serif; font-size:13px; color:#333; flex:1; background:transparent; }
+.acc-search::placeholder { color:#bbb; }
+.acc-filter { padding:8px 12px; border:1px solid #e0e0e0; border-radius:8px; font-family:'DM Sans',sans-serif; font-size:12px; color:#555; background:#fff; outline:none; }
+.acc-filter:focus { border-color:#2d9e8b; }
+
+/* ---- Buttons ---- */
+.acc-btn-p { display:inline-flex; align-items:center; gap:5px; padding:9px 18px; border:none; border-radius:8px; background:#2d9e8b; font-family:'DM Sans',sans-serif; font-size:13px; font-weight:600; color:#fff; cursor:pointer; transition:background .15s; }
+.acc-btn-p:hover { background:#268a79; }
+.acc-btn-s { display:inline-flex; align-items:center; gap:5px; padding:9px 16px; border:1px solid #e0e0e0; border-radius:8px; background:#fff; font-family:'DM Sans',sans-serif; font-size:13px; font-weight:600; color:#555; cursor:pointer; transition:all .15s; }
+.acc-btn-s:hover { border-color:#2d9e8b; color:#2d9e8b; }
+.acc-btn-primary { display:inline-flex; align-items:center; gap:5px; padding:9px 22px; border:none; border-radius:8px; background:#2d9e8b; font-family:'DM Sans',sans-serif; font-size:13px; font-weight:600; color:#fff; cursor:pointer; transition:background .15s; }
+.acc-btn-primary:hover { background:#268a79; }
+.acc-btn-cancel { padding:9px 18px; border:1px solid #e0e0e0; border-radius:8px; background:#fff; font-family:'DM Sans',sans-serif; font-size:13px; font-weight:500; color:#666; cursor:pointer; }
+.acc-btn-cancel:hover { background:#f5f5f5; }
+.acc-btn-danger { padding:9px 16px; border:1px solid #fecaca; border-radius:8px; background:#fef2f2; font-family:'DM Sans',sans-serif; font-size:13px; font-weight:500; color:#ef4444; cursor:pointer; }
+.acc-btn-danger:hover { background:#ef4444; color:#fff; }
+
+/* ---- Tables ---- */
+.acc-tbl-wrap { overflow-x:auto; background:#fff; border-radius:10px; }
+/* The MAIN list table (or a container marked .acc-fill) grows to fill the page
+   height, like the HR pages. Only direct children of .acc-wrap are affected, so
+   tables inside modals / detail panels keep their natural height. */
+.acc-wrap > .acc-tbl-wrap,
+.acc-wrap > .acc-fill { flex:1 1 auto; }
+.acc-tbl { width:100%; border-collapse:collapse; font-size:13px; background:#fff; border-radius:10px; overflow:hidden; }
+.acc-tbl thead th { text-align:left; padding:10px 14px; font-size:11px; font-weight:600; color:#999; text-transform:uppercase; letter-spacing:.03em; border-bottom:1px solid #eee; background:#fafbfa; white-space:nowrap; }
+.acc-tbl thead th.acc-right { text-align:right; }
+.acc-tbl tbody td { padding:12px 14px; border-bottom:1px solid #f5f5f5; color:#444; }
+.acc-tbl tbody td.acc-right { text-align:right; }
+.acc-tbl tbody tr:last-child td { border-bottom:none; }
+.acc-row { cursor:pointer; transition:background .1s; }
+.acc-row:hover { background:#fafffe; }
+.acc-cell-name { font-weight:600; color:#222; }
+.acc-cell-mono { font-variant-numeric:tabular-nums; }
+.acc-av { width:34px; height:34px; border-radius:9px; background:#edf8f5; color:#2d9e8b; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; font-size:12px; font-weight:700; }
+.acc-name-cell { display:flex; align-items:center; gap:10px; }
+
+/* ---- Tags & badges ---- */
+.acc-tag { font-size:11px; font-weight:600; color:#2d9e8b; background:#edf8f5; padding:2px 8px; border-radius:4px; display:inline-block; }
+.acc-badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:600; }
+.acc-b-done { background:#e0faf1; color:#0d9488; }
+.acc-b-pending { background:#fef3c7; color:#d97706; }
+.acc-b-due { background:#fef2f2; color:#ef4444; }
+.acc-b-info { background:#e0f2fe; color:#0284c7; }
+.acc-b-muted { background:#f3f4f6; color:#888; }
+.acc-pos { color:#0d9488; font-weight:600; }
+.acc-neg { color:#ef4444; font-weight:600; }
+
+/* ---- KPI / summary stat cards ---- */
+.acc-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:18px; }
+.acc-st { background:#fff; border:1px solid #eee; border-radius:12px; padding:16px; transition:border-color .15s; }
+.acc-st:hover { border-color:#d4e8e2; }
+.acc-st-ic { width:32px; height:32px; border-radius:8px; display:flex; align-items:center; justify-content:center; margin-bottom:10px; background:#edf8f5; color:#2d9e8b; }
+.acc-st-v { font-size:22px; font-weight:700; color:#222; }
+.acc-st-l { font-size:12px; color:#999; margin-top:2px; }
+
+/* ---- Cards ---- */
+.acc-card { background:#fff; border:1px solid #eee; border-radius:14px; padding:20px; }
+.acc-card-h { display:flex; justify-content:space-between; align-items:center; margin-bottom:14px; flex-wrap:wrap; gap:8px; }
+.acc-card-t { font-size:15px; font-weight:700; color:#222; }
+.acc-card-lk { font-size:12px; font-weight:600; color:#2d9e8b; cursor:pointer; }
+.acc-card-lk:hover { text-decoration:underline; }
+
+/* ---- Empty state ---- */
+.acc-empty { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:60px 20px; background:#fff; border-radius:10px; }
+.acc-empty-ic { width:56px; height:56px; border-radius:50%; background:#edf8f5; color:#2d9e8b; display:flex; align-items:center; justify-content:center; margin:0 auto 12px; }
+.acc-empty-t { font-size:15px; font-weight:700; color:#333; margin-bottom:4px; }
+.acc-empty-d { font-size:13px; color:#999; max-width:320px; margin:0 auto; }
+
+/* ---- Form fields (modals / inline forms) ---- */
+.acc-sec-title { font-size:13px; font-weight:700; color:#aaa; text-transform:uppercase; letter-spacing:.04em; margin-bottom:10px; }
+.acc-fields { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.acc-field { display:flex; flex-direction:column; }
+.acc-field-full { grid-column:1/-1; }
+.acc-label { display:flex; align-items:center; gap:4px; font-size:12px; font-weight:600; color:#666; margin-bottom:5px; }
+.acc-req { width:6px; height:6px; border-radius:50%; background:#ef4444; flex-shrink:0; display:inline-block; }
+.acc-input { width:100%; padding:9px 12px; border:1px solid #e0e0e0; border-radius:8px; font-family:'DM Sans',sans-serif; font-size:13px; color:#333; outline:none; transition:border-color .15s; background:#fff; box-sizing:border-box; }
+.acc-input:focus { border-color:#2d9e8b; box-shadow:0 0 0 2px rgba(45,158,139,.12); }
+.acc-input:disabled { background:#fafbfa; color:#555; cursor:default; }
+.acc-textarea { resize:vertical; min-height:56px; }
+select.acc-input { appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 10px center; padding-right:28px; cursor:pointer; }
+
+/* ---- Tabs ---- */
+.acc-tabs { display:flex; gap:0; overflow-x:auto; }
+.acc-tab { display:flex; align-items:center; gap:5px; padding:10px 14px; border:none; outline:none; background:none; font-family:'DM Sans',sans-serif; font-size:12px; font-weight:500; color:#aaa; cursor:pointer; transition:color .15s; white-space:nowrap; }
+.acc-tab:hover { color:#666; }
+.acc-tab-on { color:#2d9e8b; font-weight:600; border-bottom:2px solid #2d9e8b; }
+
+/* ---- Modal footer / legend ---- */
+.acc-foot-btns { display:flex; justify-content:flex-end; gap:8px; }
+.acc-legend { display:flex; align-items:center; gap:14px; margin-bottom:12px; }
+.acc-legend-item { display:flex; align-items:center; gap:5px; font-size:11px; color:#999; }
+.acc-legend-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+
+/* ---- Spinner ---- */
+@keyframes acc-spin { to { transform:rotate(360deg); } }
+.acc-spinner { width:14px; height:14px; border:2px solid #e0e0e0; border-top-color:#2d9e8b; border-radius:50%; animation:acc-spin .6s linear infinite; flex-shrink:0; }
+.acc-loading { width:36px; height:36px; border:3px solid #edf8f5; border-top-color:#2d9e8b; border-radius:50%; animation:acc-spin .7s linear infinite; margin:0 auto 12px; }
+
+@media (max-width:900px) { .acc-stats { grid-template-columns:repeat(2,1fr); } .acc-fields { grid-template-columns:1fr; } }
+@media (max-width:600px) { .acc-bar { flex-direction:column; align-items:stretch; } .acc-bar-left { flex-direction:column; } .acc-search-wrap { max-width:100%; } .acc-stats { grid-template-columns:1fr; } }

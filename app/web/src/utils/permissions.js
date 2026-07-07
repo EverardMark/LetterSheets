@@ -30,6 +30,10 @@ export const MODULE_REGISTRY = {
     onboarding:  { label: "Onboarding",  icon: "userplus",    functions: ["view", "create", "edit", "delete"] },
     accounting:  { label: "Accounting",  icon: "calculator",  functions: ["view", "create", "edit", "delete"] },
     ticketing:   { label: "Ticketing",   icon: "ticket",      functions: ["view", "create", "edit", "delete"] },
+    inventory:   { label: "Inventory",   icon: "box",         functions: ["view", "create", "edit", "delete"] },
+    fixed_assets:{ label: "Fixed Assets", icon: "building",   functions: ["view", "create", "edit", "delete"] },
+    sales:       { label: "Sales",        icon: "cart",        functions: ["view", "create", "edit", "delete"] },
+    procurement: { label: "Procurement",  icon: "cart",        functions: ["view", "create", "edit", "delete"] },
 };
 
 // Self-service modules (everyone gets these for their own data)
@@ -71,6 +75,15 @@ export const PERMISSION_PRESETS = {
     "Support Agent": {
         ticketing: ["view", "create", "edit", "delete"],
     },
+    "Inventory Manager": {
+        inventory: ["view", "create", "edit", "delete"],
+    },
+    "Asset Manager": {
+        fixed_assets: ["view", "create", "edit", "delete"],
+    },
+    "Sales Manager": {
+        sales: ["view", "create", "edit", "delete"],
+    },
 };
 
 // Map module IDs to sidebar paths
@@ -87,6 +100,10 @@ const MODULE_TO_PATH = {
     onboarding: "/hr/onboarding",
     accounting: "/accounting",
     ticketing: "/ticketing",
+    inventory: "/inventory",
+    fixed_assets: "/fixed-assets",
+    sales: "/sales",
+    procurement: "/procurement",
 };
 
 export class Permissions {

@@ -167,12 +167,18 @@ type OnboardingItem struct {
 
 // PayrollSettings represents company payroll configuration
 type PayrollSettings struct {
-	ID           string  `json:"id" db:"id"`
-	CompanyID    string  `json:"company_id" db:"company_id"`
-	PaySchedule  string  `json:"pay_schedule" db:"pay_schedule"`
-	OTMultiplier float64 `json:"ot_multiplier" db:"ot_multiplier"`
-	CreatedAt    string  `json:"created_at" db:"created_at"`
-	UpdatedAt    string  `json:"updated_at" db:"updated_at"`
+	ID               string  `json:"id" db:"id"`
+	CompanyID        string  `json:"company_id" db:"company_id"`
+	PaySchedule      string  `json:"pay_schedule" db:"pay_schedule"`
+	OTMultiplier     float64 `json:"ot_multiplier" db:"ot_multiplier"`
+	WorkingDays      int     `json:"working_days" db:"working_days"`
+	HoursPerDay      float64 `json:"hours_per_day" db:"hours_per_day"`
+	EnableSSS        bool    `json:"enable_sss" db:"enable_sss"`
+	EnablePhilHealth bool    `json:"enable_philhealth" db:"enable_philhealth"`
+	EnablePagibig    bool    `json:"enable_pagibig" db:"enable_pagibig"`
+	EnableTax        bool    `json:"enable_tax" db:"enable_tax"`
+	CreatedAt        string  `json:"created_at" db:"created_at"`
+	UpdatedAt        string  `json:"updated_at" db:"updated_at"`
 }
 
 // PayrollRun represents a pay period run
@@ -460,6 +466,12 @@ type ResetPasswordRequest struct {
 	KeyExchangeAlgorithm string `json:"key_exchange_algorithm"`
 	PublicKey            string `json:"public_key"`
 	SigningPublicKey     string `json:"signing_public_key"`
+
+	// Proof-of-possession (C2): the client signs the server-issued challenge
+	// (identified by ChallengeID) with the ML-DSA signing key from its recovery
+	// file. Signature is base64-encoded.
+	ChallengeID string `json:"challenge_id"`
+	Signature   string `json:"signature"`
 }
 
 type SelectCompanyRequest struct {
@@ -1031,30 +1043,31 @@ type TicketCategory struct {
 }
 
 type Ticket struct {
-	ID             string `json:"id"`
-	CompanyID      string `json:"company_id"`
-	TicketNumber   int    `json:"ticket_number"`
-	Subject        string `json:"subject"`
-	Description    string `json:"description,omitempty"`
-	CategoryID     string `json:"category_id,omitempty"`
-	CategoryName   string `json:"category_name,omitempty"`
-	CategoryColor  string `json:"category_color,omitempty"`
-	CategoryIcon   string `json:"category_icon,omitempty"`
-	Priority       string `json:"priority"`
-	Status         string `json:"status"`
-	CreatedBy      string `json:"created_by"`
-	CreatedByName  string `json:"created_by_name,omitempty"`
-	AssignedTo     string `json:"assigned_to,omitempty"`
-	AssignedToName string `json:"assigned_to_name,omitempty"`
-	DueDate        string `json:"due_date,omitempty"`
-	ResolvedAt     string `json:"resolved_at,omitempty"`
-	ClosedAt       string `json:"closed_at,omitempty"`
-	SLAHours       int    `json:"sla_hours,omitempty"`
-	CommentCount   int    `json:"comment_count,omitempty"`
-	IsOverdue      bool   `json:"is_overdue"`
-	IsDeleted      int    `json:"-"`
-	CreatedAt      string `json:"created_at,omitempty"`
-	UpdatedAt      string `json:"updated_at,omitempty"`
+	ID             string           `json:"id"`
+	CompanyID      string           `json:"company_id"`
+	TicketNumber   int              `json:"ticket_number"`
+	Subject        string           `json:"subject"`
+	Description    string           `json:"description,omitempty"`
+	CategoryID     string           `json:"category_id,omitempty"`
+	CategoryName   string           `json:"category_name,omitempty"`
+	CategoryColor  string           `json:"category_color,omitempty"`
+	CategoryIcon   string           `json:"category_icon,omitempty"`
+	Priority       string           `json:"priority"`
+	Status         string           `json:"status"`
+	CreatedBy      string           `json:"created_by"`
+	CreatedByName  string           `json:"created_by_name,omitempty"`
+	AssignedTo     string           `json:"assigned_to,omitempty"`
+	AssignedToName string           `json:"assigned_to_name,omitempty"`
+	DueDate        string           `json:"due_date,omitempty"`
+	ResolvedAt     string           `json:"resolved_at,omitempty"`
+	ClosedAt       string           `json:"closed_at,omitempty"`
+	SLAHours       int              `json:"sla_hours,omitempty"`
+	CommentCount   int              `json:"comment_count,omitempty"`
+	IsOverdue      bool             `json:"is_overdue"`
+	IsDeleted      int              `json:"-"`
+	CreatedAt      string           `json:"created_at,omitempty"`
+	UpdatedAt      string           `json:"updated_at,omitempty"`
+	Labels         []TicketLabelRef `json:"labels"`
 }
 
 type TicketComment struct {
@@ -1091,6 +1104,43 @@ type TicketCategoryStats struct {
 	Total   int    `json:"total"`
 	Active  int    `json:"active"`
 	Overdue int    `json:"overdue"`
+}
+
+// TicketLabel is a company-scoped, reusable colored label (GitHub-style).
+type TicketLabel struct {
+	ID          string `json:"id"`
+	CompanyID   string `json:"company_id,omitempty"`
+	Name        string `json:"name"`
+	Color       string `json:"color"`
+	Description string `json:"description,omitempty"`
+	IsDeleted   int    `json:"-"`
+	CreatedAt   string `json:"created_at,omitempty"`
+}
+
+// TicketLabelRef is the lightweight label shape embedded in a ticket's JSON.
+type TicketLabelRef struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Color string `json:"color"`
+}
+
+// TicketEvent is an entry in a ticket's activity timeline.
+type TicketEvent struct {
+	ID        string `json:"id"`
+	TicketID  string `json:"ticket_id"`
+	ActorID   string `json:"actor_id,omitempty"`
+	ActorName string `json:"actor_name,omitempty"`
+	EventType string `json:"event_type"`
+	OldValue  string `json:"old_value,omitempty"`
+	NewValue  string `json:"new_value,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
+}
+
+// TicketReaction is a single emoji reaction on a comment.
+type TicketReaction struct {
+	CommentID string `json:"comment_id"`
+	Emoji     string `json:"emoji"`
+	UserID    string `json:"user_id"`
 }
 
 // ==================== WORK SCHEDULES ====================
@@ -1279,4 +1329,842 @@ type ComplianceFieldInput struct {
 	Key   string `json:"key"`
 	Label string `json:"label"`
 	Type  string `json:"type"`
+}
+
+// ==================== INVENTORY ====================
+
+type InvCategory struct {
+	ID           string `json:"id"`
+	CompanyID    string `json:"company_id"`
+	Name         string `json:"name"`
+	Description  string `json:"description,omitempty"`
+	IsActive     bool   `json:"is_active"`
+	IsDeleted    int    `json:"-"`
+	ProductCount int    `json:"product_count"`
+	CreatedAt    string `json:"created_at,omitempty"`
+}
+
+type InvWarehouse struct {
+	ID         string  `json:"id"`
+	CompanyID  string  `json:"company_id"`
+	Name       string  `json:"name"`
+	Code       string  `json:"code,omitempty"`
+	Location   string  `json:"location,omitempty"`
+	IsDefault  bool    `json:"is_default"`
+	IsActive   bool    `json:"is_active"`
+	IsDeleted  int     `json:"-"`
+	TotalUnits float64 `json:"total_units"`
+	StockValue float64 `json:"stock_value"`
+	CreatedAt  string  `json:"created_at,omitempty"`
+}
+
+type InvSupplier struct {
+	ID            string `json:"id"`
+	CompanyID     string `json:"company_id"`
+	Name          string `json:"name"`
+	ContactPerson string `json:"contact_person,omitempty"`
+	Email         string `json:"email,omitempty"`
+	Phone         string `json:"phone,omitempty"`
+	Address       string `json:"address,omitempty"`
+	Notes         string `json:"notes,omitempty"`
+	IsActive      bool   `json:"is_active"`
+	IsDeleted     int    `json:"-"`
+	ProductCount  int    `json:"product_count"`
+	CreatedAt     string `json:"created_at,omitempty"`
+}
+
+type InvProduct struct {
+	ID           string  `json:"id"`
+	CompanyID    string  `json:"company_id"`
+	SKU          string  `json:"sku"`
+	Name         string  `json:"name"`
+	Description  string  `json:"description,omitempty"`
+	CategoryID   string  `json:"category_id,omitempty"`
+	CategoryName string  `json:"category_name,omitempty"`
+	SupplierID   string  `json:"supplier_id,omitempty"`
+	SupplierName string  `json:"supplier_name,omitempty"`
+	Unit         string  `json:"unit"`
+	CostPrice    float64 `json:"cost_price"`
+	SellingPrice float64 `json:"selling_price"`
+	ReorderPoint float64 `json:"reorder_point"`
+	TotalStock   float64 `json:"total_stock"`
+	StockValue   float64 `json:"stock_value"`
+	IsActive     bool    `json:"is_active"`
+	IsDeleted    int     `json:"-"`
+	CreatedAt    string  `json:"created_at,omitempty"`
+	UpdatedAt    string  `json:"updated_at,omitempty"`
+}
+
+// InvStockLevel is a product's quantity at one warehouse.
+type InvStockLevel struct {
+	ProductID     string  `json:"product_id"`
+	ProductSKU    string  `json:"product_sku,omitempty"`
+	ProductName   string  `json:"product_name,omitempty"`
+	Unit          string  `json:"unit,omitempty"`
+	WarehouseID   string  `json:"warehouse_id"`
+	WarehouseName string  `json:"warehouse_name,omitempty"`
+	Quantity      float64 `json:"quantity"`
+	CostPrice     float64 `json:"cost_price,omitempty"`
+	Value         float64 `json:"value,omitempty"`
+}
+
+type InvMovement struct {
+	ID                   string  `json:"id"`
+	CompanyID            string  `json:"company_id"`
+	ProductID            string  `json:"product_id"`
+	ProductName          string  `json:"product_name,omitempty"`
+	ProductSKU           string  `json:"product_sku,omitempty"`
+	WarehouseID          string  `json:"warehouse_id"`
+	WarehouseName        string  `json:"warehouse_name,omitempty"`
+	MovementType         string  `json:"movement_type"`
+	Quantity             float64 `json:"quantity"`
+	UnitCost             float64 `json:"unit_cost"`
+	Reference            string  `json:"reference,omitempty"`
+	Notes                string  `json:"notes,omitempty"`
+	RelatedWarehouseID   string  `json:"related_warehouse_id,omitempty"`
+	RelatedWarehouseName string  `json:"related_warehouse_name,omitempty"`
+	BalanceAfter         float64 `json:"balance_after"`
+	JournalEntryID       string  `json:"journal_entry_id,omitempty"`
+	CreatedBy            string  `json:"created_by,omitempty"`
+	CreatedAt            string  `json:"created_at,omitempty"`
+}
+
+type InvStats struct {
+	TotalProducts  int     `json:"total_products"`
+	ActiveProducts int     `json:"active_products"`
+	Warehouses     int     `json:"warehouses"`
+	StockValue     float64 `json:"stock_value"`
+	TotalUnits     float64 `json:"total_units"`
+	LowStock       int     `json:"low_stock"`
+	OutOfStock     int     `json:"out_of_stock"`
+	OpenPOs        int     `json:"open_pos"`
+}
+
+type InvLowStock struct {
+	ID           string  `json:"id"`
+	SKU          string  `json:"sku"`
+	Name         string  `json:"name"`
+	Unit         string  `json:"unit"`
+	CategoryName string  `json:"category_name,omitempty"`
+	ReorderPoint float64 `json:"reorder_point"`
+	TotalStock   float64 `json:"total_stock"`
+}
+
+type InvSettings struct {
+	CompanyID           string `json:"company_id,omitempty"`
+	AutoPostGL          bool   `json:"auto_post_gl"`
+	InventoryAccountID  string `json:"inventory_account_id,omitempty"`
+	COGSAccountID       string `json:"cogs_account_id,omitempty"`
+	AdjustmentAccountID string `json:"adjustment_account_id,omitempty"`
+	PayableAccountID    string `json:"payable_account_id,omitempty"`
+}
+
+type InvPurchaseOrder struct {
+	ID             string      `json:"id"`
+	CompanyID      string      `json:"company_id"`
+	PONumber       int         `json:"po_number"`
+	SupplierID     string      `json:"supplier_id,omitempty"`
+	SupplierName   string      `json:"supplier_name,omitempty"`
+	WarehouseID    string      `json:"warehouse_id,omitempty"`
+	WarehouseName  string      `json:"warehouse_name,omitempty"`
+	Status         string      `json:"status"`
+	OrderDate      string      `json:"order_date,omitempty"`
+	ExpectedDate   string      `json:"expected_date,omitempty"`
+	Notes          string      `json:"notes,omitempty"`
+	TotalAmount    float64     `json:"total_amount"`
+	JournalEntryID string      `json:"journal_entry_id,omitempty"`
+	ItemCount      int         `json:"item_count"`
+	CreatedBy      string      `json:"created_by,omitempty"`
+	CreatedAt      string      `json:"created_at,omitempty"`
+	UpdatedAt      string      `json:"updated_at,omitempty"`
+	Items          []InvPOItem `json:"items,omitempty"`
+}
+
+type InvPOItem struct {
+	ID          string  `json:"id"`
+	CompanyID   string  `json:"company_id"`
+	POID        string  `json:"po_id"`
+	ProductID   string  `json:"product_id"`
+	ProductName string  `json:"product_name,omitempty"`
+	ProductSKU  string  `json:"product_sku,omitempty"`
+	Quantity    float64 `json:"quantity"`
+	ReceivedQty float64 `json:"received_qty"`
+	UnitCost    float64 `json:"unit_cost"`
+	LineTotal   float64 `json:"line_total"`
+}
+
+// ==================== FIXED ASSETS ====================
+
+type FACategory struct {
+	ID                  string  `json:"id"`
+	CompanyID           string  `json:"company_id"`
+	Name                string  `json:"name"`
+	Description         string  `json:"description,omitempty"`
+	AssetAccountID      string  `json:"asset_account_id,omitempty"`
+	AccumDepAccountID   string  `json:"accum_dep_account_id,omitempty"`
+	DepExpenseAccountID string  `json:"dep_expense_account_id,omitempty"`
+	DefaultLifeMonths   int     `json:"default_life_months,omitempty"`
+	DefaultMethod       string  `json:"default_method,omitempty"`
+	DefaultSalvagePct   float64 `json:"default_salvage_pct"`
+	IsActive            bool    `json:"is_active"`
+	IsDeleted           int     `json:"-"`
+	AssetCount          int     `json:"asset_count"`
+	CreatedAt           string  `json:"created_at,omitempty"`
+}
+
+type FAAsset struct {
+	ID                      string  `json:"id"`
+	CompanyID               string  `json:"company_id"`
+	AssetNumber             string  `json:"asset_number"`
+	Name                    string  `json:"name"`
+	Description             string  `json:"description,omitempty"`
+	CategoryID              string  `json:"category_id,omitempty"`
+	CategoryName            string  `json:"category_name,omitempty"`
+	AcquisitionCost         float64 `json:"acquisition_cost"`
+	AcquisitionDate         string  `json:"acquisition_date,omitempty"`
+	InServiceDate           string  `json:"in_service_date,omitempty"`
+	UsefulLifeMonths        int     `json:"useful_life_months"`
+	SalvageValue            float64 `json:"salvage_value"`
+	DepreciationMethod      string  `json:"depreciation_method"`
+	Status                  string  `json:"status"`
+	AccumulatedDepreciation float64 `json:"accumulated_depreciation"`
+	NetBookValue            float64 `json:"net_book_value"`
+	PeriodsDepreciated      int     `json:"periods_depreciated"`
+	LastDepreciationDate    string  `json:"last_depreciation_date,omitempty"`
+	Department              string  `json:"department,omitempty"`
+	Location                string  `json:"location,omitempty"`
+	CustodianID             string  `json:"custodian_id,omitempty"`
+	CustodianName           string  `json:"custodian_name,omitempty"`
+	SerialNumber            string  `json:"serial_number,omitempty"`
+	AssetAccountID          string  `json:"asset_account_id,omitempty"`
+	AccumDepAccountID       string  `json:"accum_dep_account_id,omitempty"`
+	DepExpenseAccountID     string  `json:"dep_expense_account_id,omitempty"`
+	AcquisitionJournalID    string  `json:"acquisition_journal_id,omitempty"`
+	DisposedDate            string  `json:"disposed_date,omitempty"`
+	Notes                   string  `json:"notes,omitempty"`
+	CreatedAt               string  `json:"created_at,omitempty"`
+	UpdatedAt               string  `json:"updated_at,omitempty"`
+	// Assembled on the detail view
+	Schedule    []FADepreciationEntry `json:"schedule,omitempty"`
+	Maintenance []FAMaintenance       `json:"maintenance,omitempty"`
+	Transfers   []FATransfer          `json:"transfers,omitempty"`
+}
+
+type FADepreciationEntry struct {
+	ID               string  `json:"id"`
+	CompanyID        string  `json:"company_id"`
+	AssetID          string  `json:"asset_id"`
+	Period           string  `json:"period"`
+	PeriodIndex      int     `json:"period_index"`
+	Method           string  `json:"method"`
+	OpeningNBV       float64 `json:"opening_nbv"`
+	Amount           float64 `json:"amount"`
+	AccumulatedAfter float64 `json:"accumulated_after"`
+	ClosingNBV       float64 `json:"closing_nbv"`
+	RunID            string  `json:"run_id,omitempty"`
+	JournalEntryID   string  `json:"journal_entry_id,omitempty"`
+	IsPosted         bool    `json:"is_posted"`
+	IsVoided         bool    `json:"is_voided"`
+	CreatedAt        string  `json:"created_at,omitempty"`
+}
+
+type FADepreciationRun struct {
+	ID             string  `json:"id"`
+	CompanyID      string  `json:"company_id"`
+	Period         string  `json:"period"`
+	AssetCount     int     `json:"asset_count"`
+	TotalAmount    float64 `json:"total_amount"`
+	JournalEntryID string  `json:"journal_entry_id,omitempty"`
+	IsVoided       bool    `json:"is_voided"`
+	RunBy          string  `json:"run_by,omitempty"`
+	CreatedAt      string  `json:"created_at,omitempty"`
+}
+
+type FADisposal struct {
+	ID                      string  `json:"id"`
+	CompanyID               string  `json:"company_id"`
+	AssetID                 string  `json:"asset_id"`
+	AssetNumber             string  `json:"asset_number,omitempty"`
+	AssetName               string  `json:"asset_name,omitempty"`
+	DisposalDate            string  `json:"disposal_date,omitempty"`
+	DisposalType            string  `json:"disposal_type"`
+	Proceeds                float64 `json:"proceeds"`
+	BookValue               float64 `json:"book_value"`
+	AccumulatedDepreciation float64 `json:"accumulated_depreciation"`
+	GainLoss                float64 `json:"gain_loss"`
+	Buyer                   string  `json:"buyer,omitempty"`
+	Reference               string  `json:"reference,omitempty"`
+	Notes                   string  `json:"notes,omitempty"`
+	JournalEntryID          string  `json:"journal_entry_id,omitempty"`
+	CreatedAt               string  `json:"created_at,omitempty"`
+}
+
+type FAMaintenance struct {
+	ID              string  `json:"id"`
+	CompanyID       string  `json:"company_id"`
+	AssetID         string  `json:"asset_id"`
+	AssetNumber     string  `json:"asset_number,omitempty"`
+	AssetName       string  `json:"asset_name,omitempty"`
+	ServiceDate     string  `json:"service_date,omitempty"`
+	MaintenanceType string  `json:"maintenance_type"`
+	Description     string  `json:"description,omitempty"`
+	Cost            float64 `json:"cost"`
+	Vendor          string  `json:"vendor,omitempty"`
+	PerformedBy     string  `json:"performed_by,omitempty"`
+	NextServiceDate string  `json:"next_service_date,omitempty"`
+	CreatedAt       string  `json:"created_at,omitempty"`
+}
+
+type FATransfer struct {
+	ID                string `json:"id"`
+	CompanyID         string `json:"company_id"`
+	AssetID           string `json:"asset_id"`
+	AssetNumber       string `json:"asset_number,omitempty"`
+	AssetName         string `json:"asset_name,omitempty"`
+	TransferDate      string `json:"transfer_date,omitempty"`
+	FromDepartment    string `json:"from_department,omitempty"`
+	ToDepartment      string `json:"to_department,omitempty"`
+	FromLocation      string `json:"from_location,omitempty"`
+	ToLocation        string `json:"to_location,omitempty"`
+	FromCustodianID   string `json:"from_custodian_id,omitempty"`
+	FromCustodianName string `json:"from_custodian_name,omitempty"`
+	ToCustodianID     string `json:"to_custodian_id,omitempty"`
+	ToCustodianName   string `json:"to_custodian_name,omitempty"`
+	Notes             string `json:"notes,omitempty"`
+	CreatedAt         string `json:"created_at,omitempty"`
+}
+
+type FARevaluation struct {
+	ID              string  `json:"id"`
+	CompanyID       string  `json:"company_id"`
+	AssetID         string  `json:"asset_id"`
+	AssetNumber     string  `json:"asset_number,omitempty"`
+	AssetName       string  `json:"asset_name,omitempty"`
+	RevaluationDate string  `json:"revaluation_date,omitempty"`
+	RevaluationType string  `json:"revaluation_type"`
+	OldValue        float64 `json:"old_value"`
+	NewValue        float64 `json:"new_value"`
+	Delta           float64 `json:"delta"`
+	Reason          string  `json:"reason,omitempty"`
+	JournalEntryID  string  `json:"journal_entry_id,omitempty"`
+	CreatedAt       string  `json:"created_at,omitempty"`
+}
+
+type FAStats struct {
+	TotalAssets                  int     `json:"total_assets"`
+	ActiveAssets                 int     `json:"active_assets"`
+	DisposedAssets               int     `json:"disposed_assets"`
+	FullyDepreciated             int     `json:"fully_depreciated"`
+	TotalCost                    float64 `json:"total_cost"`
+	TotalAccumulatedDepreciation float64 `json:"total_accumulated_depreciation"`
+	NetBookValue                 float64 `json:"net_book_value"`
+	YTDDepreciation              float64 `json:"ytd_depreciation"`
+	MaintenanceDue               int     `json:"maintenance_due"`
+}
+
+type FASettings struct {
+	CompanyID                   string `json:"company_id,omitempty"`
+	AutoPostGL                  bool   `json:"auto_post_gl"`
+	AssetAccountID              string `json:"asset_account_id,omitempty"`
+	AccumDepAccountID           string `json:"accum_dep_account_id,omitempty"`
+	DepExpenseAccountID         string `json:"dep_expense_account_id,omitempty"`
+	DisposalGainAccountID       string `json:"disposal_gain_account_id,omitempty"`
+	DisposalLossAccountID       string `json:"disposal_loss_account_id,omitempty"`
+	CashAccountID               string `json:"cash_account_id,omitempty"`
+	RevaluationSurplusAccountID string `json:"revaluation_surplus_account_id,omitempty"`
+	ImpairmentLossAccountID     string `json:"impairment_loss_account_id,omitempty"`
+	PayableAccountID            string `json:"payable_account_id,omitempty"`
+}
+
+// ==================== SALES / ORDER MANAGEMENT ====================
+
+type SOQuote struct {
+	ID               string        `json:"id"`
+	CompanyID        string        `json:"company_id"`
+	QuoteNumber      int           `json:"quote_number"`
+	CustomerID       string        `json:"customer_id"`
+	CustomerName     string        `json:"customer_name,omitempty"`
+	PriceListID      string        `json:"price_list_id,omitempty"`
+	Status           string        `json:"status"`
+	QuoteDate        string        `json:"quote_date,omitempty"`
+	ValidUntil       string        `json:"valid_until,omitempty"`
+	Subtotal         float64       `json:"subtotal"`
+	DiscountPct      float64       `json:"discount_pct"`
+	DiscountAmount   float64       `json:"discount_amount"`
+	TaxAmount        float64       `json:"tax_amount"`
+	TotalAmount      float64       `json:"total_amount"`
+	Notes            string        `json:"notes,omitempty"`
+	ConvertedOrderID string        `json:"converted_order_id,omitempty"`
+	ItemCount        int           `json:"item_count"`
+	CreatedAt        string        `json:"created_at,omitempty"`
+	UpdatedAt        string        `json:"updated_at,omitempty"`
+	Items            []SOQuoteItem `json:"items,omitempty"`
+}
+
+type SOQuoteItem struct {
+	ID          string  `json:"id"`
+	CompanyID   string  `json:"company_id"`
+	QuoteID     string  `json:"quote_id"`
+	ProductID   string  `json:"product_id,omitempty"`
+	ProductName string  `json:"product_name,omitempty"`
+	ProductSKU  string  `json:"product_sku,omitempty"`
+	Description string  `json:"description,omitempty"`
+	Quantity    float64 `json:"quantity"`
+	UnitPrice   float64 `json:"unit_price"`
+	DiscountPct float64 `json:"discount_pct"`
+	TaxRate     float64 `json:"tax_rate"`
+	LineTotal   float64 `json:"line_total"`
+	SortOrder   int     `json:"sort_order"`
+}
+
+type SOOrder struct {
+	ID               string        `json:"id"`
+	CompanyID        string        `json:"company_id"`
+	OrderNumber      int           `json:"order_number"`
+	CustomerID       string        `json:"customer_id"`
+	CustomerName     string        `json:"customer_name,omitempty"`
+	QuoteID          string        `json:"quote_id,omitempty"`
+	PriceListID      string        `json:"price_list_id,omitempty"`
+	WarehouseID      string        `json:"warehouse_id,omitempty"`
+	WarehouseName    string        `json:"warehouse_name,omitempty"`
+	Status           string        `json:"status"`
+	OrderDate        string        `json:"order_date,omitempty"`
+	ExpectedShipDate string        `json:"expected_ship_date,omitempty"`
+	Subtotal         float64       `json:"subtotal"`
+	DiscountPct      float64       `json:"discount_pct"`
+	DiscountAmount   float64       `json:"discount_amount"`
+	TaxAmount        float64       `json:"tax_amount"`
+	TotalAmount      float64       `json:"total_amount"`
+	Notes            string        `json:"notes,omitempty"`
+	InvoiceID        string        `json:"invoice_id,omitempty"`
+	RevenueJournalID string        `json:"revenue_journal_id,omitempty"`
+	ItemCount        int           `json:"item_count"`
+	InvoiceSeq       int           `json:"invoice_seq"`
+	CreatedAt        string        `json:"created_at,omitempty"`
+	UpdatedAt        string        `json:"updated_at,omitempty"`
+	Items            []SOOrderItem `json:"items,omitempty"`
+	Shipments        []SOShipment  `json:"shipments,omitempty"`
+}
+
+type SOOrderItem struct {
+	ID               string  `json:"id"`
+	CompanyID        string  `json:"company_id"`
+	OrderID          string  `json:"order_id"`
+	ProductID        string  `json:"product_id,omitempty"`
+	ProductName      string  `json:"product_name,omitempty"`
+	ProductSKU       string  `json:"product_sku,omitempty"`
+	Description      string  `json:"description,omitempty"`
+	Quantity         float64 `json:"quantity"`
+	UnitPrice        float64 `json:"unit_price"`
+	DiscountPct      float64 `json:"discount_pct"`
+	TaxRate          float64 `json:"tax_rate"`
+	QtyReserved      float64 `json:"qty_reserved"`
+	QtyFulfilled     float64 `json:"qty_fulfilled"`
+	QtyInvoiced      float64 `json:"qty_invoiced"`
+	QtyBackordered   float64 `json:"qty_backordered"`
+	LineTotal        float64 `json:"line_total"`
+	WarehouseID      string  `json:"warehouse_id,omitempty"`
+	WarehouseName    string  `json:"warehouse_name,omitempty"`
+	RevenueAccountID string  `json:"revenue_account_id,omitempty"`
+	SortOrder        int     `json:"sort_order"`
+	AvailableQty     float64 `json:"available_qty"`
+}
+
+type SOReservation struct {
+	ID            string  `json:"id"`
+	CompanyID     string  `json:"company_id"`
+	OrderID       string  `json:"order_id"`
+	OrderItemID   string  `json:"order_item_id"`
+	ProductID     string  `json:"product_id"`
+	ProductName   string  `json:"product_name,omitempty"`
+	WarehouseID   string  `json:"warehouse_id"`
+	WarehouseName string  `json:"warehouse_name,omitempty"`
+	QtyReserved   float64 `json:"qty_reserved"`
+	Status        string  `json:"status"`
+}
+
+type SOShipment struct {
+	ID             string           `json:"id"`
+	CompanyID      string           `json:"company_id"`
+	ShipmentNumber int              `json:"shipment_number"`
+	OrderID        string           `json:"order_id"`
+	OrderNumber    int              `json:"order_number,omitempty"`
+	WarehouseID    string           `json:"warehouse_id,omitempty"`
+	WarehouseName  string           `json:"warehouse_name,omitempty"`
+	Status         string           `json:"status"`
+	Carrier        string           `json:"carrier,omitempty"`
+	TrackingNumber string           `json:"tracking_number,omitempty"`
+	ShipDate       string           `json:"ship_date,omitempty"`
+	DeliveredDate  string           `json:"delivered_date,omitempty"`
+	Notes          string           `json:"notes,omitempty"`
+	ItemCount      int              `json:"item_count"`
+	CreatedAt      string           `json:"created_at,omitempty"`
+	Items          []SOShipmentItem `json:"items,omitempty"`
+}
+
+type SOShipmentItem struct {
+	ID             string  `json:"id"`
+	CompanyID      string  `json:"company_id"`
+	ShipmentID     string  `json:"shipment_id"`
+	OrderItemID    string  `json:"order_item_id"`
+	ProductID      string  `json:"product_id,omitempty"`
+	ProductName    string  `json:"product_name,omitempty"`
+	ProductSKU     string  `json:"product_sku,omitempty"`
+	Quantity       float64 `json:"quantity"`
+	MovementID     string  `json:"movement_id,omitempty"`
+	JournalEntryID string  `json:"journal_entry_id,omitempty"`
+}
+
+type SOPriceList struct {
+	ID           string            `json:"id"`
+	CompanyID    string            `json:"company_id"`
+	Name         string            `json:"name"`
+	CustomerID   string            `json:"customer_id,omitempty"`
+	CustomerName string            `json:"customer_name,omitempty"`
+	Tier         string            `json:"tier,omitempty"`
+	IsDefault    bool              `json:"is_default"`
+	ValidFrom    string            `json:"valid_from,omitempty"`
+	ValidTo      string            `json:"valid_to,omitempty"`
+	IsActive     bool              `json:"is_active"`
+	ItemCount    int               `json:"item_count"`
+	CreatedAt    string            `json:"created_at,omitempty"`
+	Items        []SOPriceListItem `json:"items,omitempty"`
+}
+
+type SOPriceListItem struct {
+	ID          string  `json:"id"`
+	CompanyID   string  `json:"company_id"`
+	PriceListID string  `json:"price_list_id"`
+	ProductID   string  `json:"product_id"`
+	ProductName string  `json:"product_name,omitempty"`
+	ProductSKU  string  `json:"product_sku,omitempty"`
+	MinQty      float64 `json:"min_qty"`
+	UnitPrice   float64 `json:"unit_price"`
+	DiscountPct float64 `json:"discount_pct"`
+}
+
+type SOBackorder struct {
+	OrderID        string  `json:"order_id"`
+	OrderNumber    int     `json:"order_number"`
+	CustomerID     string  `json:"customer_id,omitempty"`
+	CustomerName   string  `json:"customer_name,omitempty"`
+	Status         string  `json:"status"`
+	OrderItemID    string  `json:"order_item_id"`
+	ProductID      string  `json:"product_id,omitempty"`
+	ProductName    string  `json:"product_name,omitempty"`
+	ProductSKU     string  `json:"product_sku,omitempty"`
+	Quantity       float64 `json:"quantity"`
+	QtyFulfilled   float64 `json:"qty_fulfilled"`
+	QtyBackordered float64 `json:"qty_backordered"`
+}
+
+type SOStats struct {
+	TotalOrders       int     `json:"total_orders"`
+	OpenOrders        int     `json:"open_orders"`
+	DraftQuotes       int     `json:"draft_quotes"`
+	BackordersPending int     `json:"backorders_pending"`
+	TotalCustomers    int     `json:"total_customers"`
+	OpenOrderValue    float64 `json:"open_order_value"`
+	RevenueThisMonth  float64 `json:"revenue_this_month"`
+}
+
+type SOSettings struct {
+	CompanyID               string `json:"company_id,omitempty"`
+	AutoPostGL              bool   `json:"auto_post_gl"`
+	AutoInvoiceOnFulfill    bool   `json:"auto_invoice_on_fulfill"`
+	DefaultRevenueAccountID string `json:"default_revenue_account_id,omitempty"`
+	ARAccountID             string `json:"ar_account_id,omitempty"`
+	TaxPayableAccountID     string `json:"tax_payable_account_id,omitempty"`
+	DefaultWarehouseID      string `json:"default_warehouse_id,omitempty"`
+	DefaultPriceListID      string `json:"default_price_list_id,omitempty"`
+	DefaultPaymentTerms     int    `json:"default_payment_terms"`
+	QuoteValidDays          int    `json:"quote_valid_days"`
+}
+
+// ==================== PROCUREMENT / PURCHASE-TO-PAY ====================
+
+type PurSettings struct {
+	CompanyID           string `json:"company_id,omitempty"`
+	AutoPostGL          bool   `json:"auto_post_gl"`
+	InventoryAccountID  string `json:"inventory_account_id,omitempty"`
+	ExpenseAccountID    string `json:"expense_account_id,omitempty"`
+	GRIRAccountID       string `json:"gr_ir_account_id,omitempty"`
+	APAccountID         string `json:"ap_account_id,omitempty"`
+	TaxInputAccountID   string `json:"tax_input_account_id,omitempty"`
+	DefaultWarehouseID  string `json:"default_warehouse_id,omitempty"`
+	DefaultPaymentTerms int    `json:"default_payment_terms"`
+	RequisitionApproval bool   `json:"requisition_approval"`
+	POApproval          bool   `json:"po_approval"`
+}
+
+type PurRequisition struct {
+	ID                string               `json:"id"`
+	CompanyID         string               `json:"company_id"`
+	RequisitionNumber int                  `json:"requisition_number"`
+	Title             string               `json:"title,omitempty"`
+	Department        string               `json:"department,omitempty"`
+	Status            string               `json:"status"`
+	NeededBy          string               `json:"needed_by,omitempty"`
+	EstimatedTotal    float64              `json:"estimated_total"`
+	Notes             string               `json:"notes,omitempty"`
+	ConvertedPOID     string               `json:"converted_po_id,omitempty"`
+	RejectReason      string               `json:"reject_reason,omitempty"`
+	CreatedBy         string               `json:"created_by,omitempty"`
+	ItemCount         int                  `json:"item_count"`
+	CreatedAt         string               `json:"created_at,omitempty"`
+	UpdatedAt         string               `json:"updated_at,omitempty"`
+	Items             []PurRequisitionItem `json:"items,omitempty"`
+}
+
+type PurRequisitionItem struct {
+	ID             string  `json:"id"`
+	CompanyID      string  `json:"company_id"`
+	RequisitionID  string  `json:"requisition_id"`
+	ProductID      string  `json:"product_id,omitempty"`
+	ProductName    string  `json:"product_name,omitempty"`
+	ProductSKU     string  `json:"product_sku,omitempty"`
+	Description    string  `json:"description,omitempty"`
+	Quantity       float64 `json:"quantity"`
+	EstimatedPrice float64 `json:"estimated_price"`
+	LineTotal      float64 `json:"line_total"`
+	SortOrder      int     `json:"sort_order"`
+}
+
+type PurOrder struct {
+	ID            string         `json:"id"`
+	CompanyID     string         `json:"company_id"`
+	PONumber      int            `json:"po_number"`
+	VendorID      string         `json:"vendor_id"`
+	VendorName    string         `json:"vendor_name,omitempty"`
+	RequisitionID string         `json:"requisition_id,omitempty"`
+	WarehouseID   string         `json:"warehouse_id,omitempty"`
+	WarehouseName string         `json:"warehouse_name,omitempty"`
+	Status        string         `json:"status"`
+	OrderDate     string         `json:"order_date,omitempty"`
+	ExpectedDate  string         `json:"expected_date,omitempty"`
+	Subtotal      float64        `json:"subtotal"`
+	TaxAmount     float64        `json:"tax_amount"`
+	TotalAmount   float64        `json:"total_amount"`
+	Notes         string         `json:"notes,omitempty"`
+	BillSeq       int            `json:"bill_seq"`
+	ItemCount     int            `json:"item_count"`
+	CreatedAt     string         `json:"created_at,omitempty"`
+	UpdatedAt     string         `json:"updated_at,omitempty"`
+	Items         []PurOrderItem `json:"items,omitempty"`
+	Receipts      []PurReceipt   `json:"receipts,omitempty"`
+}
+
+type PurOrderItem struct {
+	ID               string  `json:"id"`
+	CompanyID        string  `json:"company_id"`
+	OrderID          string  `json:"order_id"`
+	ProductID        string  `json:"product_id,omitempty"`
+	ProductName      string  `json:"product_name,omitempty"`
+	ProductSKU       string  `json:"product_sku,omitempty"`
+	Description      string  `json:"description,omitempty"`
+	Quantity         float64 `json:"quantity"`
+	UnitPrice        float64 `json:"unit_price"`
+	DiscountPct      float64 `json:"discount_pct"`
+	TaxRate          float64 `json:"tax_rate"`
+	QtyReceived      float64 `json:"qty_received"`
+	QtyBilled        float64 `json:"qty_billed"`
+	QtyOutstanding   float64 `json:"qty_outstanding"`
+	QtyBillable      float64 `json:"qty_billable"`
+	LineTotal        float64 `json:"line_total"`
+	WarehouseID      string  `json:"warehouse_id,omitempty"`
+	WarehouseName    string  `json:"warehouse_name,omitempty"`
+	ExpenseAccountID string  `json:"expense_account_id,omitempty"`
+	SortOrder        int     `json:"sort_order"`
+}
+
+type PurReceipt struct {
+	ID             string           `json:"id"`
+	CompanyID      string           `json:"company_id"`
+	ReceiptNumber  int              `json:"receipt_number"`
+	OrderID        string           `json:"order_id"`
+	PONumber       int              `json:"po_number,omitempty"`
+	WarehouseID    string           `json:"warehouse_id,omitempty"`
+	WarehouseName  string           `json:"warehouse_name,omitempty"`
+	Status         string           `json:"status"`
+	ReceiptDate    string           `json:"receipt_date,omitempty"`
+	Notes          string           `json:"notes,omitempty"`
+	JournalEntryID string           `json:"journal_entry_id,omitempty"`
+	ItemCount      int              `json:"item_count"`
+	CreatedAt      string           `json:"created_at,omitempty"`
+	Items          []PurReceiptItem `json:"items,omitempty"`
+}
+
+type PurReceiptItem struct {
+	ID               string  `json:"id"`
+	CompanyID        string  `json:"company_id"`
+	ReceiptID        string  `json:"receipt_id"`
+	OrderItemID      string  `json:"order_item_id"`
+	ProductID        string  `json:"product_id,omitempty"`
+	ProductName      string  `json:"product_name,omitempty"`
+	ProductSKU       string  `json:"product_sku,omitempty"`
+	Quantity         float64 `json:"quantity"`
+	UnitCost         float64 `json:"unit_cost"`
+	MovementID       string  `json:"movement_id,omitempty"`
+	ExpenseAccountID string  `json:"expense_account_id,omitempty"`
+}
+
+// PurBillable is one billable order line (received but not yet billed).
+type PurBillable struct {
+	OrderItemID      string  `json:"order_item_id"`
+	ProductID        string  `json:"product_id,omitempty"`
+	ProductName      string  `json:"product_name,omitempty"`
+	Description      string  `json:"description,omitempty"`
+	BillableQty      float64 `json:"billable_qty"`
+	UnitPrice        float64 `json:"unit_price"`
+	DiscountPct      float64 `json:"discount_pct"`
+	TaxRate          float64 `json:"tax_rate"`
+	ExpenseAccountID string  `json:"expense_account_id,omitempty"`
+}
+
+// PurReceivable is one order line with qty still to receive.
+type PurReceivable struct {
+	OrderItemID    string  `json:"order_item_id"`
+	ProductID      string  `json:"product_id,omitempty"`
+	ProductName    string  `json:"product_name,omitempty"`
+	Description    string  `json:"description,omitempty"`
+	OutstandingQty float64 `json:"outstanding_qty"`
+	UnitPrice      float64 `json:"unit_price"`
+	DiscountPct    float64 `json:"discount_pct"`
+	WarehouseID    string  `json:"warehouse_id,omitempty"`
+}
+
+type PurStats struct {
+	TotalOrders         int     `json:"total_orders"`
+	OpenOrders          int     `json:"open_orders"`
+	PendingRequisitions int     `json:"pending_requisitions"`
+	AwaitingReqApproval int     `json:"awaiting_req_approval"`
+	AwaitingReceipt     int     `json:"awaiting_receipt"`
+	AwaitingBill        int     `json:"awaiting_bill"`
+	TotalVendors        int     `json:"total_vendors"`
+	OpenPOValue         float64 `json:"open_po_value"`
+	ReceivedThisMonth   float64 `json:"received_this_month"`
+}
+
+// ==================== RETURNS — AR CREDIT MEMOS / AP DEBIT MEMOS ====================
+
+type CreditMemo struct {
+	ID             string           `json:"id"`
+	CompanyID      string           `json:"company_id"`
+	MemoNumber     int              `json:"memo_number"`
+	CustomerID     string           `json:"customer_id"`
+	CustomerName   string           `json:"customer_name,omitempty"`
+	OrderID        string           `json:"order_id"`
+	OrderNumber    int              `json:"order_number,omitempty"`
+	InvoiceID      string           `json:"invoice_id,omitempty"`
+	Status         string           `json:"status"`
+	MemoDate       string           `json:"memo_date,omitempty"`
+	Reason         string           `json:"reason,omitempty"`
+	Subtotal       float64          `json:"subtotal"`
+	TaxAmount      float64          `json:"tax_amount"`
+	TotalAmount    float64          `json:"total_amount"`
+	AmountApplied  float64          `json:"amount_applied"`
+	AmountRefunded float64          `json:"amount_refunded"`
+	BalanceCredit  float64          `json:"balance_credit"`
+	WarehouseID    string           `json:"warehouse_id,omitempty"`
+	ItemCount      int              `json:"item_count"`
+	CreatedAt      string           `json:"created_at,omitempty"`
+	UpdatedAt      string           `json:"updated_at,omitempty"`
+	Items          []CreditMemoItem `json:"items,omitempty"`
+}
+
+type CreditMemoItem struct {
+	ID               string  `json:"id"`
+	CompanyID        string  `json:"company_id"`
+	CreditMemoID     string  `json:"credit_memo_id"`
+	OrderItemID      string  `json:"order_item_id,omitempty"`
+	ProductID        string  `json:"product_id,omitempty"`
+	ProductName      string  `json:"product_name,omitempty"`
+	RevenueAccountID string  `json:"revenue_account_id,omitempty"`
+	Description      string  `json:"description,omitempty"`
+	Quantity         float64 `json:"quantity"`
+	UnitPrice        float64 `json:"unit_price"`
+	Amount           float64 `json:"amount"`
+	TaxRate          float64 `json:"tax_rate"`
+	TaxAmount        float64 `json:"tax_amount"`
+	Restock          bool    `json:"restock"`
+	UnitCost         float64 `json:"unit_cost"`
+	WarehouseID      string  `json:"warehouse_id,omitempty"`
+	MovementID       string  `json:"movement_id,omitempty"`
+	JournalEntryID   string  `json:"journal_entry_id,omitempty"`
+	SortOrder        int     `json:"sort_order"`
+}
+
+type DebitMemo struct {
+	ID             string          `json:"id"`
+	CompanyID      string          `json:"company_id"`
+	MemoNumber     int             `json:"memo_number"`
+	VendorID       string          `json:"vendor_id"`
+	VendorName     string          `json:"vendor_name,omitempty"`
+	OrderID        string          `json:"order_id"`
+	PONumber       int             `json:"po_number,omitempty"`
+	BillID         string          `json:"bill_id,omitempty"`
+	Status         string          `json:"status"`
+	MemoDate       string          `json:"memo_date,omitempty"`
+	Reason         string          `json:"reason,omitempty"`
+	Subtotal       float64         `json:"subtotal"`
+	TaxAmount      float64         `json:"tax_amount"`
+	TotalAmount    float64         `json:"total_amount"`
+	AmountApplied  float64         `json:"amount_applied"`
+	AmountRefunded float64         `json:"amount_refunded"`
+	BalanceDebit   float64         `json:"balance_debit"`
+	WarehouseID    string          `json:"warehouse_id,omitempty"`
+	ItemCount      int             `json:"item_count"`
+	CreatedAt      string          `json:"created_at,omitempty"`
+	UpdatedAt      string          `json:"updated_at,omitempty"`
+	Items          []DebitMemoItem `json:"items,omitempty"`
+}
+
+type DebitMemoItem struct {
+	ID               string  `json:"id"`
+	CompanyID        string  `json:"company_id"`
+	DebitMemoID      string  `json:"debit_memo_id"`
+	OrderItemID      string  `json:"order_item_id,omitempty"`
+	ProductID        string  `json:"product_id,omitempty"`
+	ProductName      string  `json:"product_name,omitempty"`
+	Description      string  `json:"description,omitempty"`
+	Quantity         float64 `json:"quantity"`
+	UnitCost         float64 `json:"unit_cost"`
+	Amount           float64 `json:"amount"`
+	TaxRate          float64 `json:"tax_rate"`
+	TaxAmount        float64 `json:"tax_amount"`
+	ExpenseAccountID string  `json:"expense_account_id,omitempty"`
+	WarehouseID      string  `json:"warehouse_id,omitempty"`
+	MovementID       string  `json:"movement_id,omitempty"`
+	JournalEntryID   string  `json:"journal_entry_id,omitempty"`
+	SortOrder        int     `json:"sort_order"`
+}
+
+// ReturnCreditableLine is a creditable/returnable order line (from sp_*_creditable).
+type ReturnCreditableLine struct {
+	OrderItemID      string  `json:"order_item_id"`
+	ProductID        string  `json:"product_id,omitempty"`
+	ProductName      string  `json:"product_name,omitempty"`
+	Description      string  `json:"description,omitempty"`
+	CreditableQty    float64 `json:"creditable_qty"`
+	UnitPrice        float64 `json:"unit_price"`
+	TaxRate          float64 `json:"tax_rate"`
+	UnitCost         float64 `json:"unit_cost"`
+	RevenueAccountID string  `json:"revenue_account_id,omitempty"`
+	ExpenseAccountID string  `json:"expense_account_id,omitempty"`
+	WarehouseID      string  `json:"warehouse_id,omitempty"`
+}
+
+// ReturnOpenCredit is a per-party open-credit rollup.
+type ReturnOpenCredit struct {
+	PartyID    string  `json:"party_id"`
+	PartyName  string  `json:"party_name"`
+	MemoCount  int     `json:"memo_count"`
+	OpenAmount float64 `json:"open_amount"`
+}
+
+type ReturnStats struct {
+	TotalMemos      int     `json:"total_memos"`
+	DraftMemos      int     `json:"draft_memos"`
+	OpenBalance     float64 `json:"open_balance"`
+	AmountThisMonth float64 `json:"amount_this_month"`
 }

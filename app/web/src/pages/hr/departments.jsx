@@ -5,7 +5,7 @@ import Modal from "../components/Modal";
 /* ================================================================
    API
 ================================================================ */
-const API_URL = "/api/execute";
+const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 
 async function api(action, body = {}) {
     const session = localStorage.getItem("ls_session");

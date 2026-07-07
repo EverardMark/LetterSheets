@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { I } from "../../layouts/ERPLayout";
+import "./acc-layout.css";
 
-const API = "/api/execute";
+const API = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 async function api(action, body = {}) {
     const s = localStorage.getItem("ls_session");
     const res = await fetch(`${API}?action=${action}`, {
@@ -268,159 +269,144 @@ export default function JournalEntries() {
     if (view === "payroll") return renderPayrollView();
 
     return (
-        <div style={{ padding: "0 0 20px" }}>
-            {msg && <div style={styles.flash}>{msg}</div>}
-
-            {/* Stats Bar */}
-            <div style={styles.statsBar}>
-                {[
-                    { label: "Total Entries", val: stats.total, icon: "file-text", clr: "#10b981" },
-                    { label: "Draft", val: stats.draft, icon: "edit-3", clr: "#f59e0b" },
-                    { label: "Posted", val: stats.posted, icon: "check-circle", clr: "#22c55e" },
-                    { label: "Total Posted", val: fmtMoney(stats.totalPosted), icon: "trending-up", clr: "#6366f1" },
-                ].map(s => (
-                    <div key={s.label} style={styles.statCard}>
-                        <div style={{ ...styles.statIcon, background: s.clr + "18", color: s.clr }}><I name={s.icon} size={18}/></div>
-                        <div><div style={styles.statVal}>{s.val}</div><div style={styles.statLbl}>{s.label}</div></div>
-                    </div>
-                ))}
-            </div>
+        <div className="acc-wrap">
+            {msg && <div className="je-flash">{msg}</div>}
 
             {/* Toolbar */}
-            <div style={styles.toolbar}>
-                <div style={styles.toolLeft}>
-                    <div style={styles.searchWrap}>
-                        <I name="search" size={14} style={{ color: "#999", position: "absolute", left: 10, top: 9 }}/>
-                        <input style={styles.searchInput} placeholder="Search entries..." value={search} onChange={e => setSearch(e.target.value)}/>
+            <div className="acc-bar">
+                <div className="acc-bar-left">
+                    <div className="acc-search-wrap">
+                        <I name="search" size={14}/>
+                        <input className="acc-search" placeholder="Search entries..." value={search} onChange={e => setSearch(e.target.value)}/>
                     </div>
-                    <select style={styles.filterSel} value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                    <select className="acc-filter" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                         <option value="">All Status</option>
                         <option value="Draft">Draft</option>
                         <option value="Posted">Posted</option>
                         <option value="Voided">Voided</option>
                     </select>
-                    <select style={styles.filterSel} value={filterSource} onChange={e => setFilterSource(e.target.value)}>
+                    <select className="acc-filter" value={filterSource} onChange={e => setFilterSource(e.target.value)}>
                         <option value="">All Sources</option>
                         <option value="manual">Manual</option>
                         <option value="payroll">Payroll</option>
                         <option value="loan">Loan</option>
                     </select>
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                    <button style={styles.btnOutline} onClick={() => { setView("mapping"); loadMappings(); }}>
+                <div className="acc-bar-right">
+                    <button className="acc-btn-s" onClick={() => { setView("mapping"); loadMappings(); }}>
                         <I name="link" size={14}/> Mappings
                     </button>
-                    <button style={styles.btnOutline} onClick={() => { setView("payroll"); loadPayrollRuns(); }}>
+                    <button className="acc-btn-s" onClick={() => { setView("payroll"); loadPayrollRuns(); }}>
                         <I name="users" size={14}/> From Payroll
                     </button>
-                    <button style={styles.btnPrimary} onClick={openCreate}>
+                    <button className="acc-btn-p" onClick={openCreate}>
                         <I name="plus" size={14}/> New Entry
                     </button>
                 </div>
             </div>
 
             {/* Main Content */}
-            <div style={styles.mainGrid}>
+            <div className="je-grid acc-fill">
                 {/* Entry List */}
-                <div style={styles.listPane}>
+                <div className="je-list-pane">
                     {loading ? (
-                        <div style={{ textAlign: "center", padding: 40, color: "#999" }}>Loading...</div>
+                        <div className="je-list-msg">Loading...</div>
                     ) : filtered.length === 0 ? (
-                        <div style={{ textAlign: "center", padding: 40, color: "#aaa" }}>
-                            <I name="inbox" size={32} style={{ marginBottom: 8, opacity: 0.4 }}/>
-                            <div>No journal entries yet</div>
-                            <div style={{ fontSize: 12, marginTop: 4 }}>Create a manual entry or generate from payroll</div>
+                        <div className="acc-empty">
+                            <div className="acc-empty-ic"><I name="inbox" size={28}/></div>
+                            <div className="acc-empty-t">No journal entries yet</div>
+                            <div className="acc-empty-d">Create a manual entry or generate from payroll</div>
                         </div>
                     ) : filtered.map(e => (
-                        <div key={e.id} style={{ ...styles.entryRow, ...(selected?.id === e.id ? styles.entryRowSel : {}) }}
+                        <div key={e.id} className={`je-entry-row${selected?.id === e.id ? " je-entry-row-sel" : ""}`}
                              onClick={() => selectEntry(e)}>
-                            <div style={styles.entryLeft}>
-                                <div style={{ ...styles.srcBadge, background: (e.source_type === "payroll" ? "#6366f1" : "#10b981") + "18", color: e.source_type === "payroll" ? "#6366f1" : "#10b981" }}>
+                            <div className="je-entry-left">
+                                <div className="je-src-badge" style={{ background: (e.source_type === "payroll" ? "#6366f1" : "#10b981") + "18", color: e.source_type === "payroll" ? "#6366f1" : "#10b981" }}>
                                     <I name={SRC_ICON[e.source_type] || "file-text"} size={14}/>
                                 </div>
                                 <div>
-                                    <div style={styles.entryNum}>JE-{e.entry_number}</div>
-                                    <div style={styles.entryMemo}>{e.memo || "No description"}</div>
+                                    <div className="je-entry-num">JE-{e.entry_number}</div>
+                                    <div className="je-entry-memo">{e.memo || "No description"}</div>
                                 </div>
                             </div>
-                            <div style={styles.entryRight}>
-                                <div style={styles.entryAmt}>{fmtMoney(e.total_debit)}</div>
-                                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                    <span style={{ ...styles.statusDot, background: STATUS_CLR[e.status] || "#999" }}/>
+                            <div className="je-entry-right">
+                                <div className="je-entry-amt acc-cell-mono">{fmtMoney(e.total_debit)}</div>
+                                <div className="je-entry-status">
+                                    <span className="je-status-dot" style={{ background: STATUS_CLR[e.status] || "#999" }}/>
                                     <span style={{ fontSize: 11, color: STATUS_CLR[e.status] || "#999" }}>{e.status}</span>
                                 </div>
-                                <div style={styles.entryDate}>{e.entry_date?.split("T")[0]}</div>
+                                <div className="je-entry-date">{e.entry_date?.split("T")[0]}</div>
                             </div>
                         </div>
                     ))}
                 </div>
 
                 {/* Detail Panel */}
-                <div style={styles.detailPane}>
+                <div className="je-detail-pane">
                     {!selected ? (
-                        <div style={{ textAlign: "center", padding: 60, color: "#bbb" }}>
+                        <div className="je-detail-empty">
                             <I name="book-open" size={36} style={{ opacity: 0.3, marginBottom: 8 }}/>
                             <div style={{ fontSize: 13 }}>Select an entry to view details</div>
                         </div>
                     ) : (
                         <div>
-                            <div style={styles.detailHeader}>
+                            <div className="je-detail-header">
                                 <div>
-                                    <div style={{ fontSize: 18, fontWeight: 700, color: "#1a1a2e" }}>JE-{selected.entry_number}</div>
-                                    <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{selected.entry_date?.split("T")[0]} &middot; {SRC_LABEL[selected.source_type] || selected.source_type}</div>
+                                    <div className="je-detail-title">JE-{selected.entry_number}</div>
+                                    <div className="je-detail-sub">{selected.entry_date?.split("T")[0]} &middot; {SRC_LABEL[selected.source_type] || selected.source_type}</div>
                                 </div>
-                                <div style={{ ...styles.statusBadge, background: STATUS_CLR[selected.status] + "18", color: STATUS_CLR[selected.status] }}>
+                                <div className="acc-badge" style={{ background: STATUS_CLR[selected.status] + "18", color: STATUS_CLR[selected.status] }}>
                                     {selected.status}
                                 </div>
                             </div>
 
-                            {selected.memo && <div style={styles.detailMemo}>{selected.memo}</div>}
+                            {selected.memo && <div className="je-detail-memo">{selected.memo}</div>}
 
                             {/* Lines Table */}
-                            <table style={styles.linesTable}>
+                            <table className="acc-tbl je-lines-tbl">
                                 <thead>
                                 <tr>
-                                    <th style={styles.th}>Account</th>
-                                    <th style={styles.th}>Description</th>
-                                    <th style={{ ...styles.th, textAlign: "right" }}>Debit</th>
-                                    <th style={{ ...styles.th, textAlign: "right" }}>Credit</th>
+                                    <th>Account</th>
+                                    <th>Description</th>
+                                    <th className="acc-right">Debit</th>
+                                    <th className="acc-right">Credit</th>
                                 </tr>
                                 </thead>
                                 <tbody>
                                 {lines.map(l => (
                                     <tr key={l.id}>
-                                        <td style={styles.td}>
+                                        <td>
                                             <span style={{ fontWeight: 600, fontSize: 12 }}>{l.account_code}</span>
                                             <span style={{ color: "#666", marginLeft: 6, fontSize: 12 }}>{l.account_name}</span>
                                         </td>
-                                        <td style={{ ...styles.td, color: "#888", fontSize: 12 }}>{l.description || ""}</td>
-                                        <td style={{ ...styles.td, textAlign: "right", fontWeight: l.debit > 0 ? 600 : 400, color: l.debit > 0 ? "#1a1a2e" : "#ccc" }}>
+                                        <td style={{ color: "#888", fontSize: 12 }}>{l.description || ""}</td>
+                                        <td className="acc-right acc-cell-mono" style={{ fontWeight: l.debit > 0 ? 600 : 400, color: l.debit > 0 ? "#1a1a2e" : "#ccc" }}>
                                             {l.debit > 0 ? fmtMoney(l.debit) : ""}
                                         </td>
-                                        <td style={{ ...styles.td, textAlign: "right", fontWeight: l.credit > 0 ? 600 : 400, color: l.credit > 0 ? "#1a1a2e" : "#ccc" }}>
+                                        <td className="acc-right acc-cell-mono" style={{ fontWeight: l.credit > 0 ? 600 : 400, color: l.credit > 0 ? "#1a1a2e" : "#ccc" }}>
                                             {l.credit > 0 ? fmtMoney(l.credit) : ""}
                                         </td>
                                     </tr>
                                 ))}
-                                <tr style={{ borderTop: "2px solid #e0e0e0" }}>
-                                    <td colSpan={2} style={{ ...styles.td, fontWeight: 700 }}>TOTALS</td>
-                                    <td style={{ ...styles.td, textAlign: "right", fontWeight: 700 }}>{fmtMoney(selected.total_debit)}</td>
-                                    <td style={{ ...styles.td, textAlign: "right", fontWeight: 700 }}>{fmtMoney(selected.total_credit)}</td>
+                                <tr className="je-totals-row">
+                                    <td colSpan={2} style={{ fontWeight: 700 }}>TOTALS</td>
+                                    <td className="acc-right acc-cell-mono" style={{ fontWeight: 700 }}>{fmtMoney(selected.total_debit)}</td>
+                                    <td className="acc-right acc-cell-mono" style={{ fontWeight: 700 }}>{fmtMoney(selected.total_credit)}</td>
                                 </tr>
                                 </tbody>
                             </table>
 
                             {/* Actions */}
-                            <div style={styles.detailActions}>
+                            <div className="je-detail-actions">
                                 {selected.status === "Draft" && (
                                     <>
-                                        <button style={styles.btnPrimary} onClick={() => postEntry(selected.id)}><I name="check" size={14}/> Post</button>
-                                        <button style={styles.btnOutline} onClick={() => openEdit(selected)}><I name="edit-2" size={14}/> Edit</button>
-                                        <button style={{ ...styles.btnOutline, color: "#ef4444", borderColor: "#fca5a5" }} onClick={() => deleteEntry(selected.id)}><I name="trash-2" size={14}/> Delete</button>
+                                        <button className="acc-btn-p" onClick={() => postEntry(selected.id)}><I name="check" size={14}/> Post</button>
+                                        <button className="acc-btn-s" onClick={() => openEdit(selected)}><I name="edit-2" size={14}/> Edit</button>
+                                        <button className="acc-btn-danger" onClick={() => deleteEntry(selected.id)}><I name="trash-2" size={14}/> Delete</button>
                                     </>
                                 )}
                                 {selected.status === "Posted" && (
-                                    <button style={{ ...styles.btnOutline, color: "#ef4444", borderColor: "#fca5a5" }} onClick={() => voidEntry(selected.id)}><I name="x-circle" size={14}/> Void</button>
+                                    <button className="acc-btn-danger" onClick={() => voidEntry(selected.id)}><I name="x-circle" size={14}/> Void</button>
                                 )}
                                 {selected.status === "Voided" && selected.void_reason && (
                                     <div style={{ fontSize: 12, color: "#ef4444", fontStyle: "italic" }}>Voided: {selected.void_reason}</div>
@@ -430,76 +416,78 @@ export default function JournalEntries() {
                     )}
                 </div>
             </div>
+
+            <style>{jeCSS}</style>
         </div>
     );
 
     /* ===== CREATE / EDIT VIEW ===== */
     function renderCreateView() {
         return (
-            <div style={{ padding: "0 0 20px" }}>
-                {msg && <div style={styles.flash}>{msg}</div>}
-                <div style={styles.viewHeader}>
-                    <button style={styles.backBtn} onClick={() => setView("list")}><I name="arrow-left" size={16}/></button>
-                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1a1a2e" }}>{editingId ? "Edit" : "New"} Journal Entry</h3>
+            <div className="acc-wrap">
+                {msg && <div className="je-flash">{msg}</div>}
+                <div className="je-view-header">
+                    <button className="je-back-btn" onClick={() => setView("list")}><I name="arrow-left" size={16}/></button>
+                    <h3 className="acc-title" style={{ margin: 0 }}>{editingId ? "Edit" : "New"} Journal Entry</h3>
                 </div>
 
-                <div style={styles.formCard}>
-                    <div style={{ display: "flex", gap: 16, marginBottom: 16 }}>
+                <div className="acc-card je-form-card">
+                    <div className="je-form-head">
                         <div style={{ flex: 1 }}>
-                            <label style={styles.label}>Date</label>
-                            <input type="date" style={styles.input} value={formDate} onChange={e => setFormDate(e.target.value)}/>
+                            <label className="acc-label">Date</label>
+                            <input type="date" className="acc-input" value={formDate} onChange={e => setFormDate(e.target.value)}/>
                         </div>
                         <div style={{ flex: 3 }}>
-                            <label style={styles.label}>Memo / Description</label>
-                            <input style={styles.input} placeholder="e.g. Payroll for January 2026" value={formMemo} onChange={e => setFormMemo(e.target.value)}/>
+                            <label className="acc-label">Memo / Description</label>
+                            <input className="acc-input" placeholder="e.g. Payroll for January 2026" value={formMemo} onChange={e => setFormMemo(e.target.value)}/>
                         </div>
                     </div>
 
                     {/* Lines */}
-                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <table className="acc-tbl je-lines-tbl">
                         <thead>
                         <tr>
-                            <th style={{ ...styles.th, width: "35%" }}>Account</th>
-                            <th style={{ ...styles.th, width: "25%" }}>Description</th>
-                            <th style={{ ...styles.th, width: "15%", textAlign: "right" }}>Debit</th>
-                            <th style={{ ...styles.th, width: "15%", textAlign: "right" }}>Credit</th>
-                            <th style={{ ...styles.th, width: "10%" }}></th>
+                            <th style={{ width: "35%" }}>Account</th>
+                            <th style={{ width: "25%" }}>Description</th>
+                            <th className="acc-right" style={{ width: "15%" }}>Debit</th>
+                            <th className="acc-right" style={{ width: "15%" }}>Credit</th>
+                            <th style={{ width: "10%" }}></th>
                         </tr>
                         </thead>
                         <tbody>
                         {formLines.map((l, i) => (
                             <tr key={i}>
-                                <td style={styles.td}>
-                                    <select style={{ ...styles.input, margin: 0 }} value={l.account_id} onChange={e => updateLine(i, "account_id", e.target.value)}>
+                                <td>
+                                    <select className="acc-input" style={{ margin: 0 }} value={l.account_id} onChange={e => updateLine(i, "account_id", e.target.value)}>
                                         <option value="">Select account...</option>
                                         {accounts.map(a => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
                                     </select>
                                 </td>
-                                <td style={styles.td}>
-                                    <input style={{ ...styles.input, margin: 0 }} placeholder="Line desc" value={l.description} onChange={e => updateLine(i, "description", e.target.value)}/>
+                                <td>
+                                    <input className="acc-input" style={{ margin: 0 }} placeholder="Line desc" value={l.description} onChange={e => updateLine(i, "description", e.target.value)}/>
                                 </td>
-                                <td style={styles.td}>
-                                    <input type="number" min="0" step="0.01" style={{ ...styles.input, margin: 0, textAlign: "right" }}
+                                <td>
+                                    <input type="number" min="0" step="0.01" className="acc-input" style={{ margin: 0, textAlign: "right" }}
                                            value={l.debit || ""} onChange={e => { updateLine(i, "debit", Number(e.target.value)); if (Number(e.target.value) > 0) updateLine(i, "credit", 0); }}/>
                                 </td>
-                                <td style={styles.td}>
-                                    <input type="number" min="0" step="0.01" style={{ ...styles.input, margin: 0, textAlign: "right" }}
+                                <td>
+                                    <input type="number" min="0" step="0.01" className="acc-input" style={{ margin: 0, textAlign: "right" }}
                                            value={l.credit || ""} onChange={e => { updateLine(i, "credit", Number(e.target.value)); if (Number(e.target.value) > 0) updateLine(i, "debit", 0); }}/>
                                 </td>
-                                <td style={styles.td}>
+                                <td>
                                     {formLines.length > 2 && (
-                                        <button style={styles.iconBtn} onClick={() => removeLine(i)}><I name="x" size={14}/></button>
+                                        <button className="je-icon-btn" onClick={() => removeLine(i)}><I name="x" size={14}/></button>
                                     )}
                                 </td>
                             </tr>
                         ))}
-                        <tr style={{ borderTop: "2px solid #e0e0e0" }}>
-                            <td colSpan={2} style={{ ...styles.td, fontWeight: 700 }}>
-                                <button style={styles.addLineBtn} onClick={addLine}><I name="plus" size={12}/> Add Line</button>
+                        <tr className="je-totals-row">
+                            <td colSpan={2} style={{ fontWeight: 700 }}>
+                                <button className="je-addline-btn" onClick={addLine}><I name="plus" size={12}/> Add Line</button>
                             </td>
-                            <td style={{ ...styles.td, textAlign: "right", fontWeight: 700, color: !balanced && totalDr > 0 ? "#ef4444" : "#1a1a2e" }}>{fmtMoney(totalDr)}</td>
-                            <td style={{ ...styles.td, textAlign: "right", fontWeight: 700, color: !balanced && totalCr > 0 ? "#ef4444" : "#1a1a2e" }}>{fmtMoney(totalCr)}</td>
-                            <td style={styles.td}></td>
+                            <td className="acc-right acc-cell-mono" style={{ fontWeight: 700, color: !balanced && totalDr > 0 ? "#ef4444" : "#1a1a2e" }}>{fmtMoney(totalDr)}</td>
+                            <td className="acc-right acc-cell-mono" style={{ fontWeight: 700, color: !balanced && totalCr > 0 ? "#ef4444" : "#1a1a2e" }}>{fmtMoney(totalCr)}</td>
+                            <td></td>
                         </tr>
                         </tbody>
                     </table>
@@ -510,13 +498,15 @@ export default function JournalEntries() {
                         </div>
                     )}
 
-                    <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-                        <button style={styles.btnPrimary} onClick={saveEntry} disabled={!balanced}>
+                    <div className="acc-foot-btns" style={{ justifyContent: "flex-start", marginTop: 16 }}>
+                        <button className="acc-btn-primary" onClick={saveEntry} disabled={!balanced}>
                             <I name="save" size={14}/> {editingId ? "Update" : "Save"} Entry
                         </button>
-                        <button style={styles.btnOutline} onClick={() => setView("list")}>Cancel</button>
+                        <button className="acc-btn-cancel" onClick={() => setView("list")}>Cancel</button>
                     </div>
                 </div>
+
+                <style>{jeCSS}</style>
             </div>
         );
     }
@@ -528,34 +518,34 @@ export default function JournalEntries() {
         const groups = [...new Set(MAPPING_DEFS.map(d => d.group))];
 
         return (
-            <div style={{ padding: "0 0 20px" }}>
-                {msg && <div style={styles.flash}>{msg}</div>}
-                <div style={styles.viewHeader}>
-                    <button style={styles.backBtn} onClick={() => setView("list")}><I name="arrow-left" size={16}/></button>
-                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1a1a2e" }}>Account Mappings</h3>
+            <div className="acc-wrap">
+                {msg && <div className="je-flash">{msg}</div>}
+                <div className="je-view-header">
+                    <button className="je-back-btn" onClick={() => setView("list")}><I name="arrow-left" size={16}/></button>
+                    <h3 className="acc-title" style={{ margin: 0 }}>Account Mappings</h3>
                     <div style={{ marginLeft: "auto" }}>
-                        <button style={styles.btnPrimary} onClick={autoMap} disabled={mappingLoading}>
+                        <button className="acc-btn-p" onClick={autoMap} disabled={mappingLoading}>
                             <I name="zap" size={14}/> Auto-Map (BIR)
                         </button>
                     </div>
                 </div>
 
-                <div style={{ fontSize: 12, color: "#888", margin: "8px 0 16px", lineHeight: 1.5 }}>
+                <div className="je-view-desc">
                     Link your payroll categories to COA accounts. Click "Auto-Map" to automatically match using BIR template account codes, then adjust as needed.
                 </div>
 
                 {groups.map(group => (
-                    <div key={group} style={styles.formCard}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: "#1a1a2e", marginBottom: 12 }}>{group}</div>
+                    <div key={group} className="acc-card je-form-card">
+                        <div className="je-group-title">{group}</div>
                         {MAPPING_DEFS.filter(d => d.group === group).map(def => {
                             const current = mappingMap[def.key];
                             return (
-                                <div key={def.key} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-                                    <div style={{ width: 220, fontSize: 12, color: "#555" }}>
-                                        <span style={{ ...styles.sideBadge, background: def.side === "Dr" ? "#dbeafe" : "#fce7f3", color: def.side === "Dr" ? "#2563eb" : "#db2777" }}>{def.side}</span>
+                                <div key={def.key} className="je-map-row">
+                                    <div className="je-map-label">
+                                        <span className="je-side-badge" style={{ background: def.side === "Dr" ? "#dbeafe" : "#fce7f3", color: def.side === "Dr" ? "#2563eb" : "#db2777" }}>{def.side}</span>
                                         {def.label}
                                     </div>
-                                    <select style={{ ...styles.input, flex: 1, margin: 0, fontSize: 12 }}
+                                    <select className="acc-input" style={{ flex: 1, margin: 0, fontSize: 12 }}
                                             value={current?.account_id || ""}
                                             onChange={e => { if (e.target.value) updateMapping(def.key, e.target.value, def.label); }}>
                                         <option value="">Not mapped</option>
@@ -569,6 +559,8 @@ export default function JournalEntries() {
                         })}
                     </div>
                 ))}
+
+                <style>{jeCSS}</style>
             </div>
         );
     }
@@ -576,32 +568,30 @@ export default function JournalEntries() {
     /* ===== PAYROLL VIEW ===== */
     function renderPayrollView() {
         return (
-            <div style={{ padding: "0 0 20px" }}>
-                {msg && <div style={styles.flash}>{msg}</div>}
-                <div style={styles.viewHeader}>
-                    <button style={styles.backBtn} onClick={() => setView("list")}><I name="arrow-left" size={16}/></button>
-                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1a1a2e" }}>Generate Journal from Payroll</h3>
+            <div className="acc-wrap">
+                {msg && <div className="je-flash">{msg}</div>}
+                <div className="je-view-header">
+                    <button className="je-back-btn" onClick={() => setView("list")}><I name="arrow-left" size={16}/></button>
+                    <h3 className="acc-title" style={{ margin: 0 }}>Generate Journal from Payroll</h3>
                 </div>
 
-                <div style={{ fontSize: 12, color: "#888", margin: "8px 0 16px", lineHeight: 1.5 }}>
+                <div className="je-view-desc">
                     Select an approved payroll run to automatically generate the journal entry with all debits and credits.
                     Make sure account mappings are configured first.
                 </div>
 
-                <div style={styles.formCard}>
-                    <label style={styles.label}>Select Payroll Run</label>
+                <div className="acc-card je-form-card">
+                    <label className="acc-label">Select Payroll Run</label>
                     {payrollRuns.length === 0 ? (
-                        <div style={{ color: "#aaa", fontSize: 13, padding: 20, textAlign: "center" }}>No payroll runs found. Create and compute a payroll run in the HR &gt; Payroll module first.</div>
+                        <div className="je-list-msg">No payroll runs found. Create and compute a payroll run in the HR &gt; Payroll module first.</div>
                     ) : (
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                             {payrollRuns.map(run => {
                                 const ready = run.status === "Approved" || run.status === "Paid";
                                 return (
-                                    <div key={run.id} style={{
-                                        ...styles.payrollCard,
-                                        ...(selectedRun?.id === run.id ? { border: "2px solid #10b981", background: "#f0fdf4" } : {}),
-                                        ...(!ready ? { opacity: 0.6 } : {}),
-                                    }} onClick={() => { if (ready) { setSelectedRun(run); loadPayrollTotals(run.id); } else { flash("Approve this payroll run first before generating a journal entry"); } }}>
+                                    <div key={run.id} className={`je-payroll-card${selectedRun?.id === run.id ? " je-payroll-card-sel" : ""}`}
+                                        style={!ready ? { opacity: 0.6 } : undefined}
+                                        onClick={() => { if (ready) { setSelectedRun(run); loadPayrollTotals(run.id); } else { flash("Approve this payroll run first before generating a journal entry"); } }}>
                                         <div>
                                             <div style={{ fontWeight: 600, fontSize: 13 }}>{run.period_start?.split("T")[0]} to {run.period_end?.split("T")[0]}</div>
                                             <div style={{ fontSize: 11, color: "#888" }}>
@@ -621,83 +611,98 @@ export default function JournalEntries() {
 
                     {payrollTotals && selectedRun && (
                         <div style={{ marginTop: 16 }}>
-                            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8, color: "#1a1a2e" }}>Preview Journal Lines</div>
-                            <table style={styles.linesTable}>
+                            <div className="je-group-title">Preview Journal Lines</div>
+                            <table className="acc-tbl je-lines-tbl">
                                 <thead>
                                 <tr>
-                                    <th style={styles.th}>Description</th>
-                                    <th style={{ ...styles.th, textAlign: "right" }}>Debit</th>
-                                    <th style={{ ...styles.th, textAlign: "right" }}>Credit</th>
+                                    <th>Description</th>
+                                    <th className="acc-right">Debit</th>
+                                    <th className="acc-right">Credit</th>
                                 </tr>
                                 </thead>
                                 <tbody>
-                                {payrollTotals.total_gross > 0 && <tr><td style={styles.td}>Salaries and Wages</td><td style={{ ...styles.td, textAlign: "right" }}>{fmtMoney(payrollTotals.total_gross)}</td><td style={styles.td}></td></tr>}
-                                {payrollTotals.total_sss_er > 0 && <tr><td style={styles.td}>SSS Expense (ER)</td><td style={{ ...styles.td, textAlign: "right" }}>{fmtMoney(payrollTotals.total_sss_er)}</td><td style={styles.td}></td></tr>}
-                                {payrollTotals.total_philhealth_er > 0 && <tr><td style={styles.td}>PhilHealth Expense (ER)</td><td style={{ ...styles.td, textAlign: "right" }}>{fmtMoney(payrollTotals.total_philhealth_er)}</td><td style={styles.td}></td></tr>}
-                                {payrollTotals.total_pagibig_er > 0 && <tr><td style={styles.td}>Pag-IBIG Expense (ER)</td><td style={{ ...styles.td, textAlign: "right" }}>{fmtMoney(payrollTotals.total_pagibig_er)}</td><td style={styles.td}></td></tr>}
+                                {payrollTotals.total_gross > 0 && <tr><td>Salaries and Wages</td><td className="acc-right acc-cell-mono">{fmtMoney(payrollTotals.total_gross)}</td><td></td></tr>}
+                                {payrollTotals.total_sss_er > 0 && <tr><td>SSS Expense (ER)</td><td className="acc-right acc-cell-mono">{fmtMoney(payrollTotals.total_sss_er)}</td><td></td></tr>}
+                                {payrollTotals.total_philhealth_er > 0 && <tr><td>PhilHealth Expense (ER)</td><td className="acc-right acc-cell-mono">{fmtMoney(payrollTotals.total_philhealth_er)}</td><td></td></tr>}
+                                {payrollTotals.total_pagibig_er > 0 && <tr><td>Pag-IBIG Expense (ER)</td><td className="acc-right acc-cell-mono">{fmtMoney(payrollTotals.total_pagibig_er)}</td><td></td></tr>}
 
-                                {(payrollTotals.total_sss_ee + payrollTotals.total_sss_er) > 0 && <tr><td style={styles.td}>SSS Payable (EE+ER)</td><td style={styles.td}></td><td style={{ ...styles.td, textAlign: "right" }}>{fmtMoney(payrollTotals.total_sss_ee + payrollTotals.total_sss_er)}</td></tr>}
-                                {(payrollTotals.total_philhealth_ee + payrollTotals.total_philhealth_er) > 0 && <tr><td style={styles.td}>PhilHealth Payable (EE+ER)</td><td style={styles.td}></td><td style={{ ...styles.td, textAlign: "right" }}>{fmtMoney(payrollTotals.total_philhealth_ee + payrollTotals.total_philhealth_er)}</td></tr>}
-                                {(payrollTotals.total_pagibig_ee + payrollTotals.total_pagibig_er) > 0 && <tr><td style={styles.td}>Pag-IBIG Payable (EE+ER)</td><td style={styles.td}></td><td style={{ ...styles.td, textAlign: "right" }}>{fmtMoney(payrollTotals.total_pagibig_ee + payrollTotals.total_pagibig_er)}</td></tr>}
-                                {payrollTotals.total_tax > 0 && <tr><td style={styles.td}>Withholding Tax Payable</td><td style={styles.td}></td><td style={{ ...styles.td, textAlign: "right" }}>{fmtMoney(payrollTotals.total_tax)}</td></tr>}
-                                {payrollTotals.total_loan_deductions > 0 && <tr><td style={styles.td}>Loan Deductions</td><td style={styles.td}></td><td style={{ ...styles.td, textAlign: "right" }}>{fmtMoney(payrollTotals.total_loan_deductions)}</td></tr>}
-                                {payrollTotals.total_net_pay > 0 && <tr><td style={styles.td}>Net Pay (Cash)</td><td style={styles.td}></td><td style={{ ...styles.td, textAlign: "right" }}>{fmtMoney(payrollTotals.total_net_pay)}</td></tr>}
+                                {(payrollTotals.total_sss_ee + payrollTotals.total_sss_er) > 0 && <tr><td>SSS Payable (EE+ER)</td><td></td><td className="acc-right acc-cell-mono">{fmtMoney(payrollTotals.total_sss_ee + payrollTotals.total_sss_er)}</td></tr>}
+                                {(payrollTotals.total_philhealth_ee + payrollTotals.total_philhealth_er) > 0 && <tr><td>PhilHealth Payable (EE+ER)</td><td></td><td className="acc-right acc-cell-mono">{fmtMoney(payrollTotals.total_philhealth_ee + payrollTotals.total_philhealth_er)}</td></tr>}
+                                {(payrollTotals.total_pagibig_ee + payrollTotals.total_pagibig_er) > 0 && <tr><td>Pag-IBIG Payable (EE+ER)</td><td></td><td className="acc-right acc-cell-mono">{fmtMoney(payrollTotals.total_pagibig_ee + payrollTotals.total_pagibig_er)}</td></tr>}
+                                {payrollTotals.total_tax > 0 && <tr><td>Withholding Tax Payable</td><td></td><td className="acc-right acc-cell-mono">{fmtMoney(payrollTotals.total_tax)}</td></tr>}
+                                {payrollTotals.total_loan_deductions > 0 && <tr><td>Loan Deductions</td><td></td><td className="acc-right acc-cell-mono">{fmtMoney(payrollTotals.total_loan_deductions)}</td></tr>}
+                                {payrollTotals.total_net_pay > 0 && <tr><td>Net Pay (Cash)</td><td></td><td className="acc-right acc-cell-mono">{fmtMoney(payrollTotals.total_net_pay)}</td></tr>}
                                 </tbody>
                             </table>
 
-                            <button style={{ ...styles.btnPrimary, marginTop: 12 }} onClick={generatePayrollJournal} disabled={generating}>
+                            <button className="acc-btn-primary" style={{ marginTop: 12 }} onClick={generatePayrollJournal} disabled={generating}>
                                 <I name={generating ? "loader" : "file-plus"} size={14}/> {generating ? "Generating..." : "Generate Journal Entry"}
                             </button>
                         </div>
                     )}
                 </div>
+
+                <style>{jeCSS}</style>
             </div>
         );
     }
 }
 
-/* ===== STYLES ===== */
-const styles = {
-    flash: { background: "#ecfdf5", border: "1px solid #a7f3d0", color: "#065f46", padding: "8px 14px", borderRadius: 8, fontSize: 13, marginBottom: 12 },
-    statsBar: { display: "flex", gap: 12, marginBottom: 16 },
-    statCard: { flex: 1, display: "flex", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px" },
-    statIcon: { width: 36, height: 36, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" },
-    statVal: { fontSize: 16, fontWeight: 700, color: "#1a1a2e" },
-    statLbl: { fontSize: 11, color: "#888" },
-    toolbar: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-    toolLeft: { display: "flex", gap: 8, alignItems: "center" },
-    searchWrap: { position: "relative" },
-    searchInput: { padding: "7px 10px 7px 30px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 13, width: 200, outline: "none" },
-    filterSel: { padding: "7px 10px", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 12, background: "#fff", cursor: "pointer" },
-    btnPrimary: { display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "#10b981", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: "pointer" },
-    btnOutline: { display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "#fff", color: "#374151", border: "1px solid #d1d5db", borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: "pointer" },
-    mainGrid: { display: "grid", gridTemplateColumns: "1fr 380px", gap: 12 },
-    listPane: { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" },
-    detailPane: { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 16, minHeight: 300 },
-    entryRow: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderBottom: "1px solid #f3f4f6", cursor: "pointer", transition: "background 0.15s" },
-    entryRowSel: { background: "#f0fdf4" },
-    entryLeft: { display: "flex", alignItems: "center", gap: 10 },
-    srcBadge: { width: 32, height: 32, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center" },
-    entryNum: { fontSize: 13, fontWeight: 700, color: "#1a1a2e" },
-    entryMemo: { fontSize: 11, color: "#888", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-    entryRight: { textAlign: "right" },
-    entryAmt: { fontSize: 13, fontWeight: 700, color: "#1a1a2e" },
-    entryDate: { fontSize: 11, color: "#aaa" },
-    statusDot: { width: 7, height: 7, borderRadius: "50%", display: "inline-block" },
-    detailHeader: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 },
-    statusBadge: { padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 700 },
-    detailMemo: { fontSize: 12, color: "#666", background: "#f9fafb", borderRadius: 6, padding: "8px 10px", marginBottom: 12 },
-    linesTable: { width: "100%", borderCollapse: "collapse", fontSize: 12 },
-    th: { textAlign: "left", padding: "6px 8px", fontSize: 11, fontWeight: 600, color: "#888", borderBottom: "1px solid #e5e7eb" },
-    td: { padding: "6px 8px", borderBottom: "1px solid #f3f4f6" },
-    detailActions: { display: "flex", gap: 8, marginTop: 16 },
-    viewHeader: { display: "flex", alignItems: "center", gap: 10, marginBottom: 16 },
-    backBtn: { background: "none", border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 8px", cursor: "pointer", display: "flex", alignItems: "center" },
-    formCard: { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 16, marginBottom: 12 },
-    label: { display: "block", fontSize: 11, fontWeight: 600, color: "#555", marginBottom: 4 },
-    input: { width: "100%", padding: "7px 10px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13, outline: "none", boxSizing: "border-box" },
-    iconBtn: { background: "none", border: "none", cursor: "pointer", color: "#ef4444", padding: 4 },
-    addLineBtn: { display: "flex", alignItems: "center", gap: 4, background: "none", border: "1px dashed #d1d5db", borderRadius: 6, padding: "6px 12px", fontSize: 12, color: "#10b981", cursor: "pointer", fontWeight: 600 },
-    sideBadge: { display: "inline-block", padding: "1px 5px", borderRadius: 4, fontSize: 10, fontWeight: 700, marginRight: 6 },
-    payrollCard: { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", border: "1px solid #e5e7eb", borderRadius: 8, cursor: "pointer", transition: "all 0.15s" },
-};
+/* ===== PAGE-SPECIFIC STYLES (not covered by acc-layout.css) ===== */
+const jeCSS = `
+  .je-flash{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;padding:8px 14px;border-radius:8px;font-size:13px;margin-bottom:12px}
+
+  /* stat cards: icon + value + label stacked, matching this page's original horizontal card */
+  .acc-st{display:flex;align-items:center;gap:10px}
+  .acc-st .acc-st-ic{margin-bottom:0}
+
+  /* two-pane list + detail layout */
+  .je-grid{display:grid;grid-template-columns:1fr 380px;grid-template-rows:minmax(0,1fr);gap:12px;min-height:0}
+  .je-list-pane{background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden}
+  .je-list-msg{text-align:center;padding:20px;color:#999;font-size:13px}
+  .je-detail-pane{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px;min-height:300px}
+  .je-detail-empty{text-align:center;padding:60px;color:#bbb}
+
+  .je-entry-row{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #f3f4f6;cursor:pointer;transition:background .15s}
+  .je-entry-row:hover{background:#fafffe}
+  .je-entry-row-sel{background:#edf8f5}
+  .je-entry-left{display:flex;align-items:center;gap:10px}
+  .je-src-badge{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center}
+  .je-entry-num{font-size:13px;font-weight:700;color:#1a1a2e}
+  .je-entry-memo{font-size:11px;color:#888;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .je-entry-right{text-align:right}
+  .je-entry-amt{font-size:13px;font-weight:700;color:#1a1a2e}
+  .je-entry-status{display:flex;gap:6px;align-items:center;justify-content:flex-end}
+  .je-status-dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+  .je-entry-date{font-size:11px;color:#aaa}
+
+  .je-detail-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+  .je-detail-title{font-size:18px;font-weight:700;color:#1a1a2e}
+  .je-detail-sub{font-size:12px;color:#888;margin-top:2px}
+  .je-detail-memo{font-size:12px;color:#666;background:#f9fafb;border-radius:6px;padding:8px 10px;margin-bottom:12px}
+  .je-detail-actions{display:flex;gap:8px;margin-top:16px}
+
+  /* line tables: tighter than default acc-tbl for dense JE data */
+  .je-lines-tbl thead th{padding:6px 8px}
+  .je-lines-tbl tbody td{padding:6px 8px;border-bottom:1px solid #f3f4f6}
+  .je-totals-row td{border-top:2px solid #e0e0e0}
+
+  .je-view-header{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+  .je-back-btn{background:none;border:1px solid #d1d5db;border-radius:8px;padding:6px 8px;cursor:pointer;display:flex;align-items:center}
+  .je-view-desc{font-size:12px;color:#888;margin:8px 0 16px;line-height:1.5}
+  .je-form-card{margin-bottom:12px}
+  .je-form-head{display:flex;gap:16px;margin-bottom:16px}
+  .je-group-title{font-size:13px;font-weight:700;color:#1a1a2e;margin-bottom:12px}
+
+  .je-icon-btn{background:none;border:none;cursor:pointer;color:#ef4444;padding:4px}
+  .je-addline-btn{display:flex;align-items:center;gap:4px;background:none;border:1px dashed #d1d5db;border-radius:6px;padding:6px 12px;font-size:12px;color:#2d9e8b;cursor:pointer;font-weight:600}
+
+  .je-map-row{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .je-map-label{width:220px;font-size:12px;color:#555}
+  .je-side-badge{display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;margin-right:6px}
+
+  .je-payroll-card{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;transition:all .15s}
+  .je-payroll-card-sel{border:2px solid #2d9e8b;background:#edf8f5}
+
+  @media(max-width:900px){.je-grid{grid-template-columns:1fr}}
+`;

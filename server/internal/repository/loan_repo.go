@@ -130,8 +130,8 @@ func (r *LoanRepo) GetLoans(companyID, status string) ([]models.Loan, error) {
 	return loans, nil
 }
 
-func (r *LoanRepo) GetLoan(id string) (*models.Loan, error) {
-	rows, err := r.db.Query("CALL sp_get_loan(?)", id)
+func (r *LoanRepo) GetLoan(companyID, id string) (*models.Loan, error) {
+	rows, err := r.db.Query("CALL sp_get_loan(?,?)", companyID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -160,30 +160,30 @@ func (r *LoanRepo) CreateLoan(companyID, employeeID, loanTypeID, loanTypeName st
 	return nil, sql.ErrNoRows
 }
 
-func (r *LoanRepo) ApproveLoan(id, approvedBy, startDate, endDate string) (*models.Loan, error) {
-	_, err := r.db.Exec("CALL sp_approve_loan(?,?,?,?)", id, approvedBy, startDate, endDate)
+func (r *LoanRepo) ApproveLoan(companyID, id, approvedBy, startDate, endDate string) (*models.Loan, error) {
+	_, err := r.db.Exec("CALL sp_approve_loan(?,?,?,?,?)", companyID, id, approvedBy, startDate, endDate)
 	return nil, err
 }
 
-func (r *LoanRepo) RejectLoan(id, rejectionNote string) error {
-	_, err := r.db.Exec("CALL sp_reject_loan(?,?)", id, rejectionNote)
+func (r *LoanRepo) RejectLoan(companyID, id, rejectionNote string) error {
+	_, err := r.db.Exec("CALL sp_reject_loan(?,?,?)", companyID, id, rejectionNote)
 	return err
 }
 
-func (r *LoanRepo) CancelLoan(id string) error {
-	_, err := r.db.Exec("CALL sp_cancel_loan(?)", id)
+func (r *LoanRepo) CancelLoan(companyID, id string) error {
+	_, err := r.db.Exec("CALL sp_cancel_loan(?,?)", companyID, id)
 	return err
 }
 
-func (r *LoanRepo) DeleteLoan(id string) error {
-	_, err := r.db.Exec("CALL sp_delete_loan(?)", id)
+func (r *LoanRepo) DeleteLoan(companyID, id string) error {
+	_, err := r.db.Exec("CALL sp_delete_loan(?,?)", companyID, id)
 	return err
 }
 
 // ========== PAYMENTS ==========
 
-func (r *LoanRepo) GetPayments(loanID string) ([]models.LoanPayment, error) {
-	rows, err := r.db.Query("CALL sp_get_loan_payments(?)", loanID)
+func (r *LoanRepo) GetPayments(companyID, loanID string) ([]models.LoanPayment, error) {
+	rows, err := r.db.Query("CALL sp_get_loan_payments(?,?)", companyID, loanID)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +228,7 @@ func (r *LoanRepo) RecordPayment(companyID, loanID, paymentDate string, amount, 
 	return nil, sql.ErrNoRows
 }
 
-func (r *LoanRepo) DeletePayment(id string) error {
-	_, err := r.db.Exec("CALL sp_delete_loan_payment(?)", id)
+func (r *LoanRepo) DeletePayment(companyID, id string) error {
+	_, err := r.db.Exec("CALL sp_delete_loan_payment(?,?)", companyID, id)
 	return err
 }

@@ -19,6 +19,20 @@ import WorkSchedulesTab from "./WorkSchedules";
 const ini = (n) => n?.split(" ").map(w => w[0]).join("") || "?";
 const fmt = (n) => "₱" + (n || 0).toLocaleString();
 
+// Shared authenticated API call for the HR overview widgets.
+async function hrApi(action, body = {}) {
+    const url = (import.meta.env.VITE_API_BASE || "") + "/api/execute";
+    const session = localStorage.getItem("ls_session");
+    const res = await fetch(`${url}?action=${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(session ? { Authorization: `Bearer ${session}` } : {}) },
+        body: JSON.stringify(body),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.success) throw new Error(json.error || "API failed");
+    return json.data;
+}
+
 function Empty({ icon, title, desc, action, onAction }) {
     return (
         <div className="h-empty">
@@ -71,7 +85,7 @@ export default function HR() {
     const [positions, setPositions] = useState([]);
     const [loans, setLoans] = useState([]);
 
-    const API_URL = "/api/execute";
+    const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
     const apiCall = async (action, body = {}) => {
         const session = localStorage.getItem("ls_session");
         const res = await fetch(`${API_URL}?action=${action}`, {
@@ -108,7 +122,7 @@ export default function HR() {
 
     return (<>
         {/* Content */}
-        {tab === "overview"    && <Overview nav={navigate} agencies={agencies} employees={employees} departments={departments} leaveRequests={leaveRequests} onboarding={onboarding} payrollHistory={payrollHistory} loans={loans}/>}
+        {tab === "overview"    && <Overview nav={navigate} employees={employees} departments={departments}/>}
         {tab === "employees"   && <Employees employees={employees} onAdd={openAdd} onView={openView}/>}
         {tab === "departments" && <DepartmentsTab departments={departments} setDepartments={setDepartments} employees={employees}/>}
         {tab === "leave"       && <LeaveTabComponent employees={employees}/>}
@@ -238,18 +252,53 @@ export default function HR() {
 /* ================================================================
    OVERVIEW
 ================================================================ */
-function Overview({ nav, agencies, employees, departments, leaveRequests, onboarding, payrollHistory, loans }) {
-    const totalSalary = employees.reduce((s,e) => s + (e.salary || e.basic_salary || 0), 0);
-    const activeCount = employees.filter(e => e.status === "Active").length;
-    const onLeaveCount = employees.filter(e => e.status === "On Leave").length;
+function Overview({ nav, employees, departments }) {
+    // Overview-specific data — fetched here so each stat/panel reflects real data.
+    const [leaves, setLeaves] = useState([]);
+    const [runs, setRuns] = useState([]);
+    const [loans, setLoans] = useState([]);
+    const [checklists, setChecklists] = useState([]);
+    const [agencies, setAgencies] = useState([]);
+    const [attendance, setAttendance] = useState([]);
+
+    useEffect(() => {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        (async () => {
+            try { const d = await hrApi("get_leaves");                 setLeaves(d.leaves || []); } catch {}
+            try { const d = await hrApi("get_payroll_runs");           setRuns(d.runs || []); } catch {}
+            try { const d = await hrApi("get_loans");                  setLoans(d.loans || []); } catch {}
+            try { const d = await hrApi("get_onboarding_checklists");  setChecklists(d.checklists || []); } catch {}
+            try { const d = await hrApi("get_compliance_agencies");    setAgencies(Array.isArray(d) ? d : (d?.agencies || [])); } catch {}
+            try { const d = await hrApi("get_attendance", { date_from: todayStr, date_to: todayStr }); setAttendance(d.attendance || []); } catch {}
+        })();
+    }, []);
+
+    const d10 = (s) => (s || "").slice(0, 10);                      // dates arrive as full timestamps
+    const fullName = (o) => `${o.first_name || ""} ${o.last_name || ""}`.trim() || "—";
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    // --- Stats (all derived from real API data) ---
+    const presentToday = attendance.filter(a => ["Present", "Late", "Half Day"].includes(a.status)).length;
+    const onLeaveToday = new Set(
+        leaves.filter(l => l.status === "Approved" && d10(l.start_date) <= todayStr && d10(l.end_date) >= todayStr)
+              .map(l => l.employee_id)
+    ).size;
+    // Salary is E2E-encrypted and never leaves the server in the clear, so payroll
+    // cost is taken from the most recent payroll run's net total, not employee salaries.
+    const latestRun = runs.slice().sort((a, b) => d10(b.period_end).localeCompare(d10(a.period_end)))[0];
+    const monthlyPayroll = latestRun ? (latestRun.total_net || 0) : 0;
+
+    const pendingLeaves = leaves.filter(l => l.status === "Pending");
+    const activeLoans = loans.filter(l => l.status === "Active");
+    const activeChecklists = checklists.filter(c => c.status !== "Completed");
 
     return (<>
         <div className="h-stats">
             {[
                 { label:"Total Employees", value: employees.length.toString(), icon:"users",    color:"#2d9e8b" },
-                { label:"Present Today",   value: activeCount.toString(),      icon:"check",    color:"#0ea5e9" },
-                { label:"On Leave",        value: onLeaveCount.toString(),     icon:"calendar", color:"#f59e0b" },
-                { label:"Monthly Payroll", value: fmt(totalSalary),            icon:"peso",     color:"#8b5cf6" },
+                { label:"Present Today",   value: presentToday.toString(),     icon:"check",    color:"#0ea5e9" },
+                { label:"On Leave",        value: onLeaveToday.toString(),      icon:"calendar", color:"#f59e0b" },
+                { label:"Monthly Payroll", value: fmt(monthlyPayroll),         icon:"peso",     color:"#8b5cf6" },
             ].map((s,i) => (
                 <div key={i} className="h-st">
                     <div className="h-st-ic" style={{background:s.color+"14",color:s.color}}><I name={s.icon}/></div>
@@ -286,9 +335,9 @@ function Overview({ nav, agencies, employees, departments, leaveRequests, onboar
                 <div className="h-card">
                     <div className="h-card-h"><h3 className="h-card-t">Compliance Status</h3><span className="h-card-lk" onClick={()=>nav("/hr/compliance")}>Details →</span></div>
                     {agencies.length > 0 ? (
-                        <div style={{overflowX:"auto"}}><table className="h-tbl"><thead><tr><th>Agency</th><th>Status</th><th>Frequency</th><th>Due Date</th></tr></thead><tbody>
+                        <div style={{overflowX:"auto"}}><table className="h-tbl"><thead><tr><th>Agency</th><th>Status</th><th>Frequency</th></tr></thead><tbody>
                         {agencies.map((c,i) => (
-                            <tr key={i}><td><span className="h-tbl-nm">{c.name}</span></td><td><span className={`h-badge ${c.status==="Remitted"||c.status==="Filed"?"h-b-done":c.status==="Due"?"h-b-pending":"h-b-leave"}`}>{c.status}</span></td><td>{c.frequency}</td><td>{c.dueDate||"—"}</td></tr>
+                            <tr key={c.id||i}><td><span className="h-tbl-nm">{c.name}</span></td><td><span className={`h-badge ${c.status==="Remitted"||c.status==="Filed"?"h-b-done":c.status==="Due"?"h-b-pending":"h-b-leave"}`}>{c.status||"—"}</span></td><td>{c.frequency||"—"}</td></tr>
                         ))}
                         </tbody></table></div>
                     ) : <Empty icon="shield" title="No compliance agencies" desc="Set up your statutory requirements." action="Configure" onAction={()=>nav("/hr/compliance")}/>}
@@ -299,8 +348,8 @@ function Overview({ nav, agencies, employees, departments, leaveRequests, onboar
                 {/* Pending Leave */}
                 <div className="h-card">
                     <div className="h-card-h"><h3 className="h-card-t">Pending Leave</h3><span className="h-card-lk" onClick={()=>nav("/hr/leave")}>View all</span></div>
-                    {leaveRequests.length > 0
-                        ? leaveRequests.map((l,i) => (<div key={i} className="h-lv"><div className="h-lv-av">{ini(l.name)}</div><div className="h-lv-info"><div className="h-lv-nm">{l.name}</div><div className="h-lv-meta">{l.type} · {l.dates}</div></div><div className="h-lv-days">{l.days}d</div></div>))
+                    {pendingLeaves.length > 0
+                        ? pendingLeaves.slice(0,5).map((l,i) => (<div key={l.id||i} className="h-lv"><div className="h-lv-av">{ini(fullName(l))}</div><div className="h-lv-info"><div className="h-lv-nm">{fullName(l)}</div><div className="h-lv-meta">{l.leave_type} · {d10(l.start_date)} — {d10(l.end_date)}</div></div><div className="h-lv-days">{l.days}d</div></div>))
                         : <Empty icon="calendar" title="No pending leave" desc="Leave requests will appear here."/>
                     }
                 </div>
@@ -308,8 +357,8 @@ function Overview({ nav, agencies, employees, departments, leaveRequests, onboar
                 {/* Onboarding */}
                 <div className="h-card">
                     <div className="h-card-h"><h3 className="h-card-t">Onboarding</h3><span className="h-card-lk" onClick={()=>nav("/hr/onboarding")}>View all</span></div>
-                    {onboarding.length > 0
-                        ? onboarding.map((o,i) => (<div key={i} className="h-onb"><div className="h-onb-nm">{o.name}</div><div className="h-onb-pos">{o.pos}</div><div className="h-onb-bar"><div className="h-onb-fill" style={{width:o.progress+"%"}}/></div><div className="h-onb-ft"><span>{o.step}</span><span>{o.progress}%</span></div></div>))
+                    {activeChecklists.length > 0
+                        ? activeChecklists.slice(0,4).map((o,i) => (<div key={o.id||i} className="h-onb"><div className="h-onb-nm">{fullName(o)}</div><div className="h-onb-pos">{o.position||"—"}</div><div className="h-onb-bar"><div className="h-onb-fill" style={{width:(o.progress||0)+"%"}}/></div><div className="h-onb-ft"><span>{(o.completed_items||0)}/{(o.total_items||0)} items</span><span>{o.progress||0}%</span></div></div>))
                         : <Empty icon="clipboard" title="No onboarding" desc="New hires in progress will appear here."/>
                     }
                 </div>
@@ -317,8 +366,8 @@ function Overview({ nav, agencies, employees, departments, leaveRequests, onboar
                 {/* Payroll */}
                 <div className="h-card">
                     <div className="h-card-h"><h3 className="h-card-t">Payroll</h3><span className="h-card-lk" onClick={()=>nav("/hr/payroll")}>View all</span></div>
-                    {payrollHistory.length > 0
-                        ? payrollHistory.slice(0,2).map((p,i) => (<div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<1?"1px solid #f8f8f8":"none"}}><div><div style={{fontSize:13,fontWeight:600,color:"#333"}}>{p.period}</div><div style={{fontSize:11,color:"#aaa"}}>Net: {p.net}</div></div><span className={`h-badge ${p.status==="Completed"?"h-b-done":"h-b-pending"}`}>{p.status}</span></div>))
+                    {runs.length > 0
+                        ? runs.slice(0,2).map((p,i) => (<div key={p.id||i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<1?"1px solid #f8f8f8":"none"}}><div><div style={{fontSize:13,fontWeight:600,color:"#333"}}>{d10(p.period_start)} — {d10(p.period_end)}</div><div style={{fontSize:11,color:"#aaa"}}>Net: {fmt(p.total_net)}</div></div><span className={`h-badge ${p.status==="Completed"?"h-b-done":"h-b-pending"}`}>{p.status}</span></div>))
                         : <Empty icon="peso" title="No payroll runs" desc="Payroll history will appear here."/>
                     }
                 </div>
@@ -326,8 +375,8 @@ function Overview({ nav, agencies, employees, departments, leaveRequests, onboar
                 {/* Active Loans */}
                 <div className="h-card">
                     <div className="h-card-h"><h3 className="h-card-t">Active Loans</h3><span className="h-card-lk" onClick={()=>nav("/hr/loans")}>View all</span></div>
-                    {loans.filter(l=>l.status==="Active").length > 0
-                        ? loans.filter(l=>l.status==="Active").slice(0,3).map((l,i) => (<div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:i<2?"1px solid #f8f8f8":"none",fontSize:13}}><div><span style={{fontWeight:600,color:"#333"}}>{l.name}</span><div style={{fontSize:11,color:"#aaa"}}>{l.type}</div></div><div style={{textAlign:"right"}}><div style={{fontWeight:700,color:"#222"}}>{l.balance}</div><div style={{fontSize:11,color:"#aaa"}}>{l.monthly}/mo</div></div></div>))
+                    {activeLoans.length > 0
+                        ? activeLoans.slice(0,3).map((l,i) => (<div key={l.id||i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:i<2?"1px solid #f8f8f8":"none",fontSize:13}}><div><span style={{fontWeight:600,color:"#333"}}>{fullName(l)}</span><div style={{fontSize:11,color:"#aaa"}}>{l.loan_type_name}</div></div><div style={{textAlign:"right"}}><div style={{fontWeight:700,color:"#222"}}>{fmt(l.balance)}</div><div style={{fontSize:11,color:"#aaa"}}>{fmt(l.monthly_payment)}/mo</div></div></div>))
                         : <Empty icon="banknote" title="No active loans" desc="Employee loans will appear here."/>
                     }
                 </div>

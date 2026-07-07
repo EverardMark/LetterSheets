@@ -1,0 +1,9 @@
+# Never bake secrets or local artifacts into the image
+config.json
+config.json.example
+lettersheets
+*.pem
+*.key
+.idea/
+.DS_Store
+test/

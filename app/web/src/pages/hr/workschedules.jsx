@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 
-const API_URL = "/api/execute";
+const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 
 async function api(action, body = {}) {
     const session = localStorage.getItem("ls_session");

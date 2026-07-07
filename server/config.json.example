@@ -4,13 +4,17 @@
     "port": 8080,
     "session_hours": 24,
     "max_login_attempts": 5,
-    "lockout_minutes": 30
+    "lockout_minutes": 30,
+    "allowed_origins": ["http://localhost:5173"],
+    "tls_cert_file": "",
+    "tls_key_file": "",
+    "trust_proxy_headers": false
   },
   "database": {
     "host": "localhost",
     "port": 3306,
-    "user": "ls_user",
-    "password": "sutopp@12",
+    "user": "REPLACE_WITH_DB_USER",
+    "password": "REPLACE_WITH_DB_PASSWORD",
     "db_name": "lettersheets",
     "max_open": 25,
     "max_idle": 5,

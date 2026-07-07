@@ -39,8 +39,8 @@ func (r *AccountingRepo) GetAccounts(companyID, accountType string, activeOnly b
 	return accounts, nil
 }
 
-func (r *AccountingRepo) GetAccount(id string) (*models.Account, error) {
-	rows, err := r.db.Query("CALL sp_get_account(?)", id)
+func (r *AccountingRepo) GetAccount(companyID, id string) (*models.Account, error) {
+	rows, err := r.db.Query("CALL sp_get_account(?,?)", companyID, id)
 	if err != nil {
 		return nil, fmt.Errorf("get account: %w", err)
 	}
@@ -66,13 +66,13 @@ func (r *AccountingRepo) CreateAccount(companyID, code, name, accountType, accou
 	return scanAccount(rows)
 }
 
-func (r *AccountingRepo) UpdateAccount(id, code, name, accountType, accountSubtype, normalBalance, parentID, description string, isActive bool, currency string) (*models.Account, error) {
+func (r *AccountingRepo) UpdateAccount(companyID, id, code, name, accountType, accountSubtype, normalBalance, parentID, description string, isActive bool, currency string) (*models.Account, error) {
 	active := 0
 	if isActive {
 		active = 1
 	}
-	rows, err := r.db.Query("CALL sp_update_account(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		id, code, name, accountType, accountSubtype, normalBalance, parentID, description, active, currency)
+	rows, err := r.db.Query("CALL sp_update_account(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		companyID, id, code, name, accountType, accountSubtype, normalBalance, parentID, description, active, currency)
 	if err != nil {
 		return nil, fmt.Errorf("update account: %w", err)
 	}
@@ -84,8 +84,8 @@ func (r *AccountingRepo) UpdateAccount(id, code, name, accountType, accountSubty
 	return scanAccount(rows)
 }
 
-func (r *AccountingRepo) DeleteAccount(id string) error {
-	_, err := r.db.Exec("CALL sp_delete_account(?)", id)
+func (r *AccountingRepo) DeleteAccount(companyID, id string) error {
+	_, err := r.db.Exec("CALL sp_delete_account(?,?)", companyID, id)
 	if err != nil {
 		return fmt.Errorf("delete account: %w", err)
 	}
@@ -342,8 +342,8 @@ func (r *AccountingRepo) DuplicateCOATemplate(sourceID, companyID, newName strin
 	return &t, nil
 }
 
-func (r *AccountingRepo) ToggleAccountActive(id string) (*models.Account, error) {
-	rows, err := r.db.Query("CALL sp_toggle_account_active(?)", id)
+func (r *AccountingRepo) ToggleAccountActive(companyID, id string, isActive *bool) (*models.Account, error) {
+	rows, err := r.db.Query("CALL sp_toggle_account_active(?,?,?)", companyID, id, isActive)
 	if err != nil {
 		return nil, fmt.Errorf("toggle account: %w", err)
 	}
@@ -430,7 +430,9 @@ func (r *AccountingRepo) NextEntryNumber(companyID string) (int, error) {
 	defer rows.Close()
 	var n int
 	if rows.Next() {
-		rows.Scan(&n)
+		if err := rows.Scan(&n); err != nil {
+			return 0, err
+		}
 	}
 	return n, nil
 }
@@ -444,8 +446,8 @@ func (r *AccountingRepo) CreateJournalEntry(id, companyID string, entryNumber in
 	return nil
 }
 
-func (r *AccountingRepo) AddJournalLine(entryID, accountID, description string, debit, credit float64, sortOrder int) error {
-	rows, err := r.db.Query("CALL sp_add_journal_line(?,?,?,?,?,?)", entryID, accountID, description, debit, credit, sortOrder)
+func (r *AccountingRepo) AddJournalLine(entryID, companyID, accountID, description string, debit, credit float64, sortOrder int) error {
+	rows, err := r.db.Query("CALL sp_add_journal_line(?,?,?,?,?,?,?)", entryID, companyID, accountID, description, debit, credit, sortOrder)
 	if err != nil {
 		return err
 	}
@@ -453,8 +455,8 @@ func (r *AccountingRepo) AddJournalLine(entryID, accountID, description string, 
 	return nil
 }
 
-func (r *AccountingRepo) UpdateJournalTotals(entryID string) error {
-	rows, err := r.db.Query("CALL sp_update_journal_totals(?)", entryID)
+func (r *AccountingRepo) UpdateJournalTotals(entryID, companyID string) error {
+	rows, err := r.db.Query("CALL sp_update_journal_totals(?,?)", entryID, companyID)
 	if err != nil {
 		return err
 	}
@@ -475,6 +477,17 @@ func (r *AccountingRepo) VoidJournalEntry(entryID, companyID, userID, reason str
 	rows, err := r.db.Query("CALL sp_void_journal_entry(?,?,?,?)", entryID, companyID, userID, reason)
 	if err != nil {
 		return fmt.Errorf("void journal: %w", err)
+	}
+	defer rows.Close()
+	return nil
+}
+
+// VoidJournalBySource voids the posted journal tagged with (sourceType, sourceID) —
+// used to reverse a payment's cash journal when the payment is deleted.
+func (r *AccountingRepo) VoidJournalBySource(companyID, sourceType, sourceID, userID, reason string) error {
+	rows, err := r.db.Query("CALL sp_void_journal_by_source(?,?,?,?,?)", companyID, sourceType, sourceID, userID, reason)
+	if err != nil {
+		return fmt.Errorf("void journal by source: %w", err)
 	}
 	defer rows.Close()
 	return nil
@@ -573,8 +586,8 @@ func (r *AccountingRepo) GetJournalEntry(id, companyID string) (*models.JournalE
 	return &je, nil
 }
 
-func (r *AccountingRepo) GetJournalLines(entryID string) ([]models.JournalLine, error) {
-	rows, err := r.db.Query("CALL sp_get_journal_lines(?)", entryID)
+func (r *AccountingRepo) GetJournalLines(entryID, companyID string) ([]models.JournalLine, error) {
+	rows, err := r.db.Query("CALL sp_get_journal_lines(?,?)", entryID, companyID)
 	if err != nil {
 		return nil, err
 	}
@@ -614,8 +627,8 @@ func (r *AccountingRepo) UpdateJournalEntry(id, companyID, entryDate, memo strin
 	return nil
 }
 
-func (r *AccountingRepo) ClearJournalLines(entryID string) error {
-	rows, err := r.db.Query("CALL sp_clear_journal_lines(?)", entryID)
+func (r *AccountingRepo) ClearJournalLines(entryID, companyID string) error {
+	rows, err := r.db.Query("CALL sp_clear_journal_lines(?,?)", entryID, companyID)
 	if err != nil {
 		return err
 	}
@@ -805,7 +818,9 @@ func (r *AccountingRepo) AccountOpeningBalance(companyID, accountID, dateFrom st
 	defer rows.Close()
 	var bal float64
 	if rows.Next() {
-		rows.Scan(&bal)
+		if err := rows.Scan(&bal); err != nil {
+			return 0, err
+		}
 	}
 	return bal, nil
 }
@@ -825,7 +840,9 @@ func (r *AccountingRepo) LedgerPeriodSummary(companyID, dateFrom, dateTo string)
 	defer rows.Close()
 	var s models.LedgerPeriodSummary
 	if rows.Next() {
-		rows.Scan(&s.EntryCount, &s.TotalDebits, &s.TotalCredits, &s.AccountsAffected, &s.TotalAccounts, &s.TotalPosted)
+		if err := rows.Scan(&s.EntryCount, &s.TotalDebits, &s.TotalCredits, &s.AccountsAffected, &s.TotalAccounts, &s.TotalPosted); err != nil {
+			return nil, err
+		}
 	}
 	return &s, nil
 }

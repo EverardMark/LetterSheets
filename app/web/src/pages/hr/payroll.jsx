@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 
-const API_URL = "/api/execute";
+const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 
 async function api(action, body = {}) {
     const session = localStorage.getItem("ls_session");
@@ -34,6 +34,7 @@ const SSS_TABLE = [
     [21750,967.50,2042.50],[22250,990,2090],[22750,1012.50,2137.50],[23250,1035,2185],[23750,1057.50,2232.50],
     [24250,1080,2280],[24750,1102.50,2327.50],[25250,1125,2375],[25750,1147.50,2422.50],[26250,1170,2470],
     [26750,1192.50,2517.50],[27250,1215,2565],[27750,1237.50,2612.50],[28250,1260,2660],[28750,1282.50,2707.50],
+    [29250,1305,2755], // fills the gap between 28,750 and the max; verify vs the official SSS schedule
     [29750,1350,2850],
 ];
 
@@ -192,8 +193,21 @@ export default function PayrollTab({ employees = [] }) {
                 if (!attMap[a.employee_id]) attMap[a.employee_id] = { hours: 0, ot: 0, days: 0 };
                 attMap[a.employee_id].hours += a.hours_worked || 0;
                 attMap[a.employee_id].ot += a.overtime_hours || 0;
-                attMap[a.employee_id].days += 1;
+                // Only count actually-worked days toward basic pay. Absent / On Leave /
+                // Holiday / Rest Day rows must not be paid as worked days.
+                const st = a.status || "Present";
+                if (st === "Present" || st === "Late") attMap[a.employee_id].days += 1;
+                else if (st === "Half Day") attMap[a.employee_id].days += 0.5;
             });
+
+            // Active-loan amortization to withhold from net pay (apportioned per pay period).
+            const loanMap = {};
+            try {
+                const loanData = await api("get_loans", { status: "Active" });
+                (loanData.loans || []).forEach(l => {
+                    loanMap[l.employee_id] = (loanMap[l.employee_id] || 0) + (l.monthly_payment || 0);
+                });
+            } catch {}
 
             const activeEmps = employees.filter(e => e.status === "Active");
 
@@ -214,7 +228,9 @@ export default function PayrollTab({ employees = [] }) {
                 const workingDays = settings.working_days || 22;
                 const divisor = settings.pay_schedule === "semi_monthly" ? 2 : 1;
                 const periodDays = workingDays / divisor;
-                const daysWorked = att.days || periodDays; // default full period if no attendance
+                // Default to a full period only when there is NO attendance at all;
+                // otherwise honor the worked-status days actually recorded (may be 0).
+                const daysWorked = attMap[emp.id] ? att.days : periodDays;
 
                 const dailyRate = monthlySalary / workingDays;
                 const basicPay = Math.round(dailyRate * daysWorked * 100) / 100;
@@ -225,7 +241,8 @@ export default function PayrollTab({ employees = [] }) {
 
                 // Statutory (based on full monthly salary for correct bracket)
                 const stat = computeStatutory(monthlySalary, settings);
-                const totalDeductions = stat.sss_ee + stat.philhealth_ee + stat.pagibig_ee + stat.withholding_tax;
+                const loanDeduction = Math.round(((loanMap[emp.id] || 0) / divisor) * 100) / 100;
+                const totalDeductions = stat.sss_ee + stat.philhealth_ee + stat.pagibig_ee + stat.withholding_tax + loanDeduction;
                 const netPay = Math.round((grossPay - totalDeductions) * 100) / 100;
 
                 const existing = items.find(it => it.employee_id === emp.id);
@@ -246,7 +263,7 @@ export default function PayrollTab({ employees = [] }) {
                     gross_pay: grossPay,
                     ...stat,
                     benefit_deductions: 0,
-                    loan_deductions: 0,
+                    loan_deductions: loanDeduction,
                     other_deductions: 0,
                     total_deductions: Math.round(totalDeductions * 100) / 100,
                     net_pay: netPay,

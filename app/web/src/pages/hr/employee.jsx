@@ -541,7 +541,7 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
             if (employee.id) {
                 (async () => {
                     try {
-                        const API_URL = "/api/execute";
+                        const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
                         const session = localStorage.getItem("ls_session");
                         const res = await fetch(`${API_URL}?action=get_employee`, {
                             method: "POST",
@@ -607,7 +607,7 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
         if (employee?.id && (mode === "view" || mode === "edit")) {
             (async () => {
                 try {
-                    const API_URL = "/api/execute";
+                    const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
                     const session = localStorage.getItem("ls_session");
                     const res = await fetch(`${API_URL}?action=get_permissions`, {
                         method: "POST",
@@ -615,12 +615,11 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                         body: JSON.stringify({ employee_id: employee.id }),
                     });
                     const json = await res.json();
-                    alert("Load permissions result: " + JSON.stringify(json));
                     if (res.ok && json.success) {
                         setEmpPermissions(json.data?.permissions || null);
                         empPermissionsRef.current = json.data?.permissions || null;
                     }
-                } catch (err) { alert("Load permissions error: " + err.message); }
+                } catch (err) { console.error("load permissions:", err); }
             })();
         }
     }, [employee, mode, open]);
@@ -658,7 +657,7 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
             const kemPair = generateKEMKeyPair();
             const dsaPair = generateDSAKeyPair();
 
-            const API_URL = "/api/execute";
+            const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
             const session = localStorage.getItem("ls_session");
             const res = await fetch(`${API_URL}?action=admin_reset_password`, {
                 method: "POST",
@@ -695,17 +694,16 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
         const empId = employee?.id || form.id;
         if (!empId) { alert("No employee_id found"); return; }
         try {
-            const API_URL = "/api/execute";
+            const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
             const session = localStorage.getItem("ls_session");
             const body = JSON.stringify({ employee_id: empId, permissions: newPerms });
-            alert("Saving permissions: " + body);
             const res = await fetch(`${API_URL}?action=update_permissions`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", ...(session ? { Authorization: `Bearer ${session}` } : {}) },
                 body,
             });
             const json = await res.json();
-            alert("Save result: " + JSON.stringify(json));
+            if (!res.ok || !json.success) throw new Error(json.error || "Failed to save permissions");
         } catch (err) {
             alert("Save error: " + err.message);
         }
@@ -735,7 +733,7 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
             const kemPair = generateKEMKeyPair();
             const dsaPair = generateDSAKeyPair();
 
-            const API_URL = "/api/execute";
+            const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
             const session = localStorage.getItem("ls_session");
             const res = await fetch(`${API_URL}?action=create_employee_account`, {
                 method: "POST",
@@ -880,7 +878,7 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
 
             // Call API (separate try/catch for clearer errors)
             try {
-                const API_URL = "/api/execute";
+                const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
                 const session = localStorage.getItem("ls_session");
                 const action = isAdd ? "create_employee" : "update_employee";
                 const res = await fetch(`${API_URL}?action=${action}`, {

@@ -5,6 +5,10 @@ import Dashboard from "./pages/Dashboard";
 import HR from "./pages/hr/overview.jsx";
 import Accounting from "./pages/accounting/Dashboard";
 import Ticketing from "./pages/ticketing/Dashboard";
+import Inventory from "./pages/inventory/Dashboard";
+import FixedAssets from "./pages/fixedassets/Dashboard";
+import Sales from "./pages/sales/Dashboard";
+import Procurement from "./pages/procurement/Dashboard";
 
 export default function App() {
     return (
@@ -45,7 +49,45 @@ export default function App() {
                     {/* Ticketing */}
                     <Route path="/ticketing" element={<Ticketing />} />
                     <Route path="/ticketing/board" element={<Ticketing />} />
+                    <Route path="/ticketing/labels" element={<Ticketing />} />
                     <Route path="/ticketing/categories" element={<Ticketing />} />
+
+                    {/* Inventory */}
+                    <Route path="/inventory" element={<Inventory />} />
+                    <Route path="/inventory/products" element={<Inventory />} />
+                    <Route path="/inventory/categories" element={<Inventory />} />
+                    <Route path="/inventory/warehouses" element={<Inventory />} />
+                    <Route path="/inventory/movements" element={<Inventory />} />
+                    <Route path="/inventory/purchases" element={<Inventory />} />
+                    <Route path="/inventory/suppliers" element={<Inventory />} />
+                    <Route path="/inventory/settings" element={<Inventory />} />
+
+                    {/* Fixed Assets */}
+                    <Route path="/fixed-assets" element={<FixedAssets />} />
+                    <Route path="/fixed-assets/assets" element={<FixedAssets />} />
+                    <Route path="/fixed-assets/categories" element={<FixedAssets />} />
+                    <Route path="/fixed-assets/depreciation" element={<FixedAssets />} />
+                    <Route path="/fixed-assets/disposals" element={<FixedAssets />} />
+                    <Route path="/fixed-assets/maintenance" element={<FixedAssets />} />
+                    <Route path="/fixed-assets/transfers" element={<FixedAssets />} />
+                    <Route path="/fixed-assets/settings" element={<FixedAssets />} />
+
+                    {/* Sales */}
+                    <Route path="/sales" element={<Sales />} />
+                    <Route path="/sales/quotes" element={<Sales />} />
+                    <Route path="/sales/orders" element={<Sales />} />
+                    <Route path="/sales/deliveries" element={<Sales />} />
+                    <Route path="/sales/price-lists" element={<Sales />} />
+                    <Route path="/sales/credit-memos" element={<Sales />} />
+                    <Route path="/sales/settings" element={<Sales />} />
+
+                    {/* Procurement */}
+                    <Route path="/procurement" element={<Procurement />} />
+                    <Route path="/procurement/requisitions" element={<Procurement />} />
+                    <Route path="/procurement/orders" element={<Procurement />} />
+                    <Route path="/procurement/receipts" element={<Procurement />} />
+                    <Route path="/procurement/debit-memos" element={<Procurement />} />
+                    <Route path="/procurement/settings" element={<Procurement />} />
                 </Route>
 
                 <Route path="*" element={<Navigate to="/" replace />} />

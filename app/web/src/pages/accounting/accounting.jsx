@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
+import "./acc-layout.css";
 
-const API_URL = "/api/execute";
+const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 async function api(action, body = {}) {
     const session = localStorage.getItem("ls_session");
     const res = await fetch(`${API_URL}?action=${action}`, {
@@ -130,9 +131,9 @@ export default function AccountingTab() {
         } catch (e) { alert("Error: " + e.message); }
     };
 
-    const handleToggleActive = async (id) => {
+    const handleToggleActive = async (id, currentActive) => {
         try {
-            await api("toggle_account_active", { id });
+            await api("toggle_account_active", { id, is_active: !currentActive });
             loadAccounts();
         } catch (e) { alert("Error: " + e.message); }
     };
@@ -298,8 +299,8 @@ export default function AccountingTab() {
                     className="coa-row"
                     style={{
                         paddingLeft: 16 + depth * 24,
-                        background: isSelected ? "#f0fdf4" : isHeader ? "#fafafa" : "#fff",
-                        borderLeft: isSelected ? `3px solid #10b981` : "3px solid transparent",
+                        background: isSelected ? "#edf8f5" : isHeader ? "#fafafa" : "#fff",
+                        borderLeft: isSelected ? `3px solid #2d9e8b` : "3px solid transparent",
                         opacity: acct.is_active ? 1 : 0.5,
                     }}
                     onClick={() => setSelected(acct)}
@@ -342,56 +343,43 @@ export default function AccountingTab() {
     };
 
     return (
-        <div className="coa-wrap">
-            {/* Stats */}
-            <div className="coa-stats">
-                {[
-                    { label: "Total Assets", value: totalAssets, icon: "trending-up", color: "#0ea5e9" },
-                    { label: "Total Liabilities", value: totalLiabilities, icon: "alert-circle", color: "#ef4444" },
-                    { label: "Total Equity", value: totalEquity, icon: "shield", color: "#8b5cf6" },
-                    { label: "Net Income", value: totalRevenue - totalExpense, icon: "dollar-sign", color: "#10b981" },
-                ].map((s, i) => (
-                    <div key={i} className="coa-stat-card">
-                        <div className="coa-stat-icon" style={{ background: s.color + "15", color: s.color }}><I name={s.icon} size={20}/></div>
-                        <div><div className="coa-stat-label">{s.label}</div><div className="coa-stat-value">{fmtMoney(s.value)}</div></div>
-                    </div>
-                ))}
-            </div>
-
+        <div className="acc-wrap">
             {/* Toolbar */}
-            <div className="coa-toolbar">
-                <div className="coa-tabs">
-                    {TYPES.map(t => (
-                        <button key={t} className={`coa-tab ${tab === t ? "coa-tab-on" : ""}`} onClick={() => setTab(t)}>
-                            {t !== "All" && <span className="coa-tab-dot" style={{ background: TYPE_COLORS[t] }}/>}
-                            {t}
-                            {t !== "All" && <span className="coa-tab-count">{accounts.filter(a => a.account_type === t).length}</span>}
-                        </button>
-                    ))}
+            <div className="acc-bar">
+                <div className="acc-bar-left">
+                    <div className="acc-tabs">
+                        {TYPES.map(t => (
+                            <button key={t} className={`acc-tab ${tab === t ? "acc-tab-on" : ""}`} onClick={() => setTab(t)}>
+                                {t !== "All" && <span className="coa-tab-dot" style={{ background: TYPE_COLORS[t] }}/>}
+                                {t}
+                                {t !== "All" && <span className="coa-tab-count">{accounts.filter(a => a.account_type === t).length}</span>}
+                            </button>
+                        ))}
+                    </div>
                 </div>
-                <div className="coa-toolbar-r">
-                    <div className="coa-search">
+                <div className="acc-bar-right">
+                    <div className="acc-search-wrap">
                         <I name="search" size={14}/>
-                        <input type="text" placeholder="Search accounts..." value={search} onChange={e => setSearch(e.target.value)}/>
+                        <input className="acc-search" type="text" placeholder="Search accounts..." value={search} onChange={e => setSearch(e.target.value)}/>
                     </div>
                     {accounts.length === 0 && (
-                        <button className="coa-btn coa-btn-outline" onClick={handleSeedDefaults}>
+                        <button className="acc-btn-s" onClick={handleSeedDefaults}>
                             <I name="play" size={14}/> Use Template
                         </button>
                     )}
                     {accounts.length > 0 && (
-                        <button className="coa-btn coa-btn-outline" onClick={handleSeedDefaults}>
+                        <button className="acc-btn-s" onClick={handleSeedDefaults}>
                             <I name="settings" size={14}/> Templates
                         </button>
                     )}
-                    <button className="coa-btn coa-btn-primary" onClick={handleCreate}>
+                    <button className="acc-btn-p" onClick={handleCreate}>
                         <I name="plus" size={14}/> New Account
                     </button>
                 </div>
             </div>
 
             {/* Main Content */}
-            <div className="coa-main">
+            <div className="coa-main acc-fill">
                 {/* Account List */}
                 <div className={`coa-list ${selected ? "coa-list-narrow" : ""}`}>
                     {/* Column Headers */}
@@ -406,11 +394,11 @@ export default function AccountingTab() {
                     </div>
 
                     {accounts.length === 0 ? (
-                        <div className="coa-empty">
-                            <I name="book-open" size={40}/>
-                            <h3>No Chart of Accounts</h3>
-                            <p>Set up your chart of accounts to start tracking finances.</p>
-                            <button className="coa-btn coa-btn-primary" onClick={handleSeedDefaults} style={{ marginTop: 12 }}>
+                        <div className="acc-empty">
+                            <div className="acc-empty-ic"><I name="book-open" size={28}/></div>
+                            <div className="acc-empty-t">No Chart of Accounts</div>
+                            <div className="acc-empty-d">Set up your chart of accounts to start tracking finances.</div>
+                            <button className="acc-btn-p" onClick={handleSeedDefaults} style={{ marginTop: 12 }}>
                                 <I name="play" size={14}/> Choose a Template
                             </button>
                         </div>
@@ -503,13 +491,13 @@ export default function AccountingTab() {
                             {/* Actions */}
                             {!selected.is_system && (
                                 <div className="coa-panel-actions">
-                                    <button className="coa-btn coa-btn-primary" onClick={() => handleEdit(selected)} style={{ flex: 1 }}>
+                                    <button className="acc-btn-p" onClick={() => handleEdit(selected)} style={{ flex: 1 }}>
                                         <I name="file-text" size={14}/> Edit
                                     </button>
-                                    <button className="coa-btn coa-btn-outline" onClick={() => handleToggleActive(selected.id)}>
+                                    <button className="acc-btn-s" onClick={() => handleToggleActive(selected.id, selected.is_active)}>
                                         {selected.is_active ? "Deactivate" : "Activate"}
                                     </button>
-                                    <button className="coa-btn coa-btn-danger" onClick={() => handleDelete(selected.id)}>
+                                    <button className="acc-btn-danger" onClick={() => handleDelete(selected.id)}>
                                         <I name="trash-2" size={14}/>
                                     </button>
                                 </div>
@@ -528,21 +516,19 @@ export default function AccountingTab() {
                             <button className="coa-panel-close" onClick={() => setShowModal(false)}><I name="x" size={18}/></button>
                         </div>
                         <div className="coa-modal-body">
-                            <div className="coa-form-row">
-                                <div className="coa-form-group" style={{ flex: "0 0 120px" }}>
-                                    <label>Code</label>
-                                    <input type="text" value={editAccount.code} onChange={e => setEditAccount({ ...editAccount, code: e.target.value })} placeholder="1010"/>
+                            <div className="acc-fields">
+                                <div className="acc-field">
+                                    <label className="acc-label">Code <span className="acc-req"/></label>
+                                    <input className="acc-input" type="text" value={editAccount.code} onChange={e => setEditAccount({ ...editAccount, code: e.target.value })} placeholder="1010"/>
                                 </div>
-                                <div className="coa-form-group" style={{ flex: 1 }}>
-                                    <label>Account Name</label>
-                                    <input type="text" value={editAccount.name} onChange={e => setEditAccount({ ...editAccount, name: e.target.value })} placeholder="Cash on Hand"/>
+                                <div className="acc-field">
+                                    <label className="acc-label">Account Name <span className="acc-req"/></label>
+                                    <input className="acc-input" type="text" value={editAccount.name} onChange={e => setEditAccount({ ...editAccount, name: e.target.value })} placeholder="Cash on Hand"/>
                                 </div>
-                            </div>
 
-                            <div className="coa-form-row">
-                                <div className="coa-form-group" style={{ flex: 1 }}>
-                                    <label>Account Type</label>
-                                    <select value={editAccount.account_type} onChange={e => {
+                                <div className="acc-field">
+                                    <label className="acc-label">Account Type <span className="acc-req"/></label>
+                                    <select className="acc-input" value={editAccount.account_type} onChange={e => {
                                         const t = e.target.value;
                                         const nb = (t === "Asset" || t === "Expense") ? "Debit" : "Credit";
                                         setEditAccount({ ...editAccount, account_type: t, normal_balance: nb, account_subtype: "" });
@@ -550,62 +536,60 @@ export default function AccountingTab() {
                                         {TYPES.slice(1).map(t => <option key={t} value={t}>{t}</option>)}
                                     </select>
                                 </div>
-                                <div className="coa-form-group" style={{ flex: 1 }}>
-                                    <label>Subtype</label>
-                                    <select value={editAccount.account_subtype} onChange={e => setEditAccount({ ...editAccount, account_subtype: e.target.value })}>
+                                <div className="acc-field">
+                                    <label className="acc-label">Subtype</label>
+                                    <select className="acc-input" value={editAccount.account_subtype} onChange={e => setEditAccount({ ...editAccount, account_subtype: e.target.value })}>
                                         <option value="">Select subtype</option>
                                         {(SUBTYPES[editAccount.account_type] || []).map(s => <option key={s} value={s}>{s}</option>)}
                                     </select>
                                 </div>
-                            </div>
 
-                            <div className="coa-form-row">
-                                <div className="coa-form-group" style={{ flex: 1 }}>
-                                    <label>Normal Balance</label>
-                                    <select value={editAccount.normal_balance} onChange={e => setEditAccount({ ...editAccount, normal_balance: e.target.value })}>
+                                <div className="acc-field">
+                                    <label className="acc-label">Normal Balance</label>
+                                    <select className="acc-input" value={editAccount.normal_balance} onChange={e => setEditAccount({ ...editAccount, normal_balance: e.target.value })}>
                                         <option value="Debit">Debit</option>
                                         <option value="Credit">Credit</option>
                                     </select>
                                 </div>
-                                <div className="coa-form-group" style={{ flex: 1 }}>
-                                    <label>Parent Account</label>
-                                    <select value={editAccount.parent_id} onChange={e => setEditAccount({ ...editAccount, parent_id: e.target.value })}>
+                                <div className="acc-field">
+                                    <label className="acc-label">Parent Account</label>
+                                    <select className="acc-input" value={editAccount.parent_id} onChange={e => setEditAccount({ ...editAccount, parent_id: e.target.value })}>
                                         <option value="">None (Top Level)</option>
                                         {accounts.filter(a => a.account_type === editAccount.account_type && a.id !== editAccount.id).map(a => (
                                             <option key={a.id} value={a.id}>{a.code} {a.name}</option>
                                         ))}
                                     </select>
                                 </div>
-                            </div>
 
-                            <div className="coa-form-row">
-                                <div className="coa-form-group" style={{ flex: 1 }}>
-                                    <label>Currency</label>
-                                    <select value={editAccount.currency || "PHP"} onChange={e => setEditAccount({ ...editAccount, currency: e.target.value })}>
+                                <div className="acc-field">
+                                    <label className="acc-label">Currency</label>
+                                    <select className="acc-input" value={editAccount.currency || "PHP"} onChange={e => setEditAccount({ ...editAccount, currency: e.target.value })}>
                                         <option value="PHP">PHP</option>
                                         <option value="USD">USD</option>
                                         <option value="JPY">JPY</option>
                                         <option value="EUR">EUR</option>
                                     </select>
                                 </div>
-                                <div className="coa-form-group" style={{ flex: 1, display: "flex", alignItems: "flex-end", paddingBottom: 4 }}>
-                                    <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13 }}>
+                                <div className="acc-field" style={{ justifyContent: "flex-end", paddingBottom: 4 }}>
+                                    <label className="acc-label" style={{ cursor: "pointer" }}>
                                         <input type="checkbox" checked={editAccount.is_active} onChange={e => setEditAccount({ ...editAccount, is_active: e.target.checked })}/>
                                         Active
                                     </label>
                                 </div>
-                            </div>
 
-                            <div className="coa-form-group">
-                                <label>Description</label>
-                                <textarea rows={3} value={editAccount.description || ""} onChange={e => setEditAccount({ ...editAccount, description: e.target.value })} placeholder="Optional description..."/>
+                                <div className="acc-field acc-field-full">
+                                    <label className="acc-label">Description</label>
+                                    <textarea className="acc-input acc-textarea" rows={3} value={editAccount.description || ""} onChange={e => setEditAccount({ ...editAccount, description: e.target.value })} placeholder="Optional description..."/>
+                                </div>
                             </div>
                         </div>
                         <div className="coa-modal-footer">
-                            <button className="coa-btn coa-btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
-                            <button className="coa-btn coa-btn-primary" onClick={handleSave} disabled={!editAccount.code || !editAccount.name}>
-                                {editAccount.id ? "Save Changes" : "Create Account"}
-                            </button>
+                            <div className="acc-foot-btns">
+                                <button className="acc-btn-cancel" onClick={() => setShowModal(false)}>Cancel</button>
+                                <button className="acc-btn-primary" onClick={handleSave} disabled={!editAccount.code || !editAccount.name}>
+                                    {editAccount.id ? "Save Changes" : "Create Account"}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -621,10 +605,10 @@ export default function AccountingTab() {
                             <div className="coa-modal-header">
                                 <div>
                                     <h3>Chart of Accounts Templates</h3>
-                                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "#888", fontWeight: 400 }}>Select a template to apply, or edit to customize</p>
+                                    <p className="coa-modal-subhead">Select a template to apply, or edit to customize</p>
                                 </div>
-                                <div style={{ display: "flex", gap: 6 }}>
-                                    <button className="coa-btn coa-btn-outline" onClick={() => { setShowNewTplForm(true); setTplMeta({ name: "", country: "", currency: "PHP", flag: "", description: "" }); }}>
+                                <div className="coa-modal-head-actions">
+                                    <button className="acc-btn-s" onClick={() => { setShowNewTplForm(true); setTplMeta({ name: "", country: "", currency: "PHP", flag: "", description: "" }); }}>
                                         <I name="plus" size={14}/> New
                                     </button>
                                     <button className="coa-panel-close" onClick={() => setShowTemplateModal(false)}><I name="x" size={18}/></button>
@@ -633,42 +617,42 @@ export default function AccountingTab() {
 
                             {/* New Template Form */}
                             {showNewTplForm && (
-                                <div style={{ padding: "16px 24px", borderBottom: "1px solid #eee", background: "#f9fafb" }}>
-                                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, color: "#444" }}>Create New Template</div>
-                                    <div className="coa-form-row">
-                                        <div className="coa-form-group" style={{ flex: 2 }}>
-                                            <label>Name</label>
-                                            <input value={tplMeta.name} onChange={e => setTplMeta({ ...tplMeta, name: e.target.value })} placeholder="My Custom Template"/>
+                                <div className="coa-tpl-newform">
+                                    <div className="acc-sec-title">Create New Template</div>
+                                    <div className="acc-fields">
+                                        <div className="acc-field acc-field-full">
+                                            <label className="acc-label">Name <span className="acc-req"/></label>
+                                            <input className="acc-input" value={tplMeta.name} onChange={e => setTplMeta({ ...tplMeta, name: e.target.value })} placeholder="My Custom Template"/>
                                         </div>
-                                        <div className="coa-form-group" style={{ flex: 1 }}>
-                                            <label>Country</label>
-                                            <input value={tplMeta.country} onChange={e => setTplMeta({ ...tplMeta, country: e.target.value })} placeholder="PH"/>
+                                        <div className="acc-field">
+                                            <label className="acc-label">Country</label>
+                                            <input className="acc-input" value={tplMeta.country} onChange={e => setTplMeta({ ...tplMeta, country: e.target.value })} placeholder="PH"/>
                                         </div>
-                                        <div className="coa-form-group" style={{ flex: 1 }}>
-                                            <label>Currency</label>
-                                            <input value={tplMeta.currency} onChange={e => setTplMeta({ ...tplMeta, currency: e.target.value })} placeholder="PHP"/>
+                                        <div className="acc-field">
+                                            <label className="acc-label">Currency</label>
+                                            <input className="acc-input" value={tplMeta.currency} onChange={e => setTplMeta({ ...tplMeta, currency: e.target.value })} placeholder="PHP"/>
                                         </div>
-                                        <div className="coa-form-group" style={{ flex: 0.5 }}>
-                                            <label>Flag</label>
-                                            <input value={tplMeta.flag} onChange={e => setTplMeta({ ...tplMeta, flag: e.target.value })} placeholder="🇵🇭"/>
+                                        <div className="acc-field">
+                                            <label className="acc-label">Flag</label>
+                                            <input className="acc-input" value={tplMeta.flag} onChange={e => setTplMeta({ ...tplMeta, flag: e.target.value })} placeholder="🇵🇭"/>
+                                        </div>
+                                        <div className="acc-field acc-field-full">
+                                            <label className="acc-label">Description</label>
+                                            <input className="acc-input" value={tplMeta.description} onChange={e => setTplMeta({ ...tplMeta, description: e.target.value })} placeholder="Optional description"/>
                                         </div>
                                     </div>
-                                    <div className="coa-form-group" style={{ marginBottom: 10 }}>
-                                        <label>Description</label>
-                                        <input value={tplMeta.description} onChange={e => setTplMeta({ ...tplMeta, description: e.target.value })} placeholder="Optional description"/>
-                                    </div>
-                                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                                        <button className="coa-btn coa-btn-outline" onClick={() => setShowNewTplForm(false)}>Cancel</button>
-                                        <button className="coa-btn coa-btn-primary" onClick={handleCreateTemplate} disabled={!tplMeta.name}>Create & Edit</button>
+                                    <div className="acc-foot-btns" style={{ marginTop: 10 }}>
+                                        <button className="acc-btn-cancel" onClick={() => setShowNewTplForm(false)}>Cancel</button>
+                                        <button className="acc-btn-primary" onClick={handleCreateTemplate} disabled={!tplMeta.name}>Create & Edit</button>
                                     </div>
                                 </div>
                             )}
 
                             <div className="coa-tpl-body">
                                 {loadingTemplates ? (
-                                    <div style={{ padding: 40, textAlign: "center", color: "#999" }}>Loading templates...</div>
+                                    <div className="coa-tpl-msg">Loading templates...</div>
                                 ) : templates.length === 0 ? (
-                                    <div style={{ padding: 40, textAlign: "center", color: "#999" }}>No templates available</div>
+                                    <div className="coa-tpl-msg">No templates available</div>
                                 ) : templates.map(tpl => {
                                     const isSelected = selectedTemplate === tpl.id;
                                     const preview = isSelected ? templateItems : [];
@@ -686,7 +670,7 @@ export default function AccountingTab() {
                                                         {!tpl.is_global && <span className="coa-tpl-badge coa-tpl-badge-c">CUSTOM</span>}
                                                     </div>
                                                 </div>
-                                                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                                                <div className="coa-tpl-top-actions">
                                                     <button className="coa-tpl-edit-btn" title={tpl.is_global ? "Duplicate & Edit" : "Edit"} onClick={e => { e.stopPropagation(); openTplEditor(tpl); }}>
                                                         <I name={tpl.is_global ? "copy" : "edit-2"} size={13}/>
                                                     </button>
@@ -709,27 +693,29 @@ export default function AccountingTab() {
                                 })}
                             </div>
                             <div className="coa-modal-footer">
-                                <button className="coa-btn coa-btn-outline" onClick={() => setShowTemplateModal(false)}>Cancel</button>
-                                <button className="coa-btn coa-btn-primary" onClick={handleApplyTemplate} disabled={!selectedTemplate || seeding}>
-                                    {seeding ? "Applying..." : accounts.length > 0 ? "Replace with Template" : "Apply Template"}
-                                </button>
+                                <div className="acc-foot-btns">
+                                    <button className="acc-btn-cancel" onClick={() => setShowTemplateModal(false)}>Cancel</button>
+                                    <button className="acc-btn-primary" onClick={handleApplyTemplate} disabled={!selectedTemplate || seeding}>
+                                        {seeding ? "Applying..." : accounts.length > 0 ? "Replace with Template" : "Apply Template"}
+                                    </button>
+                                </div>
                             </div>
                         </>)}
 
                         {/* ===== EDITOR VIEW ===== */}
                         {tplView === "editor" && editingTpl && (<>
                             <div className="coa-modal-header">
-                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                <div className="coa-tpl-editor-head">
                                     <button className="coa-panel-close" onClick={() => { setTplView("list"); setEditingTpl(null); }} title="Back to list">
                                         <I name="arrow-left" size={16}/>
                                     </button>
                                     <div>
                                         <h3 style={{ margin: 0 }}>{editingTpl.flag} {editingTpl.name}</h3>
-                                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#888", fontWeight: 400 }}>{editingItems.length} accounts in template</p>
+                                        <p className="coa-modal-subhead">{editingItems.length} accounts in template</p>
                                     </div>
                                 </div>
-                                <div style={{ display: "flex", gap: 6 }}>
-                                    <button className="coa-btn coa-btn-outline" style={{ color: "#ef4444", borderColor: "#fca5a5" }} onClick={handleDeleteTemplate}>
+                                <div className="coa-modal-head-actions">
+                                    <button className="acc-btn-danger" onClick={handleDeleteTemplate}>
                                         <I name="trash-2" size={13}/> Delete
                                     </button>
                                     <button className="coa-panel-close" onClick={() => setShowTemplateModal(false)}><I name="x" size={18}/></button>
@@ -737,38 +723,38 @@ export default function AccountingTab() {
                             </div>
 
                             {/* Template Metadata */}
-                            <div style={{ padding: "14px 24px", borderBottom: "1px solid #eee", background: "#fafafa" }}>
-                                <div className="coa-form-row" style={{ marginBottom: 8 }}>
-                                    <div className="coa-form-group" style={{ flex: 2 }}>
-                                        <label>Template Name</label>
-                                        <input value={tplMeta.name} onChange={e => setTplMeta({ ...tplMeta, name: e.target.value })}/>
+                            <div className="coa-tpl-meta">
+                                <div className="acc-fields" style={{ marginBottom: 8 }}>
+                                    <div className="acc-field acc-field-full">
+                                        <label className="acc-label">Template Name</label>
+                                        <input className="acc-input" value={tplMeta.name} onChange={e => setTplMeta({ ...tplMeta, name: e.target.value })}/>
                                     </div>
-                                    <div className="coa-form-group" style={{ flex: 0.8 }}>
-                                        <label>Country</label>
-                                        <input value={tplMeta.country} onChange={e => setTplMeta({ ...tplMeta, country: e.target.value })}/>
+                                    <div className="acc-field">
+                                        <label className="acc-label">Country</label>
+                                        <input className="acc-input" value={tplMeta.country} onChange={e => setTplMeta({ ...tplMeta, country: e.target.value })}/>
                                     </div>
-                                    <div className="coa-form-group" style={{ flex: 0.8 }}>
-                                        <label>Currency</label>
-                                        <input value={tplMeta.currency} onChange={e => setTplMeta({ ...tplMeta, currency: e.target.value })}/>
+                                    <div className="acc-field">
+                                        <label className="acc-label">Currency</label>
+                                        <input className="acc-input" value={tplMeta.currency} onChange={e => setTplMeta({ ...tplMeta, currency: e.target.value })}/>
                                     </div>
-                                    <div className="coa-form-group" style={{ flex: 0.5 }}>
-                                        <label>Flag</label>
-                                        <input value={tplMeta.flag} onChange={e => setTplMeta({ ...tplMeta, flag: e.target.value })}/>
+                                    <div className="acc-field">
+                                        <label className="acc-label">Flag</label>
+                                        <input className="acc-input" value={tplMeta.flag} onChange={e => setTplMeta({ ...tplMeta, flag: e.target.value })}/>
                                     </div>
-                                    <div style={{ display: "flex", alignItems: "flex-end" }}>
-                                        <button className="coa-btn coa-btn-primary" onClick={handleSaveTplMeta} disabled={savingTpl} style={{ height: 35 }}>
+                                    <div className="acc-field" style={{ justifyContent: "flex-end" }}>
+                                        <button className="acc-btn-primary" onClick={handleSaveTplMeta} disabled={savingTpl}>
                                             {savingTpl ? "..." : "Save"}
                                         </button>
                                     </div>
                                 </div>
-                                <div className="coa-form-group">
-                                    <input value={tplMeta.description} onChange={e => setTplMeta({ ...tplMeta, description: e.target.value })} placeholder="Description (optional)" style={{ fontSize: 12 }}/>
+                                <div className="acc-field">
+                                    <input className="acc-input" value={tplMeta.description} onChange={e => setTplMeta({ ...tplMeta, description: e.target.value })} placeholder="Description (optional)" style={{ fontSize: 12 }}/>
                                 </div>
                             </div>
 
                             {/* Items Table */}
                             <div className="coa-tpl-editor-body">
-                                <div className="coa-tpl-tbl-wrap">
+                                <div className="acc-tbl-wrap">
                                     <table className="coa-tpl-tbl">
                                         <thead>
                                         <tr>
@@ -814,20 +800,20 @@ export default function AccountingTab() {
                                                             <input type="checkbox" checked={row.is_system} onChange={e => setEditingItemRow({ ...row, is_system: e.target.checked })}/>
                                                         </td>
                                                         <td>
-                                                            <div style={{ display: "flex", gap: 2 }}>
+                                                            <div className="coa-tpl-act-group">
                                                                 <button className="coa-tpl-act" title="Save" onClick={() => handleSaveItem(row)}><I name="check" size={13} style={{ color: "#16a34a" }}/></button>
                                                                 <button className="coa-tpl-act" title="Cancel" onClick={() => setEditingItemRow(null)}><I name="x" size={13} style={{ color: "#ef4444" }}/></button>
                                                             </div>
                                                         </td>
                                                     </>) : (<>
-                                                        <td><span style={{ fontFamily: "monospace", fontSize: 12, color, fontWeight: 600 }}>{item.code}</span></td>
+                                                        <td><span className="coa-tpl-code" style={{ color }}>{item.code}</span></td>
                                                         <td style={{ fontWeight: item.account_subtype === "Header" ? 700 : 400 }}>{item.name}</td>
                                                         <td><span className="coa-tpl-type-dot" style={{ background: color }}/> {item.account_type}</td>
-                                                        <td style={{ fontSize: 11, color: "#888" }}>{item.account_subtype}</td>
-                                                        <td style={{ fontSize: 11, color: "#888" }}>{item.normal_balance === "Debit" ? "Dr" : "Cr"}</td>
+                                                        <td className="coa-tpl-muted">{item.account_subtype}</td>
+                                                        <td className="coa-tpl-muted">{item.normal_balance === "Debit" ? "Dr" : "Cr"}</td>
                                                         <td style={{ textAlign: "center", fontSize: 11, color: item.is_system ? "#3b82f6" : "#ccc" }}>{item.is_system ? "✓" : ""}</td>
                                                         <td>
-                                                            <div style={{ display: "flex", gap: 2 }}>
+                                                            <div className="coa-tpl-act-group">
                                                                 <button className="coa-tpl-act" title="Edit" onClick={() => setEditingItemRow({ ...item })}><I name="edit-2" size={12}/></button>
                                                                 <button className="coa-tpl-act" title="Delete" onClick={() => handleDeleteItem(item.id)}><I name="trash-2" size={12}/></button>
                                                             </div>
@@ -865,7 +851,7 @@ export default function AccountingTab() {
                                                     <input type="checkbox" checked={editingItemRow.is_system} onChange={e => setEditingItemRow({ ...editingItemRow, is_system: e.target.checked })}/>
                                                 </td>
                                                 <td>
-                                                    <div style={{ display: "flex", gap: 2 }}>
+                                                    <div className="coa-tpl-act-group">
                                                         <button className="coa-tpl-act" title="Save" onClick={() => handleSaveItem(editingItemRow)}><I name="check" size={13} style={{ color: "#16a34a" }}/></button>
                                                         <button className="coa-tpl-act" title="Cancel" onClick={() => setEditingItemRow(null)}><I name="x" size={13} style={{ color: "#ef4444" }}/></button>
                                                     </div>
@@ -876,19 +862,21 @@ export default function AccountingTab() {
                                     </table>
                                 </div>
                                 {editingItems.length === 0 && !editingItemRow && (
-                                    <div style={{ padding: 30, textAlign: "center", color: "#bbb", fontSize: 13 }}>No accounts yet. Add your first account below.</div>
+                                    <div className="coa-tpl-empty">No accounts yet. Add your first account below.</div>
                                 )}
                             </div>
 
                             <div className="coa-modal-footer">
-                                <button className="coa-btn coa-btn-outline" onClick={handleAddItem} disabled={editingItemRow && editingItemRow._new}>
+                                <button className="acc-btn-s" onClick={handleAddItem} disabled={editingItemRow && editingItemRow._new}>
                                     <I name="plus" size={14}/> Add Account
                                 </button>
                                 <div style={{ flex: 1 }}/>
-                                <button className="coa-btn coa-btn-outline" onClick={() => { setTplView("list"); setEditingTpl(null); }}>Back to List</button>
-                                <button className="coa-btn coa-btn-primary" onClick={() => { setSelectedTemplate(editingTpl.id); setTplView("list"); loadTemplates(); }}>
-                                    Done
-                                </button>
+                                <div className="acc-foot-btns">
+                                    <button className="acc-btn-cancel" onClick={() => { setTplView("list"); setEditingTpl(null); }}>Back to List</button>
+                                    <button className="acc-btn-primary" onClick={() => { setSelectedTemplate(editingTpl.id); setTplView("list"); loadTemplates(); }}>
+                                        Done
+                                    </button>
+                                </div>
                             </div>
                         </>)}
 
@@ -897,37 +885,16 @@ export default function AccountingTab() {
             )}
 
             <style>{`
-        .coa-wrap{font-family:'DM Sans',sans-serif;color:#333}
+        /* Page-specific styles for the Chart of Accounts tree, detail panel,
+           and CoA template modal — these structures aren't covered by acc-layout.css.
+           All rules are prefixed coa-* to avoid collision with other pages. */
 
-        /* Stats */
-        .coa-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px}
-        .coa-stat-card{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid #eee;border-radius:12px;padding:18px 20px}
-        .coa-stat-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-        .coa-stat-label{font-size:12px;color:#999;font-weight:500}
-        .coa-stat-value{font-size:18px;font-weight:700;color:#222;margin-top:2px}
+        /* KPI stat card layout tweak (icon + label + value stacked) */
+        .acc-st{display:flex;flex-direction:column}
 
-        /* Toolbar */
-        .coa-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px}
-        .coa-tabs{display:flex;gap:4px;background:#f5f5f5;border-radius:10px;padding:3px}
-        .coa-tab{display:flex;align-items:center;gap:6px;padding:7px 14px;border:none;background:none;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:500;color:#888;cursor:pointer;transition:all .15s}
-        .coa-tab:hover{color:#555}
-        .coa-tab-on{background:#fff;color:#222;font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+        /* Tab dot / count decorations (used inside shared .acc-tab) */
         .coa-tab-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
         .coa-tab-count{font-size:10px;background:#eee;padding:1px 6px;border-radius:8px;font-weight:600}
-        .coa-toolbar-r{display:flex;gap:8px;align-items:center}
-        .coa-search{display:flex;align-items:center;gap:6px;padding:7px 12px;background:#f5f5f5;border-radius:8px;color:#aaa}
-        .coa-search input{border:none;background:none;font-family:inherit;font-size:13px;color:#333;outline:none;width:160px}
-        .coa-search input::placeholder{color:#ccc}
-
-        /* Buttons */
-        .coa-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:8px;font-family:inherit;font-size:12.5px;font-weight:600;border:none;cursor:pointer;transition:all .15s}
-        .coa-btn-primary{background:#10b981;color:#fff}
-        .coa-btn-primary:hover{background:#059669}
-        .coa-btn-primary:disabled{opacity:.5;cursor:not-allowed}
-        .coa-btn-outline{background:#fff;color:#555;border:1px solid #ddd}
-        .coa-btn-outline:hover{background:#f5f5f5}
-        .coa-btn-danger{background:#fef2f2;color:#ef4444;border:1px solid #fecaca}
-        .coa-btn-danger:hover{background:#ef4444;color:#fff}
 
         /* Main layout */
         .coa-main{display:flex;gap:0;min-height:500px}
@@ -955,7 +922,7 @@ export default function AccountingTab() {
 
         /* Account rows */
         .coa-row{display:flex;align-items:center;gap:8px;padding:10px 16px;cursor:pointer;transition:background .1s;border-bottom:1px solid #f8f8f8;font-size:13px}
-        .coa-row:hover{background:#f0fdf4!important}
+        .coa-row:hover{background:#edf8f5!important}
         .coa-expand{width:22px;height:22px;border:none;background:none;cursor:pointer;color:#aaa;display:flex;align-items:center;justify-content:center;border-radius:4px;flex-shrink:0}
         .coa-expand:hover{background:#e5e7eb;color:#333}
         .coa-code{width:70px;font-weight:600;font-size:12.5px;flex-shrink:0;font-family:'DM Mono',monospace}
@@ -986,7 +953,7 @@ export default function AccountingTab() {
         .coa-inactive{background:#f3f4f6;color:#9ca3af}
         .coa-panel-sys{font-size:10px;background:#dbeafe;color:#3b82f6;padding:2px 8px;border-radius:6px;font-weight:600}
 
-        .coa-panel-balance-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px;margin-bottom:16px;text-align:center}
+        .coa-panel-balance-box{background:#edf8f5;border:1px solid #c3e9e1;border-radius:10px;padding:16px;margin-bottom:16px;text-align:center}
         .coa-panel-balance-label{font-size:11px;color:#888;font-weight:500;margin-bottom:4px}
         .coa-panel-balance-val{font-size:24px;font-weight:700}
         .coa-panel-balance-norm{font-size:11px;color:#888;margin-top:6px}
@@ -998,31 +965,18 @@ export default function AccountingTab() {
 
         .coa-panel-actions{display:flex;gap:8px}
 
-        /* Empty */
-        .coa-empty{text-align:center;padding:60px 20px;color:#ccc}
-        .coa-empty h3{font-size:16px;color:#888;margin:12px 0 4px;font-weight:600}
-        .coa-empty p{font-size:13px;color:#aaa}
-
-        /* Modal */
+        /* Modal shell (page-specific overlay used by both modals) */
         .coa-modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.4);z-index:999;display:flex;align-items:center;justify-content:center}
         .coa-modal{background:#fff;border-radius:14px;width:560px;max-width:95vw;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.15)}
         .coa-modal-header{display:flex;justify-content:space-between;align-items:center;padding:20px 24px;border-bottom:1px solid #eee}
         .coa-modal-header h3{margin:0;font-size:16px;font-weight:700}
+        .coa-modal-subhead{margin:4px 0 0;font-size:12px;color:#888;font-weight:400}
+        .coa-modal-head-actions{display:flex;gap:6px;align-items:center}
         .coa-modal-body{padding:24px}
-        .coa-modal-footer{display:flex;justify-content:flex-end;gap:8px;padding:16px 24px;border-top:1px solid #eee}
-
-        .coa-form-row{display:flex;gap:12px;margin-bottom:14px}
-        .coa-form-group{display:flex;flex-direction:column;gap:4px}
-        .coa-form-group label{font-size:12px;font-weight:600;color:#555}
-        .coa-form-group input,.coa-form-group select,.coa-form-group textarea{padding:8px 12px;border:1px solid #ddd;border-radius:8px;font-family:inherit;font-size:13px;color:#333;outline:none;transition:border .15s}
-        .coa-form-group input:focus,.coa-form-group select:focus,.coa-form-group textarea:focus{border-color:#10b981}
-        .coa-form-group textarea{resize:vertical}
+        .coa-modal-footer{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:16px 24px;border-top:1px solid #eee}
 
         /* Responsive */
         @media(max-width:900px){
-          .coa-stats{grid-template-columns:repeat(2,1fr)}
-          .coa-toolbar{flex-direction:column;align-items:stretch}
-          .coa-tabs{overflow-x:auto}
           .coa-panel{width:100%;border-radius:0 0 12px 12px}
           .coa-main{flex-direction:column}
           .coa-list-narrow{border-radius:12px 12px 0 0;border-right:1px solid #eee;border-bottom:none}
@@ -1031,11 +985,17 @@ export default function AccountingTab() {
         /* Template Modal */
         .coa-tpl-modal{background:#fff;border-radius:14px;width:680px;max-width:95vw;max-height:90vh;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.15);display:flex;flex-direction:column;transition:width .2s}
         .coa-tpl-wide{width:920px}
+        .coa-tpl-editor-head{display:flex;align-items:center;gap:10px}
+        .coa-tpl-newform{padding:16px 24px;border-bottom:1px solid #eee;background:#f9fafb}
+        .coa-tpl-meta{padding:14px 24px;border-bottom:1px solid #eee;background:#fafafa}
+        .coa-tpl-msg{padding:40px;text-align:center;color:#999}
+        .coa-tpl-empty{padding:30px;text-align:center;color:#bbb;font-size:13px}
         .coa-tpl-body{padding:16px 24px;overflow-y:auto;display:flex;flex-direction:column;gap:12px;flex:1}
         .coa-tpl-card{border:2px solid #eee;border-radius:12px;padding:16px;transition:all .15s}
-        .coa-tpl-card:hover{border-color:#a7f3d0;background:#f0fdf4}
-        .coa-tpl-sel{border-color:#10b981!important;background:#f0fdf4!important}
+        .coa-tpl-card:hover{border-color:#a7ddd2;background:#edf8f5}
+        .coa-tpl-sel{border-color:#2d9e8b!important;background:#edf8f5!important}
         .coa-tpl-top{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+        .coa-tpl-top-actions{display:flex;gap:4px;align-items:center}
         .coa-tpl-flag{font-size:32px;line-height:1}
         .coa-tpl-info{flex:1}
         .coa-tpl-name{font-size:14px;font-weight:700;color:#222}
@@ -1044,26 +1004,28 @@ export default function AccountingTab() {
         .coa-tpl-badge-g{background:#dbeafe;color:#3b82f6}
         .coa-tpl-badge-c{background:#dcfce7;color:#16a34a}
         .coa-tpl-check{width:24px;height:24px;border-radius:50%;border:2px solid #ddd;display:flex;align-items:center;justify-content:center;color:#ddd;flex-shrink:0}
-        .coa-tpl-check-on{border-color:#10b981;color:#10b981}
+        .coa-tpl-check-on{border-color:#2d9e8b;color:#2d9e8b}
         .coa-tpl-desc{font-size:12px;color:#777;line-height:1.5;margin-bottom:10px}
         .coa-tpl-breakdown{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
         .coa-tpl-chip{font-size:10px;font-weight:600;padding:2px 8px;border-radius:6px}
         .coa-tpl-total{font-size:10px;color:#aaa;font-weight:500;margin-left:4px}
         .coa-tpl-edit-btn{width:28px;height:28px;border:1px solid #ddd;background:#fff;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#888;transition:all .15s}
-        .coa-tpl-edit-btn:hover{background:#f0fdf4;border-color:#10b981;color:#10b981}
+        .coa-tpl-edit-btn:hover{background:#edf8f5;border-color:#2d9e8b;color:#2d9e8b}
 
         /* Template Editor */
         .coa-tpl-editor-body{flex:1;overflow-y:auto;padding:0}
-        .coa-tpl-tbl-wrap{overflow-x:auto}
         .coa-tpl-tbl{width:100%;border-collapse:collapse;font-size:12px}
         .coa-tpl-tbl thead th{padding:8px 10px;text-align:left;font-weight:600;color:#888;font-size:10px;text-transform:uppercase;letter-spacing:.5px;background:#fafafa;border-bottom:1px solid #eee;position:sticky;top:0;z-index:1}
         .coa-tpl-row td{padding:6px 10px;border-bottom:1px solid #f3f3f3;vertical-align:middle}
         .coa-tpl-row:hover td{background:#f9fafb}
         .coa-tpl-row-hdr td{background:#f8fafc}
-        .coa-tpl-row-new td{background:#f0fdf4}
+        .coa-tpl-row-new td{background:#edf8f5}
+        .coa-tpl-code{font-family:monospace;font-size:12px;font-weight:600}
+        .coa-tpl-muted{font-size:11px;color:#888}
         .coa-tpl-inp{width:100%;padding:4px 6px;border:1px solid #ddd;border-radius:5px;font-size:12px;font-family:inherit;outline:none}
-        .coa-tpl-inp:focus{border-color:#10b981}
+        .coa-tpl-inp:focus{border-color:#2d9e8b}
         .coa-tpl-inp-wide{min-width:120px}
+        .coa-tpl-act-group{display:flex;gap:2px}
         .coa-tpl-act{width:24px;height:24px;border:none;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:5px;color:#999;padding:0}
         .coa-tpl-act:hover{background:#f3f4f6;color:#333}
         .coa-tpl-type-dot{display:inline-block;width:6px;height:6px;border-radius:50%;margin-right:4px;vertical-align:middle}

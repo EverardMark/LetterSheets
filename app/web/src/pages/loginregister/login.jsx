@@ -5,7 +5,7 @@ import Modal from "../components/Modal";
 import { termsContent } from "../legal/terms";
 import { privacyContent } from "../legal/privacy";
 
-const API_URL = "http://localhost:8080/api/execute";
+const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 
 export default function Login({ onNavigate }) {
   const navigate = useNavigate();

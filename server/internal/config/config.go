@@ -2,8 +2,11 @@ package config
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"lettersheets/internal/database"
@@ -16,18 +19,22 @@ func SetPath(p string) {
 	path = p
 }
 
-// Get reads config.json from disk every time it's called
-// Changes to config.json take effect immediately without restart
+// Get loads configuration from config.json (if present) and then applies any
+// LS_* environment-variable overrides. The file is OPTIONAL: in a container you
+// can supply everything via the environment (e.g. from a secrets manager) and
+// omit config.json entirely.
 func Get() (*AppConfig, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
+	var cfg AppConfig
+
+	if data, err := os.ReadFile(path); err == nil {
+		if err := json.Unmarshal(data, &cfg); err != nil {
+			return nil, fmt.Errorf("failed to parse config file: %w", err)
+		}
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	var cfg AppConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
-	}
+	applyEnvOverrides(&cfg)
 
 	// Defaults
 	if cfg.Server.Port == 0 {
@@ -46,6 +53,75 @@ func Get() (*AppConfig, error) {
 	return &cfg, nil
 }
 
+// applyEnvOverrides lets any LS_* environment variable override the file value.
+func applyEnvOverrides(cfg *AppConfig) {
+	if v := os.Getenv("LS_SERVER_HOST"); v != "" {
+		cfg.Server.Host = v
+	}
+	if n, ok := envInt("LS_SERVER_PORT"); ok {
+		cfg.Server.Port = n
+	}
+	if n, ok := envInt("LS_SESSION_HOURS"); ok {
+		cfg.Server.SessionHours = n
+	}
+	if n, ok := envInt("LS_MAX_LOGIN_ATTEMPTS"); ok {
+		cfg.Server.MaxLoginAttempts = n
+	}
+	if n, ok := envInt("LS_LOCKOUT_MINUTES"); ok {
+		cfg.Server.LockoutMinutes = n
+	}
+	if v := os.Getenv("LS_ALLOWED_ORIGINS"); v != "" {
+		parts := strings.Split(v, ",")
+		for i := range parts {
+			parts[i] = strings.TrimSpace(parts[i])
+		}
+		cfg.Server.AllowedOrigins = parts
+	}
+	if v := os.Getenv("LS_TLS_CERT_FILE"); v != "" {
+		cfg.Server.TLSCertFile = v
+	}
+	if v := os.Getenv("LS_TLS_KEY_FILE"); v != "" {
+		cfg.Server.TLSKeyFile = v
+	}
+	if v := os.Getenv("LS_TRUST_PROXY_HEADERS"); v != "" {
+		cfg.Server.TrustProxyHeaders = v == "true" || v == "1"
+	}
+
+	if v := os.Getenv("LS_DB_HOST"); v != "" {
+		cfg.Database.Host = v
+	}
+	if n, ok := envInt("LS_DB_PORT"); ok {
+		cfg.Database.Port = n
+	}
+	if v := os.Getenv("LS_DB_USER"); v != "" {
+		cfg.Database.User = v
+	}
+	if v := os.Getenv("LS_DB_PASSWORD"); v != "" {
+		cfg.Database.Password = v
+	}
+	if v := os.Getenv("LS_DB_NAME"); v != "" {
+		cfg.Database.DBName = v
+	}
+	if n, ok := envInt("LS_DB_MAX_OPEN"); ok {
+		cfg.Database.MaxOpen = n
+	}
+	if n, ok := envInt("LS_DB_MAX_IDLE"); ok {
+		cfg.Database.MaxIdle = n
+	}
+	if n, ok := envInt("LS_DB_MAX_LIFE_MINUTES"); ok {
+		cfg.Database.MaxLifeMinutes = n
+	}
+}
+
+func envInt(key string) (int, bool) {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
 type AppConfig struct {
 	Server   ServerConfig   `json:"server"`
 	Database DatabaseConfig `json:"database"`
@@ -57,6 +133,15 @@ type ServerConfig struct {
 	SessionHours     int    `json:"session_hours"`
 	MaxLoginAttempts int    `json:"max_login_attempts"`
 	LockoutMinutes   int    `json:"lockout_minutes"`
+
+	// AllowedOrigins is the CORS allowlist. Empty ⇒ reflect "*" (dev only).
+	AllowedOrigins []string `json:"allowed_origins"`
+	// TLSCertFile/TLSKeyFile enable HTTPS when both are set.
+	TLSCertFile string `json:"tls_cert_file"`
+	TLSKeyFile  string `json:"tls_key_file"`
+	// TrustProxyHeaders makes the server derive the client IP from
+	// X-Forwarded-For / X-Real-IP. Enable ONLY behind a trusted proxy.
+	TrustProxyHeaders bool `json:"trust_proxy_headers"`
 }
 
 func (s *ServerConfig) Addr() string {

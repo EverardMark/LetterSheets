@@ -1,1 +1,38 @@
+# ---- Secrets & credentials (NEVER commit) ----
+# Server runtime config with DB credentials — commit config.json.example instead
+server/config.json
+config.json
+
+# Private keys / certificates
+*.pem
+*.key
+*.p12
+*.pfx
+ppks/
+
+# Client-side recovery key material (reconstructs company encryption keys)
+*-recovery-key.json
+*recovery-key*.json
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# ---- Database dumps (may contain PII / password hashes) ----
+*.sql.dump
+*.dump
+/lettersheets.sql
+dumps/
+
+# ---- Dependencies / build output ----
+node_modules/
 server/test/node_modules
+app/web/dist/
+app/web/release/
+server/lettersheets
+
+# ---- OS / editor noise ----
+.DS_Store
+.idea/
+*.swp

@@ -1,0 +1,8 @@
+# Caddy obtains and renews a Let's Encrypt certificate automatically for
+# {$LS_DOMAIN}, terminates TLS, and reverse-proxies to the Go API.
+# Requires: LS_DOMAIN resolves (DNS A/AAAA) to this host, and ports 80+443 open.
+
+{$LS_DOMAIN} {
+	encode gzip
+	reverse_proxy api:8080
+}

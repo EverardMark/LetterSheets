@@ -250,8 +250,8 @@ func (r *ARRepo) VoidInvoice(id, cid string) error {
 	return nil
 }
 
-func (r *ARRepo) GetInvoiceItems(iid string) ([]models.InvoiceItem, error) {
-	rows, err := r.db.Query("CALL sp_get_invoice_items(?)", iid)
+func (r *ARRepo) GetInvoiceItems(iid, cid string) ([]models.InvoiceItem, error) {
+	rows, err := r.db.Query("CALL sp_get_invoice_items(?,?)", iid, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -270,24 +270,24 @@ func (r *ARRepo) GetInvoiceItems(iid string) ([]models.InvoiceItem, error) {
 	}
 	return out, nil
 }
-func (r *ARRepo) AddInvoiceItem(iid, aid, desc string, qty, up, amt, tr, ta float64, so int) error {
-	rows, err := r.db.Query("CALL sp_add_invoice_item(?,?,?,?,?,?,?,?,?)", iid, aid, desc, qty, up, amt, tr, ta, so)
+func (r *ARRepo) AddInvoiceItem(iid, cid, aid, desc string, qty, up, amt, tr, ta float64, so int) error {
+	rows, err := r.db.Query("CALL sp_add_invoice_item(?,?,?,?,?,?,?,?,?,?)", iid, cid, aid, desc, qty, up, amt, tr, ta, so)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	return nil
 }
-func (r *ARRepo) ClearInvoiceItems(iid string) error {
-	rows, err := r.db.Query("CALL sp_clear_invoice_items(?)", iid)
+func (r *ARRepo) ClearInvoiceItems(iid, cid string) error {
+	rows, err := r.db.Query("CALL sp_clear_invoice_items(?,?)", iid, cid)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	return nil
 }
-func (r *ARRepo) UpdateInvoiceTotals(iid string) error {
-	rows, err := r.db.Query("CALL sp_update_invoice_totals(?)", iid)
+func (r *ARRepo) UpdateInvoiceTotals(iid, cid string) error {
+	rows, err := r.db.Query("CALL sp_update_invoice_totals(?,?)", iid, cid)
 	if err != nil {
 		return err
 	}
@@ -303,8 +303,8 @@ func (r *ARRepo) CreateInvoicePayment(p *models.InvoicePayment) error {
 	defer rows.Close()
 	return nil
 }
-func (r *ARRepo) GetInvoicePayments(iid string) ([]models.InvoicePayment, error) {
-	rows, err := r.db.Query("CALL sp_get_invoice_payments(?)", iid)
+func (r *ARRepo) GetInvoicePayments(iid, cid string) ([]models.InvoicePayment, error) {
+	rows, err := r.db.Query("CALL sp_get_invoice_payments(?,?)", iid, cid)
 	if err != nil {
 		return nil, err
 	}
@@ -346,6 +346,30 @@ func (r *ARRepo) DeleteInvoicePayment(id, cid string) error {
 	defer rows.Close()
 	return nil
 }
+
+// PayARControl returns the Accounts Receivable control account debited by an
+// invoice's revenue journal, or "" if the invoice was never GL-posted.
+func (r *ARRepo) PayARControl(invoiceID, cid string) (string, error) {
+	rows, err := r.db.Query("CALL sp_pay_ar_control(?,?)", invoiceID, cid)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var acct sql.NullString
+	if rows.Next() {
+		rows.Scan(&acct)
+	}
+	return acct.String, nil
+}
+
+func (r *ARRepo) SetInvoicePaymentJournal(paymentID, cid, journalID string) error {
+	rows, err := r.db.Query("CALL sp_set_invoice_payment_journal(?,?,?)", paymentID, cid, journalID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	return nil
+}
 func (r *ARRepo) GetARAging(cid string) ([]models.ARAging, error) {
 	rows, err := r.db.Query("CALL sp_ar_aging(?)", cid)
 	if err != nil {
@@ -355,7 +379,9 @@ func (r *ARRepo) GetARAging(cid string) ([]models.ARAging, error) {
 	var out []models.ARAging
 	for rows.Next() {
 		var a models.ARAging
-		rows.Scan(&a.CustomerID, &a.CustomerName, &a.InvoiceCount, &a.TotalDue, &a.CurrentDue, &a.Days1_30, &a.Days31_60, &a.Days61_90, &a.DaysOver90)
+		if err := rows.Scan(&a.CustomerID, &a.CustomerName, &a.InvoiceCount, &a.TotalDue, &a.CurrentDue, &a.Days1_30, &a.Days31_60, &a.Days61_90, &a.DaysOver90); err != nil {
+			return nil, err
+		}
 		out = append(out, a)
 	}
 	return out, nil
@@ -368,7 +394,9 @@ func (r *ARRepo) GetARSummary(cid string) (*models.ARSummary, error) {
 	defer rows.Close()
 	var s models.ARSummary
 	if rows.Next() {
-		rows.Scan(&s.ActiveCustomers, &s.OpenInvoices, &s.TotalReceivable, &s.TotalOverdue, &s.OverdueCount, &s.CollectedThisMonth)
+		if err := rows.Scan(&s.ActiveCustomers, &s.OpenInvoices, &s.TotalReceivable, &s.TotalOverdue, &s.OverdueCount, &s.CollectedThisMonth); err != nil {
+			return nil, err
+		}
 	}
 	return &s, nil
 }
@@ -396,7 +424,9 @@ func (r *TaxRepo) TaxSummary(cid, from, to string) ([]models.TaxAccountRow, erro
 	for rows.Next() {
 		var t models.TaxAccountRow
 		var sub sql.NullString
-		rows.Scan(&t.AccountID, &t.Code, &t.Name, &t.AccountType, &sub, &t.TotalDebit, &t.TotalCredit, &t.CurrentBalance)
+		if err := rows.Scan(&t.AccountID, &t.Code, &t.Name, &t.AccountType, &sub, &t.TotalDebit, &t.TotalCredit, &t.CurrentBalance); err != nil {
+			return nil, err
+		}
 		if sub.Valid {
 			t.AccountSubtype = sub.String
 		}
@@ -421,7 +451,9 @@ func (r *TaxRepo) TaxDetail(cid, aid, from, to string) ([]models.TaxDetail, erro
 	for rows.Next() {
 		var t models.TaxDetail
 		var memo, ld sql.NullString
-		rows.Scan(&t.EntryNumber, &t.EntryDate, &memo, &t.SourceType, &ld, &t.Debit, &t.Credit)
+		if err := rows.Scan(&t.EntryNumber, &t.EntryDate, &memo, &t.SourceType, &ld, &t.Debit, &t.Credit); err != nil {
+			return nil, err
+		}
 		if memo.Valid {
 			t.Memo = memo.String
 		}
@@ -447,7 +479,9 @@ func (r *TaxRepo) VATComputation(cid, from, to string) (*models.VATComputation, 
 	defer rows.Close()
 	var v models.VATComputation
 	if rows.Next() {
-		rows.Scan(&v.OutputVAT, &v.InputVAT)
+		if err := rows.Scan(&v.OutputVAT, &v.InputVAT); err != nil {
+			return nil, err
+		}
 	}
 	return &v, nil
 }
@@ -467,7 +501,9 @@ func (r *BankRepo) GetBankAccounts(cid string) ([]models.BankAccount, error) {
 	var out []models.BankAccount
 	for rows.Next() {
 		var a models.BankAccount
-		rows.Scan(&a.ID, &a.Code, &a.Name, &a.CurrentBalance)
+		if err := rows.Scan(&a.ID, &a.Code, &a.Name, &a.CurrentBalance); err != nil {
+			return nil, err
+		}
 		out = append(out, a)
 	}
 	return out, nil
@@ -482,7 +518,9 @@ func (r *BankRepo) GetBankTransactions(cid, aid string, reconciled int) ([]model
 	for rows.Next() {
 		var t models.BankTransaction
 		var desc, ref, mid, sd sql.NullString
-		rows.Scan(&t.ID, &t.CompanyID, &t.AccountID, &t.TxnDate, &desc, &ref, &t.Amount, &t.IsReconciled, &mid, &sd, &t.IsDeleted, &t.CreatedAt)
+		if err := rows.Scan(&t.ID, &t.CompanyID, &t.AccountID, &t.TxnDate, &desc, &ref, &t.Amount, &t.IsReconciled, &mid, &sd, &t.IsDeleted, &t.CreatedAt); err != nil {
+			return nil, err
+		}
 		if desc.Valid {
 			t.Description = desc.String
 		}
@@ -539,7 +577,9 @@ func (r *BankRepo) GetReconSummary(cid, aid string) (*models.BankReconSummary, e
 	defer rows.Close()
 	var s models.BankReconSummary
 	if rows.Next() {
-		rows.Scan(&s.BookBalance, &s.ReconciledTotal, &s.UnreconciledTotal, &s.UnreconciledCount, &s.TotalCount)
+		if err := rows.Scan(&s.BookBalance, &s.ReconciledTotal, &s.UnreconciledTotal, &s.UnreconciledCount, &s.TotalCount); err != nil {
+			return nil, err
+		}
 	}
 	return &s, nil
 }
@@ -553,7 +593,9 @@ func (r *BankRepo) GetUnmatchedJournalLines(cid, aid string) ([]models.Unmatched
 	for rows.Next() {
 		var u models.UnmatchedJournalLine
 		var memo, desc sql.NullString
-		rows.Scan(&u.LineID, &u.EntryID, &u.EntryNumber, &u.EntryDate, &memo, &desc, &u.Debit, &u.Credit, &u.NetAmount)
+		if err := rows.Scan(&u.LineID, &u.EntryID, &u.EntryNumber, &u.EntryDate, &memo, &desc, &u.Debit, &u.Credit, &u.NetAmount); err != nil {
+			return nil, err
+		}
 		if memo.Valid {
 			u.Memo = memo.String
 		}
@@ -588,7 +630,9 @@ func (r *ReportsRepo) IncomeStatement(cid, from, to string) ([]models.ReportRow,
 	for rows.Next() {
 		var rr models.ReportRow
 		var sub sql.NullString
-		rows.Scan(&rr.ID, &rr.Code, &rr.Name, &rr.AccountType, &sub, &rr.NormalBalance, &rr.TotalDebit, &rr.TotalCredit, &rr.NetBalance)
+		if err := rows.Scan(&rr.ID, &rr.Code, &rr.Name, &rr.AccountType, &sub, &rr.NormalBalance, &rr.TotalDebit, &rr.TotalCredit, &rr.NetBalance); err != nil {
+			return nil, err
+		}
 		if sub.Valid {
 			rr.AccountSubtype = sub.String
 		}
@@ -609,8 +653,14 @@ func (r *ReportsRepo) BalanceSheet(cid, asOf string) ([]models.ReportRow, error)
 	var out []models.ReportRow
 	for rows.Next() {
 		var rr models.ReportRow
-		var sub sql.NullString
-		rows.Scan(&rr.ID, &rr.Code, &rr.Name, &rr.AccountType, &sub, &rr.NormalBalance, &rr.TotalDebit, &rr.TotalCredit, &rr.NetBalance)
+		var id, sub sql.NullString
+		// The synthetic "Current Year Earnings" equity line has a NULL id.
+		if err := rows.Scan(&id, &rr.Code, &rr.Name, &rr.AccountType, &sub, &rr.NormalBalance, &rr.TotalDebit, &rr.TotalCredit, &rr.NetBalance); err != nil {
+			return nil, err
+		}
+		if id.Valid {
+			rr.ID = id.String
+		}
 		if sub.Valid {
 			rr.AccountSubtype = sub.String
 		}
@@ -634,7 +684,9 @@ func (r *ReportsRepo) CashFlow(cid, from, to string) ([]models.CashFlowRow, erro
 	var out []models.CashFlowRow
 	for rows.Next() {
 		var c models.CashFlowRow
-		rows.Scan(&c.SourceType, &c.CashIn, &c.CashOut, &c.NetCash)
+		if err := rows.Scan(&c.SourceType, &c.CashIn, &c.CashOut, &c.NetCash); err != nil {
+			return nil, err
+		}
 		out = append(out, c)
 	}
 	return out, nil

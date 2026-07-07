@@ -1,7 +1,20 @@
 import { useState, useRef } from "react";
-import { recoverKeys } from "../../utils/crypto";
+import { recoverKeys, dsaSign } from "../../utils/crypto";
 
-const API_URL = "/api/execute";
+const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
+
+function b64ToBytes(b64) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+}
+
+function bytesToB64(bytes) {
+    let bin = "";
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+    return btoa(bin);
+}
 
 export default function ForgotPassword({ onNavigate }) {
     const [loading, setLoading] = useState(false);
@@ -76,6 +89,33 @@ export default function ForgotPassword({ onNavigate }) {
         setError("");
 
         try {
+            // Prove ownership before resetting: fetch a server challenge and sign
+            // it with the CURRENT signing key from the recovery file (matches the
+            // signing_public_key the server has stored). Do this before generating
+            // new key material, since recoverKeys produces a fresh signing key.
+            if (!recoveryData?.keys?.dsaPrivateKey) {
+                setError("This recovery file has no signing key. Ask an administrator to reset your password.");
+                setLoading(false);
+                return;
+            }
+            const chRes = await fetch(`${API_URL}?action=request_password_reset`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ email: form.email }),
+            });
+            const chData = await chRes.json();
+            if (!chData.success) {
+                setError(chData.error || "Could not start password reset");
+                setLoading(false);
+                return;
+            }
+            const challengeId = chData.data.challenge_id;
+            const signature = dsaSign(
+                b64ToBytes(recoveryData.keys.dsaPrivateKey),
+                b64ToBytes(chData.data.challenge)
+            );
+            const signatureB64 = bytesToB64(signature);
+
             const newSalt = crypto.randomUUID();
 
             const keys = await recoverKeys(
@@ -101,6 +141,8 @@ export default function ForgotPassword({ onNavigate }) {
                     key_exchange_algorithm: "ML-KEM-768",
                     public_key: keys.kemPublicKey,
                     signing_public_key: keys.dsaPublicKey,
+                    challenge_id: challengeId,
+                    signature: signatureB64,
                 }),
             });
 

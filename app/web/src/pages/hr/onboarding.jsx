@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { I } from "../../layouts/ERPLayout";
 
-const API_URL = "/api/execute";
+const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 async function api(action, body = {}) {
     const session = localStorage.getItem("ls_session");
     const res = await fetch(`${API_URL}?action=${action}`, {

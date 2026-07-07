@@ -50,22 +50,50 @@ func main() {
 		repository.NewTicketRepo(db),
 		repository.NewWorkScheduleRepo(db),
 		repository.NewComplianceRepo(db),
+		repository.NewInventoryRepo(db),
+		repository.NewFixedAssetsRepo(db),
+		repository.NewSalesRepo(db),
+		repository.NewProcurementRepo(db),
+		repository.NewReturnsRepo(db),
 		cfg,
 	)
 
-	http.HandleFunc("/api/execute", cors(handler.Execute))
+	http.HandleFunc("/api/execute", cors(handler.Execute, cfg.Server.AllowedOrigins))
 
 	addr := cfg.Server.Addr()
-	log.Printf("Server starting on %s", addr)
 	log.Printf("Endpoint: POST %s/api/execute?action=<action>", addr)
+
+	if cfg.Server.TLSCertFile != "" && cfg.Server.TLSKeyFile != "" {
+		log.Printf("Server starting with TLS on %s", addr)
+		if err := http.ListenAndServeTLS(addr, cfg.Server.TLSCertFile, cfg.Server.TLSKeyFile, nil); err != nil {
+			log.Fatal("Server failed: ", err)
+		}
+		return
+	}
+
+	log.Printf("WARNING: serving plaintext HTTP on %s (set tls_cert_file/tls_key_file, or terminate TLS at a reverse proxy)", addr)
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatal("Server failed: ", err)
 	}
 }
 
-func cors(next http.HandlerFunc) http.HandlerFunc {
+// cors reflects an allowed Origin. With no allowlist configured it falls back to
+// "*" for local development; production should set server.allowed_origins.
+func cors(next http.HandlerFunc, allowedOrigins []string) http.HandlerFunc {
+	allowed := make(map[string]bool, len(allowedOrigins))
+	for _, o := range allowedOrigins {
+		allowed[o] = true
+	}
+	allowAll := len(allowedOrigins) == 0
+
 	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+		if allowAll {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		} else if origin != "" && allowed[origin] {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Vary", "Origin")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 

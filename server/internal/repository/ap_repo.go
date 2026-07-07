@@ -281,8 +281,8 @@ func (r *APRepo) VoidBill(id, companyID string) error {
 
 // ==================== BILL ITEMS ====================
 
-func (r *APRepo) GetBillItems(billID string) ([]models.BillItem, error) {
-	rows, err := r.db.Query("CALL sp_get_bill_items(?)", billID)
+func (r *APRepo) GetBillItems(billID, companyID string) ([]models.BillItem, error) {
+	rows, err := r.db.Query("CALL sp_get_bill_items(?,?)", billID, companyID)
 	if err != nil {
 		return nil, err
 	}
@@ -305,9 +305,9 @@ func (r *APRepo) GetBillItems(billID string) ([]models.BillItem, error) {
 	return result, nil
 }
 
-func (r *APRepo) AddBillItem(billID, accountID, description string, qty, unitPrice, amount, taxRate, taxAmount float64, sortOrder int) error {
-	rows, err := r.db.Query("CALL sp_add_bill_item(?,?,?,?,?,?,?,?,?)",
-		billID, accountID, description, qty, unitPrice, amount, taxRate, taxAmount, sortOrder)
+func (r *APRepo) AddBillItem(billID, companyID, accountID, description string, qty, unitPrice, amount, taxRate, taxAmount float64, sortOrder int) error {
+	rows, err := r.db.Query("CALL sp_add_bill_item(?,?,?,?,?,?,?,?,?,?)",
+		billID, companyID, accountID, description, qty, unitPrice, amount, taxRate, taxAmount, sortOrder)
 	if err != nil {
 		return err
 	}
@@ -315,8 +315,8 @@ func (r *APRepo) AddBillItem(billID, accountID, description string, qty, unitPri
 	return nil
 }
 
-func (r *APRepo) ClearBillItems(billID string) error {
-	rows, err := r.db.Query("CALL sp_clear_bill_items(?)", billID)
+func (r *APRepo) ClearBillItems(billID, companyID string) error {
+	rows, err := r.db.Query("CALL sp_clear_bill_items(?,?)", billID, companyID)
 	if err != nil {
 		return err
 	}
@@ -324,8 +324,8 @@ func (r *APRepo) ClearBillItems(billID string) error {
 	return nil
 }
 
-func (r *APRepo) UpdateBillTotals(billID string) error {
-	rows, err := r.db.Query("CALL sp_update_bill_totals(?)", billID)
+func (r *APRepo) UpdateBillTotals(billID, companyID string) error {
+	rows, err := r.db.Query("CALL sp_update_bill_totals(?,?)", billID, companyID)
 	if err != nil {
 		return err
 	}
@@ -346,8 +346,8 @@ func (r *APRepo) CreateBillPayment(p *models.BillPayment) error {
 	return nil
 }
 
-func (r *APRepo) GetBillPayments(billID string) ([]models.BillPayment, error) {
-	rows, err := r.db.Query("CALL sp_get_bill_payments(?)", billID)
+func (r *APRepo) GetBillPayments(billID, companyID string) ([]models.BillPayment, error) {
+	rows, err := r.db.Query("CALL sp_get_bill_payments(?,?)", billID, companyID)
 	if err != nil {
 		return nil, err
 	}
@@ -423,7 +423,33 @@ func (r *APRepo) GetAPSummary(companyID string) (*models.APSummary, error) {
 	defer rows.Close()
 	var s models.APSummary
 	if rows.Next() {
-		rows.Scan(&s.ActiveVendors, &s.OpenBills, &s.TotalOutstanding, &s.TotalOverdue, &s.OverdueCount, &s.PaidThisMonth)
+		if err := rows.Scan(&s.ActiveVendors, &s.OpenBills, &s.TotalOutstanding, &s.TotalOverdue, &s.OverdueCount, &s.PaidThisMonth); err != nil {
+			return nil, err
+		}
 	}
 	return &s, nil
+}
+
+// PayAPControl returns the Accounts Payable control account credited by a bill's
+// own journal, or "" if the bill was never GL-posted (so no payable to relieve).
+func (r *APRepo) PayAPControl(billID, companyID string) (string, error) {
+	rows, err := r.db.Query("CALL sp_pay_ap_control(?,?)", billID, companyID)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var acct sql.NullString
+	if rows.Next() {
+		rows.Scan(&acct)
+	}
+	return acct.String, nil
+}
+
+func (r *APRepo) SetBillPaymentJournal(paymentID, companyID, journalID string) error {
+	rows, err := r.db.Query("CALL sp_set_bill_payment_journal(?,?,?)", paymentID, companyID, journalID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	return nil
 }
