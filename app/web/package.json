@@ -1,7 +1,7 @@
 {
   "name": "lettersheets",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.6",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
@@ -11,13 +11,19 @@
     "preview": "vite preview",
     "electron:dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "electron:build": "vite build && electron-builder",
+    "electron:build:mac": "vite build && electron-builder --mac",
+    "electron:build:win": "vite build && electron-builder --win",
+    "electron:build:linux": "vite build && electron-builder --linux",
+    "electron:build:all": "vite build && electron-builder --mac --win --linux",
     "electron:preview": "vite build && cross-env NODE_ENV=production electron ."
   },
   "dependencies": {
+    "@fortawesome/fontawesome-free": "^7.3.0",
     "@fortawesome/fontawesome-svg-core": "^7.2.0",
     "@fortawesome/pro-light-svg-icons": "^7.2.0",
     "@fortawesome/react-fontawesome": "^3.2.0",
     "@noble/post-quantum": "^0.5.4",
+    "electron-updater": "^6.8.9",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.13.0"
@@ -48,17 +54,31 @@
       "dist/**/*",
       "electron/**/*"
     ],
+    "afterPack": "build/afterPack.cjs",
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "http://47.129.29.202:8080/updates/"
+      }
+    ],
     "mac": {
-      "target": "dmg",
-      "icon": "public/icon.icns"
+      "identity": null,
+      "target": [
+        {
+          "target": "dmg",
+          "arch": "universal"
+        },
+        {
+          "target": "zip",
+          "arch": "universal"
+        }
+      ]
     },
     "win": {
-      "target": "nsis",
-      "icon": "public/icon.ico"
+      "target": "nsis"
     },
     "linux": {
-      "target": "AppImage",
-      "icon": "public/icon.png"
+      "target": "AppImage"
     }
   }
 }

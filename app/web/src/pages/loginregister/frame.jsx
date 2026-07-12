@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import "@fortawesome/fontawesome-free/css/all.min.css"; // bundled locally (offline-safe) — replaces the old CDN link
 import Login from "./Login";
 import Register from "./Register";
 import ForgotPassword from "./ForgotPassword";
@@ -30,15 +31,6 @@ export default function Frame() {
     }, []);
 
     // Load Font Awesome CDN
-    useEffect(() => {
-        if (!document.querySelector('link[href*="font-awesome"]')) {
-            const link = document.createElement("link");
-            link.rel = "stylesheet";
-            link.href = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css";
-            document.head.appendChild(link);
-        }
-    }, []);
-
     const handleNavigate = (newView) => {
         setView(newView);
         if (newView in INITIAL_SLIDE) setSlide(INITIAL_SLIDE[newView]);

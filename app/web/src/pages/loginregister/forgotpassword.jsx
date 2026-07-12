@@ -1,4 +1,6 @@
 import { useState, useRef } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faEye, faEyeSlash } from "@fortawesome/pro-light-svg-icons";
 import { recoverKeys, dsaSign } from "../../utils/crypto";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
@@ -293,8 +295,8 @@ export default function ForgotPassword({ onNavigate }) {
                                     <label className="field-label">New password</label>
                                     <div className="input-wrap">
                                         <input className={`field-input${fieldErrors.password ? " field-error" : ""}`} type={showPassword ? "text" : "password"} placeholder="Minimum 8 characters" value={form.password} onChange={update("password")} style={{paddingRight:42}} />
-                                        <button className="eye-btn" onClick={() => setShowPassword(!showPassword)} type="button">
-                                            <i className={`fa-solid ${showPassword ? "fa-eye-slash" : "fa-eye"}`} style={{fontSize:16, color:"#999"}}></i>
+                                        <button className="eye-btn" onClick={() => setShowPassword(!showPassword)} type="button" title={showPassword ? "Hide password" : "Show password"} aria-label={showPassword ? "Hide password" : "Show password"}>
+                                            <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} style={{fontSize:16, color:"#999"}} />
                                         </button>
                                     </div>
                                 </div>
@@ -302,8 +304,8 @@ export default function ForgotPassword({ onNavigate }) {
                                     <label className="field-label">Confirm new password</label>
                                     <div className="input-wrap">
                                         <input className={`field-input${fieldErrors.confirm_password ? " field-error" : ""}`} type={showConfirm ? "text" : "password"} placeholder="Re-enter password" value={form.confirm_password} onChange={update("confirm_password")} style={{paddingRight:42}} />
-                                        <button className="eye-btn" onClick={() => setShowConfirm(!showConfirm)} type="button">
-                                            <i className={`fa-solid ${showConfirm ? "fa-eye-slash" : "fa-eye"}`} style={{fontSize:16, color:"#999"}}></i>
+                                        <button className="eye-btn" onClick={() => setShowConfirm(!showConfirm)} type="button" title={showConfirm ? "Hide password" : "Show password"} aria-label={showConfirm ? "Hide password" : "Show password"}>
+                                            <FontAwesomeIcon icon={showConfirm ? faEyeSlash : faEye} style={{fontSize:16, color:"#999"}} />
                                         </button>
                                     </div>
                                     {form.confirm_password && form.password === form.confirm_password && (

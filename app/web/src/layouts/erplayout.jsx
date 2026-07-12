@@ -10,6 +10,7 @@ import {
     faUser, faArrowLeft, faComment, faDesktop, faHouse, faInbox,
     faChevronDown, faTags,
 } from "@fortawesome/pro-light-svg-icons";
+import UpdateButton from "../pages/components/updatebutton";
 import { Permissions, SELF_SERVICE_MODULES } from "../utils/permissions";
 
 /* ================================================================
@@ -444,6 +445,7 @@ export default function ERPLayout() {
                             <div className="tb-av">{(user.username||"U")[0].toUpperCase()}</div>
                             <div className="tb-ui"><span className="tb-nm">{user.username||"User"}</span><span className="tb-rl">{company.role||"employee"}</span></div>
                         </div>
+                        <UpdateButton />
                         <button className="tb-bell" onClick={()=>{setRightOpen(!rightOpen);setMobileNotif(!mobileNotif)}}><I name="bell" size={17}/><span className="tb-dot"/></button>
                     </div>
                 </header>

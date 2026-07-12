@@ -3,6 +3,8 @@ package main
 import (
 	"log"
 	"net/http"
+	"os"
+	"strings"
 
 	"lettersheets/internal/api"
 	"lettersheets/internal/config"
@@ -60,8 +62,19 @@ func main() {
 
 	http.HandleFunc("/api/execute", cors(handler.Execute, cfg.Server.AllowedOrigins))
 
+	// Static host for the Electron auto-updater feed. electron-updater fetches
+	// latest*.yml + the installer artifacts from here. Files live in the dir named
+	// by LS_UPDATES_DIR (default "updates", relative to the server's working dir).
+	// Directory listing is disabled so the folder's contents aren't browsable.
+	updatesDir := os.Getenv("LS_UPDATES_DIR")
+	if updatesDir == "" {
+		updatesDir = "updates"
+	}
+	http.Handle("/updates/", noDirList(http.StripPrefix("/updates/", http.FileServer(http.Dir(updatesDir)))))
+
 	addr := cfg.Server.Addr()
 	log.Printf("Endpoint: POST %s/api/execute?action=<action>", addr)
+	log.Printf("Update feed: GET %s/updates/ (dir: %q)", addr, updatesDir)
 
 	if cfg.Server.TLSCertFile != "" && cfg.Server.TLSKeyFile != "" {
 		log.Printf("Server starting with TLS on %s", addr)
@@ -75,6 +88,18 @@ func main() {
 	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatal("Server failed: ", err)
 	}
+}
+
+// noDirList wraps a file handler so requests for a directory (path ending in
+// "/") return 404 instead of an auto-generated listing of the folder.
+func noDirList(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // cors reflects an allowed Origin. With no allowlist configured it falls back to

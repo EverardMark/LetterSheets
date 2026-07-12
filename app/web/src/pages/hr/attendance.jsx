@@ -41,6 +41,13 @@ function fmtHours(h) {
 function dateLabel(d) {
     return new Date(d + "T00:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
 }
+// Extract "HH:MM" (for a <input type="time">) from a stored clock value like
+// "2026-07-10T08:00:00Z" or "2026-07-10 08:00:00".
+function toTimeInput(dt) {
+    if (!dt) return "";
+    const m = String(dt).replace("T", " ").match(/\b(\d{2}):(\d{2})/);
+    return m ? `${m[1]}:${m[2]}` : "";
+}
 
 export default function AttendanceTab({ employees = [] }) {
     const company = JSON.parse(localStorage.getItem("ls_company") || "{}");
@@ -56,6 +63,7 @@ export default function AttendanceTab({ employees = [] }) {
     const [records, setRecords] = useState([]);
     const [loading, setLoading] = useState(false);
     const [panel, setPanel] = useState({ open: false, mode: "add", record: null });
+    const [bulkOpen, setBulkOpen] = useState(false);
     const [filter, setFilter] = useState("");
     const [debouncedFilter, setDebouncedFilter] = useState("");
     const [searching, setSearching] = useState(false);
@@ -141,6 +149,7 @@ export default function AttendanceTab({ employees = [] }) {
             </div>
             {!isEmployee && (
                 <div className="at-bar-right">
+                    <button className="at-btn-s" onClick={() => setBulkOpen(true)}><I name="clock" size={14} /> Bulk Time Entry</button>
                     <button className="at-btn-p" onClick={openAdd}><I name="plus" size={14} /> Add Record</button>
                 </div>
             )}
@@ -218,6 +227,16 @@ export default function AttendanceTab({ employees = [] }) {
             onDelete={deleteRecord}
             readOnly={isEmployee}
         />
+
+        {bulkOpen && (
+            <BulkAttendance
+                employees={shown}
+                existing={attendMap}
+                date={date}
+                onClose={() => setBulkOpen(false)}
+                onDone={() => { setBulkOpen(false); load(date); }}
+            />
+        )}
 
         <style>{attCSS}</style>
     </div>);
@@ -444,8 +463,208 @@ function AttendancePanel({ open, mode, record, employees, date, onClose, onSave,
 }
 
 /* ================================================================
+   BULK TIME ENTRY — grid of employees, one Save All
+================================================================ */
+function BulkAttendance({ employees, existing, date, onClose, onDone }) {
+    const [rows, setRows] = useState(() => {
+        const init = {};
+        employees.forEach(e => {
+            const rec = existing[e.id];
+            init[e.id] = {
+                timeIn: toTimeInput(rec?.clock_in),
+                timeOut: toTimeInput(rec?.clock_out),
+                status: rec?.status || "Present",
+            };
+        });
+        return init;
+    });
+    const [fill, setFill] = useState({ timeIn: "", timeOut: "", status: "Present" });
+    const [saving, setSaving] = useState(false);
+    const [selected, setSelected] = useState(() => new Set()); // which employees will be saved
+
+    // Editing a row auto-selects it (entering a time/status includes that person).
+    const setRow = (id, k, v) => {
+        setRows(prev => ({ ...prev, [id]: { ...prev[id], [k]: v } }));
+        setSelected(prev => { if (prev.has(id)) return prev; const n = new Set(prev); n.add(id); return n; });
+    };
+    const toggleSel = (id) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    const allSelected = employees.length > 0 && employees.every(e => selected.has(e.id));
+    const someSelected = employees.some(e => selected.has(e.id));
+    const toggleAll = () => setSelected(allSelected ? new Set() : new Set(employees.map(e => e.id)));
+
+    // Quick-fill applies to the selected rows (or all rows if none are selected), and selects them.
+    const applyToAll = () => {
+        const targets = selected.size ? employees.filter(e => selected.has(e.id)) : employees;
+        setRows(prev => {
+            const next = { ...prev };
+            targets.forEach(e => {
+                const r = next[e.id] || { timeIn: "", timeOut: "", status: "Present" };
+                next[e.id] = {
+                    timeIn: fill.timeIn || r.timeIn,
+                    timeOut: fill.timeOut || r.timeOut,
+                    status: fill.status || r.status,
+                };
+            });
+            return next;
+        });
+        setSelected(prev => { const n = new Set(prev); targets.forEach(e => n.add(e.id)); return n; });
+    };
+
+    const clearAll = () => {
+        setRows(prev => {
+            const next = { ...prev };
+            employees.forEach(e => { next[e.id] = { timeIn: "", timeOut: "", status: "Present" }; });
+            return next;
+        });
+        setSelected(new Set());
+    };
+
+    // Selected employees are saved. Times are optional — a selected row with no
+    // times records just the status (e.g. Absent / On Leave).
+    const toSave = employees.filter(e => selected.has(e.id));
+
+    const saveAll = async () => {
+        if (!toSave.length || saving) return;
+        setSaving(true);
+        const dt = (t) => t ? `${date} ${t}:00` : null; // "YYYY-MM-DD HH:MM:SS"
+        const records = toSave.map(e => ({
+            employee_id: e.id,
+            date,
+            clock_in: dt(rows[e.id].timeIn),
+            clock_out: dt(rows[e.id].timeOut),
+            status: rows[e.id].status || "Present",
+        }));
+        try {
+            // One request inserts/updates every selected record server-side.
+            const res = await api("create_attendance_batch", { records });
+            if (res?.failed) alert(`Saved ${res.saved} record${res.saved === 1 ? "" : "s"}. ${res.failed} failed — please retry.`);
+        } catch (err) {
+            setSaving(false);
+            alert("Bulk save failed: " + err.message);
+            return;
+        }
+        setSaving(false);
+        onDone();
+    };
+
+    return (
+        <Modal title="Bulk Time Entry" subtitle={dateLabel(date)} onClose={saving ? () => {} : onClose}>
+            <div className="bk-layout">
+                <div className="bk-fill">
+                    <span className="bk-fill-label">Quick fill:</span>
+                    <input type="time" className="bk-time" value={fill.timeIn} onChange={e => setFill(f => ({ ...f, timeIn: e.target.value }))} title="Time In" />
+                    <span className="bk-arrow">→</span>
+                    <input type="time" className="bk-time" value={fill.timeOut} onChange={e => setFill(f => ({ ...f, timeOut: e.target.value }))} title="Time Out" />
+                    <select className="bk-status" value={fill.status} onChange={e => setFill(f => ({ ...f, status: e.target.value }))}>
+                        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <button className="bk-apply" onClick={applyToAll} disabled={saving}>{selected.size ? "Apply to selected" : "Apply to all"}</button>
+                    <button className="bk-clear" onClick={clearAll} disabled={saving}>Clear</button>
+                </div>
+
+                <div className="bk-grid">
+                    <div className="bk-head">
+                        <div className="bk-chk"><input type="checkbox" checked={allSelected} ref={el => { if (el) el.indeterminate = someSelected && !allSelected; }} onChange={toggleAll} title="Select all" /></div>
+                        <div>Employee</div><div>Time In</div><div>Time Out</div><div>Status</div>
+                    </div>
+                    <div className="bk-body">
+                        {employees.length === 0 ? (
+                            <div className="bk-empty">No employees to show for this filter.</div>
+                        ) : employees.map(e => {
+                            const r = rows[e.id] || {};
+                            const on = selected.has(e.id);
+                            return (
+                                <div key={e.id} className={`bk-row ${on ? "bk-row-on" : ""}`}>
+                                    <div className="bk-chk"><input type="checkbox" checked={on} onChange={() => toggleSel(e.id)} disabled={saving} /></div>
+                                    <div className="bk-emp">
+                                        <span className="bk-av">{(e.first_name?.[0] || "") + (e.last_name?.[0] || "")}</span>
+                                        <div className="bk-emp-txt">
+                                            <span className="bk-emp-name">{e.first_name} {e.last_name}</span>
+                                            <span className="bk-emp-dept">{e.department || "—"}</span>
+                                        </div>
+                                    </div>
+                                    <input type="time" className="bk-time" value={r.timeIn || ""} onChange={ev => setRow(e.id, "timeIn", ev.target.value)} disabled={saving} />
+                                    <input type="time" className="bk-time" value={r.timeOut || ""} onChange={ev => setRow(e.id, "timeOut", ev.target.value)} disabled={saving} />
+                                    <select className="bk-status" value={r.status || "Present"} onChange={ev => setRow(e.id, "status", ev.target.value)} disabled={saving}>
+                                        {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                                    </select>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <div className="bk-foot">
+                    <span className="bk-count">
+                        {saving
+                            ? `Saving ${toSave.length} record${toSave.length === 1 ? "" : "s"}…`
+                            : `${selected.size} of ${employees.length} employee${employees.length === 1 ? "" : "s"} selected`}
+                    </span>
+                    <div className="bk-foot-btns">
+                        <button className="bk-cancel" onClick={onClose} disabled={saving}>Cancel</button>
+                        <button className="bk-save" onClick={saveAll} disabled={saving || !toSave.length}>
+                            {saving ? "Saving…" : `Save All (${toSave.length})`}
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <style>{bulkCSS}</style>
+        </Modal>
+    );
+}
+
+/* ================================================================
    STYLES
 ================================================================ */
+const bulkCSS = `
+  .bk-layout{display:flex;flex-direction:column;max-height:70vh;min-width:540px}
+  .bk-fill{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px;background:#f6faf9;border:1px solid #e3efec;border-radius:8px;margin-bottom:12px}
+  .bk-fill-label{font-size:12px;font-weight:600;color:#666}
+  .bk-arrow{color:#bbb;font-size:13px}
+  .bk-time{padding:7px 10px;border:1px solid #e0e0e0;border-radius:7px;font-family:'DM Sans',sans-serif;font-size:12.5px;color:#333;outline:none;background:#fff;box-sizing:border-box}
+  .bk-time:focus{border-color:#2d9e8b}
+  .bk-time:disabled{background:#fafbfa;color:#999}
+  .bk-status{padding:7px 8px;border:1px solid #e0e0e0;border-radius:7px;font-family:'DM Sans',sans-serif;font-size:12px;color:#555;background:#fff;outline:none;cursor:pointer;box-sizing:border-box}
+  .bk-status:focus{border-color:#2d9e8b}
+  .bk-status:disabled{background:#fafbfa;color:#999;cursor:default}
+  .bk-apply{padding:7px 12px;border:none;border-radius:7px;background:#2d9e8b;color:#fff;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer}
+  .bk-apply:hover:not(:disabled){background:#268a79}
+  .bk-clear{padding:7px 12px;border:1px solid #e0e0e0;border-radius:7px;background:#fff;color:#666;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;cursor:pointer}
+  .bk-clear:hover:not(:disabled){background:#f5f5f5}
+  .bk-apply:disabled,.bk-clear:disabled{opacity:.6;cursor:default}
+
+  .bk-grid{flex:1;overflow:hidden;display:flex;flex-direction:column;border:1px solid #eee;border-radius:8px;min-height:120px}
+  .bk-head,.bk-row{display:grid;grid-template-columns:26px minmax(0,1fr) 108px 108px 120px;gap:8px;align-items:center}
+  .bk-chk{display:flex;align-items:center;justify-content:center}
+  .bk-chk input{width:15px;height:15px;cursor:pointer;accent-color:#2d9e8b}
+  .bk-head{padding:9px 12px;background:#fafbfa;border-bottom:1px solid #eee;font-size:10.5px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:.03em}
+  .bk-body{overflow-y:auto;flex:1}
+  .bk-row{padding:8px 12px;border-bottom:1px solid #f5f5f5;transition:background .1s}
+  .bk-row-on{background:#f5fbf9}
+  .bk-emp{display:flex;align-items:center;gap:9px;min-width:0}
+  .bk-av{width:30px;height:30px;border-radius:7px;background:#edf8f5;color:#2d9e8b;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .bk-emp-txt{display:flex;flex-direction:column;min-width:0}
+  .bk-emp-name{font-size:12.5px;font-weight:600;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .bk-emp-dept{font-size:10.5px;color:#aaa}
+  .bk-row .bk-time,.bk-row .bk-status{width:100%}
+  .bk-empty{padding:30px;text-align:center;color:#999;font-size:13px}
+
+  .bk-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:14px;flex-wrap:wrap}
+  .bk-count{font-size:12px;color:#888;font-weight:500}
+  .bk-foot-btns{display:flex;gap:8px}
+  .bk-cancel{padding:9px 18px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#666;cursor:pointer}
+  .bk-cancel:hover:not(:disabled){background:#f5f5f5}
+  .bk-save{display:flex;align-items:center;gap:5px;padding:9px 22px;border:none;border-radius:8px;background:#2d9e8b;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer}
+  .bk-save:hover:not(:disabled){background:#268a79}
+  .bk-save:disabled,.bk-cancel:disabled{opacity:.6;cursor:default}
+
+  @media(max-width:600px){
+    .bk-layout{min-width:0}
+    .bk-head,.bk-row{grid-template-columns:22px minmax(0,1fr) 74px 74px 88px;gap:5px}
+    .bk-fill{gap:6px}
+  }
+`;
+
 const attCSS = `
   .at-wrap{display:flex;flex-direction:column;min-height:calc(100vh - 54px - 48px)}
   .at-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px}
@@ -460,6 +679,8 @@ const attCSS = `
   .at-dept-filter{padding:7px 12px;border:1px solid #e0e0e0;border-radius:8px;font-family:'DM Sans',sans-serif;font-size:12px;color:#555;background:#fff;outline:none}
   .at-btn-p{display:flex;align-items:center;gap:5px;padding:9px 18px;border:none;border-radius:8px;background:#2d9e8b;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s;white-space:nowrap}
   .at-btn-p:hover{background:#268a79}
+  .at-btn-s{display:flex;align-items:center;gap:5px;padding:9px 16px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#555;cursor:pointer;transition:all .15s;white-space:nowrap}
+  .at-btn-s:hover{background:#f5f5f5;border-color:#d0d3d8}
 
   .at-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:60px 20px;background:#fff;border-radius:10px}
   .at-empty-ic{width:56px;height:56px;border-radius:50%;background:#edf8f5;color:#2d9e8b;display:flex;align-items:center;justify-content:center;margin:0 auto 12px}

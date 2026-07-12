@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
     faUsers, faBriefcase, faPesoSign, faShieldHalved, faMoneyBill1,
-    faHeart, faFaceSmile, faEye, faMugSaucer, faTruck, faPhone,
+    faHeart, faFaceSmile, faEye, faEyeSlash, faMugSaucer, faTruck, faPhone,
     faBook, faHeartPulse, faStar, faCheck, faMagnifyingGlass, faPlus,
     faLock, faCircleQuestion, faRotate, faKey,
 } from "@fortawesome/pro-light-svg-icons";
@@ -506,6 +506,20 @@ const employeesListCSS = `
   @media(max-width:600px){.el-bar{flex-direction:column}.el-search-wrap{max-width:100%}}
 `;
 
+/* Check whether an email is already registered (so a login isn't created for an
+   email that already belongs to an account). Returns true if it exists. */
+async function checkEmailExists(email) {
+    const API_URL = (import.meta.env.VITE_API_BASE || "") + "/api/execute";
+    const session = localStorage.getItem("ls_session");
+    const res = await fetch(`${API_URL}?action=check_email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(session ? { Authorization: `Bearer ${session}` } : {}) },
+        body: JSON.stringify({ email }),
+    });
+    const json = await res.json();
+    return !!(json?.data?.exists);
+}
+
 /* ================================================================
    MAIN COMPONENT
    mode: "view" | "add" | "edit"
@@ -532,6 +546,15 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
     const [empPermissions, setEmpPermissions] = useState(null);
     const empPermissionsRef = useRef(null);
     const [savingPerms, setSavingPerms] = useState(false);
+    // Which sensitive fields are currently revealed in view mode (id -> bool)
+    const [revealed, setRevealed] = useState({});
+    const toggleReveal = (id) => setRevealed(prev => ({ ...prev, [id]: !prev[id] }));
+    // Draft autosave (Add/Edit): true when a cached draft is available to restore.
+    const [draftFound, setDraftFound] = useState(false);
+    const draftTimer = useRef(null);
+    const dirtyRef = useRef(false); // user has changed a field since load (edit-mode gate)
+    // Account-email availability check (warn before creating a duplicate login).
+    const [emailCheck, setEmailCheck] = useState({ value: "", taken: false, loading: false });
 
     // Populate form when employee changes
     useEffect(() => {
@@ -590,6 +613,8 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
         }
         setCurrentMode(mode);
         setErrors({});
+        setRevealed({});
+        dirtyRef.current = false;
         setActiveSection(sections[0].id);
         setCreateAccount(false);
         setAccountUsername("");
@@ -714,6 +739,14 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
             alert("Email, username, and password are required.");
             return;
         }
+        // Final email check at submit (guards against a stale/in-flight input check).
+        try {
+            if (await checkEmailExists(linkEmail)) {
+                setEmailCheck({ value: linkEmail, taken: true, loading: false });
+                alert("This email is already registered. Use a different email for the employee's login.");
+                return;
+            }
+        } catch { /* check endpoint unavailable — server still rejects reuse */ }
         setSaving(true);
         try {
             const accountSalt = crypto.randomUUID();
@@ -770,13 +803,148 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
         setSaving(false);
     };
 
+    /* ── Draft autosave (Add + Edit) ────────────────────────────────────────
+       Recovers an accidentally-closed employee form. Cached in localStorage,
+       scoped per company AND per record (an "Add" draft lives under "new";
+       each edited employee gets its own key). Sensitive fields are ENCRYPTED
+       with the company key (same as a real save) so no plaintext PII sits in
+       the cache; non-sensitive fields (name, dept, dates) are stored plainly.
+       NOTE: these hooks must stay ABOVE the `if (!open) return null` early
+       return — placing hooks after a conditional return breaks the Rules of
+       Hooks and blanks the whole app when the modal opens. */
+    const draftKey = () => {
+        const cid = JSON.parse(localStorage.getItem("ls_company") || "{}").id || "_";
+        return `ls_emp_draft_${cid}_${employee?.id || "new"}`;
+    };
+
+    const clearDraft = () => {
+        if (draftTimer.current) { clearTimeout(draftTimer.current); draftTimer.current = null; }
+        try { localStorage.removeItem(draftKey()); } catch { /* ignore */ }
+    };
+
+    const saveDraft = async (f) => {
+        const fields = sections.flatMap(s => s.fields);
+        const plain = {}, enc = {};
+        let companyKey = null;
+        const keyB64 = sessionStorage.getItem("ls_company_key");
+        if (keyB64) {
+            try {
+                const raw = Uint8Array.from(atob(keyB64), c => c.charCodeAt(0));
+                companyKey = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt"]);
+            } catch { companyKey = null; }
+        }
+        for (const fld of fields) {
+            const val = f[fld.id];
+            if (val === undefined || val === null || val === "") continue;
+            if (fld.sensitive) {
+                if (!companyKey) continue; // no key → never cache plaintext PII
+                const iv = crypto.getRandomValues(new Uint8Array(12));
+                const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, companyKey, new TextEncoder().encode(val.toString()));
+                enc[fld.id] = {
+                    iv: btoa(String.fromCharCode(...iv)),
+                    data: btoa(String.fromCharCode(...new Uint8Array(ct))),
+                };
+            } else {
+                plain[fld.id] = val;
+            }
+        }
+        // Only keep a draft once the user has entered something beyond the defaults.
+        const DEFAULTS = ["status", "employment_type", "phone_country_code"];
+        const meaningful = Object.keys(plain).some(k => !DEFAULTS.includes(k)) || Object.keys(enc).length > 0;
+        if (!meaningful) { clearDraft(); return; }
+        if (f.phone_country_code) plain.phone_country_code = f.phone_country_code;
+        if (f.enrolled_benefits) plain.enrolled_benefits = f.enrolled_benefits;
+        try {
+            localStorage.setItem(draftKey(), JSON.stringify({ v: 1, savedAt: Date.now(), plain, enc }));
+        } catch { /* quota / disabled storage — ignore */ }
+    };
+
+    const restoreDraft = async () => {
+        let draft = null;
+        try { draft = JSON.parse(localStorage.getItem(draftKey()) || "null"); } catch { draft = null; }
+        if (!draft) { setDraftFound(false); return; }
+        const restored = { ...draft.plain };
+        const keyB64 = sessionStorage.getItem("ls_company_key");
+        if (keyB64 && draft.enc) {
+            try {
+                const raw = Uint8Array.from(atob(keyB64), c => c.charCodeAt(0));
+                const companyKey = await crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["decrypt"]);
+                for (const [id, e] of Object.entries(draft.enc)) {
+                    try {
+                        const iv = Uint8Array.from(atob(e.iv), c => c.charCodeAt(0));
+                        const data = Uint8Array.from(atob(e.data), c => c.charCodeAt(0));
+                        const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, companyKey, data);
+                        restored[id] = new TextDecoder().decode(pt);
+                    } catch { /* skip a field that won't decrypt */ }
+                }
+            } catch { /* no/invalid key → restore plain fields only */ }
+        }
+        setForm(prev => ({ ...prev, ...restored }));
+        dirtyRef.current = true; // restored content is a change worth keeping
+        setDraftFound(false);
+    };
+
+    // Save a draft, but for an EDIT only if the user actually changed something
+    // (a pristine, just-opened edit form shouldn't spawn a "restore?" prompt).
+    const maybeSaveDraft = () => {
+        if (employee && !dirtyRef.current) return;
+        saveDraft(form); // fire-and-forget; the localStorage write finishes async
+    };
+
+    const closeAddWithDraft = () => {
+        if (draftTimer.current) { clearTimeout(draftTimer.current); draftTimer.current = null; }
+        maybeSaveDraft();
+        onClose();
+    };
+
+    // Flag an existing draft when an Add or Edit form opens.
+    useEffect(() => {
+        if (open && (mode === "add" || mode === "edit")) {
+            let has = false;
+            try { has = !!localStorage.getItem(draftKey()); } catch { has = false; }
+            setDraftFound(has);
+        } else {
+            setDraftFound(false);
+        }
+    }, [open, mode]);
+
+    // Debounced autosave while adding/editing (also covers a hard close / crash).
+    // Paused while the restore banner is up so it can't wipe the pending draft.
+    useEffect(() => {
+        if (!open || (currentMode !== "add" && currentMode !== "edit") || draftFound) return;
+        if (draftTimer.current) clearTimeout(draftTimer.current);
+        draftTimer.current = setTimeout(() => { maybeSaveDraft(); }, 1200);
+        return () => { if (draftTimer.current) clearTimeout(draftTimer.current); };
+    }, [form, open, currentMode, draftFound]);
+
+    // Debounced check of the account email being entered — the Add-mode
+    // create-account form (form.email) or the "Create Account" dialog (linkEmail).
+    useEffect(() => {
+        const email = showLinkAccount ? linkEmail : (currentMode === "add" && createAccount ? form.email : "");
+        const valid = email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        if (!valid) { setEmailCheck({ value: email || "", taken: false, loading: false }); return; }
+        setEmailCheck(c => ({ ...c, loading: true }));
+        const t = setTimeout(async () => {
+            try {
+                const taken = await checkEmailExists(email);
+                setEmailCheck({ value: email, taken, loading: false });
+            } catch { setEmailCheck({ value: email, taken: false, loading: false }); }
+        }, 400);
+        return () => clearTimeout(t);
+    }, [showLinkAccount, linkEmail, createAccount, form.email, currentMode]);
+
     if (!open) return null;
 
     const isView = currentMode === "view";
     const isEdit = currentMode === "edit";
     const isAdd = currentMode === "add";
 
+    // Is the account email currently entered already registered?
+    const activeAccountEmail = showLinkAccount ? linkEmail : form.email;
+    const accountEmailTaken = emailCheck.taken && !!emailCheck.value && emailCheck.value === activeAccountEmail;
+
     const set = (id, val) => {
+        dirtyRef.current = true; // a real user edit (loads use setForm directly, not this)
         setForm(prev => ({ ...prev, [id]: val }));
         if (errors[id]) setErrors(prev => { const n = { ...prev }; delete n[id]; return n; });
     };
@@ -800,6 +968,18 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                 if (sec.fields.some(f => errors[f.id])) { setActiveSection(sec.id); break; }
             }
             return;
+        }
+        // When creating a login account, re-check the email at submit (guards
+        // against a stale/in-flight input check).
+        if (isAdd && createAccount && form.email) {
+            try {
+                if (await checkEmailExists(form.email)) {
+                    setEmailCheck({ value: form.email, taken: true, loading: false });
+                    setActiveSection(sections[sections.length - 1].id); // jump to the account section
+                    alert("This email is already registered. Use a different email for the login.");
+                    return;
+                }
+            } catch { /* check endpoint unavailable — server still rejects reuse */ }
         }
         setSaving(true);
 
@@ -903,11 +1083,13 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                     // Save permissions if changed
                     const empId = form.id || employee?.id;
                     const permsToSave = empPermissionsRef.current;
-                    alert("handleSave perms check: empId=" + empId + " perms=" + JSON.stringify(permsToSave));
                     if (empId && permsToSave && Object.keys(permsToSave).length > 0) {
                         await handleSavePermissions(permsToSave);
                     }
-                    onSave?.(json.data || payload);
+                    // create_employee returns { employee: {...} }; update_employee returns the flat record.
+                    onSave?.(json.data?.employee || json.data || payload);
+                    clearDraft();            // add ("new") or this employee's edit draft
+                    dirtyRef.current = false;
                     if (isAdd) setForm({ status: "Active", employment_type: "Regular" });
                     onClose();
                 }
@@ -923,8 +1105,18 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
         }
     };
 
-    const switchToEdit = () => setCurrentMode("edit");
-    const switchToView = () => { setCurrentMode("view"); setErrors({}); };
+    const switchToEdit = () => {
+        setCurrentMode("edit");
+        dirtyRef.current = false; // fresh edit session — nothing changed yet
+        let has = false;
+        try { has = !!localStorage.getItem(draftKey()); } catch { has = false; }
+        setDraftFound(has); // show the restore banner if this employee has a draft
+    };
+    // Leaving edit (Cancel / ✕ / Esc) saves a draft of any unsaved changes first.
+    const switchToView = () => {
+        maybeSaveDraft();
+        setCurrentMode("view"); setErrors({}); setRevealed({}); dirtyRef.current = false;
+    };
 
     // Compute display name and tenure
     const displayName = form.first_name && form.last_name
@@ -978,6 +1170,23 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
             )}
         </div>
     );
+
+    // ── Sensitive-field masking (view mode) ──
+    const MASK = "••••••••";
+    // In view mode, a sensitive field is masked until the user reveals it.
+    const isMasked = (f) => isView && f.sensitive && !revealed[f.id] && !!form[f.id];
+    // 👁 toggle shown for sensitive fields that have a value, in view mode only.
+    const revealBtn = (f) => (isView && f.sensitive && !!form[f.id]) ? (
+        <button
+            type="button"
+            className="ep-reveal"
+            onClick={() => toggleReveal(f.id)}
+            title={revealed[f.id] ? "Hide" : "Reveal"}
+            aria-label={revealed[f.id] ? "Hide value" : "Reveal value"}
+        >
+            <FontAwesomeIcon icon={revealed[f.id] ? faEyeSlash : faEye} style={{fontSize:13}} />
+        </button>
+    ) : null;
 
     const renderSectionBody = () => {
         if (activeSection === "permissions" && hasAccount) {
@@ -1065,21 +1274,27 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                                     </select>
                                 );
                             })() : f.type === "textarea" ? (
-                                <textarea
-                                    className={`ep-input ep-textarea ${errors[f.id] ? "ep-input-err" : ""}`}
-                                    value={form[f.id] || ""}
-                                    onChange={e => set(f.id, e.target.value)}
-                                    placeholder={f.placeholder || ""}
-                                    rows={2}
-                                    disabled={isView}
-                                />
+                                <div className="ep-input-wrap">
+                                    <textarea
+                                        className={`ep-input ep-textarea ${f.sensitive ? "ep-input-reveal" : ""} ${errors[f.id] ? "ep-input-err" : ""}`}
+                                        value={isMasked(f) ? MASK : (form[f.id] || "")}
+                                        onChange={e => set(f.id, e.target.value)}
+                                        placeholder={f.placeholder || ""}
+                                        rows={2}
+                                        disabled={isView}
+                                    />
+                                    {revealBtn(f)}
+                                </div>
                             ) : f.id === "phone" ? (
                                 isView ? (
-                                    <input
-                                        className="ep-input"
-                                        value={form[f.id] ? displayPhone(form[f.id], form.phone_country_code) : "—"}
-                                        disabled
-                                    />
+                                    <div className="ep-input-wrap">
+                                        <input
+                                            className="ep-input ep-input-reveal"
+                                            value={isMasked(f) ? MASK : (form[f.id] ? displayPhone(form[f.id], form.phone_country_code) : "—")}
+                                            disabled
+                                        />
+                                        {revealBtn(f)}
+                                    </div>
                                 ) : (
                                     <PhoneInput
                                         value={form.phone || ""}
@@ -1093,9 +1308,10 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                                 <div className="ep-input-wrap">
                                     {f.prefix && !isView && <span className="ep-prefix">{f.prefix}</span>}
                                     <input
-                                        className={`ep-input ${f.prefix && !isView ? "ep-input-prefixed" : ""} ${errors[f.id] ? "ep-input-err" : ""}`}
+                                        className={`ep-input ${f.prefix && !isView ? "ep-input-prefixed" : ""} ${isView && f.sensitive ? "ep-input-reveal" : ""} ${errors[f.id] ? "ep-input-err" : ""}`}
                                         type={isView ? "text" : f.type}
                                         value={
+                                            isMasked(f) ? MASK :
                                             isView
                                                 ? (f.prefix && form[f.id] ? `${f.prefix}${Number(form[f.id]).toLocaleString()}` :
                                                     f.type === "date" && form[f.id] ? new Date(form[f.id]).toLocaleDateString("en-PH", {year:"numeric",month:"long",day:"numeric"}) :
@@ -1106,6 +1322,7 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                                         placeholder={f.placeholder || ""}
                                         disabled={isView}
                                     />
+                                    {revealBtn(f)}
                                 </div>
                             )}
                             {errors[f.id] && <span className="ep-err">{errors[f.id]}</span>}
@@ -1151,8 +1368,10 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                             <div className="ep-fields">
                                 <div className="ep-field">
                                     <label className="ep-label">Account Email<span className="ep-req"/></label>
-                                    <input className="ep-input" type="email" value={form.email || ""} onChange={e => set("email", e.target.value)} placeholder="employee@company.com" />
-                                    <span style={{fontSize:11, color:"#999", marginTop:3}}>Uses the email from Personal Information</span>
+                                    <input className={`ep-input ${accountEmailTaken ? "ep-input-err" : ""}`} type="email" value={form.email || ""} onChange={e => set("email", e.target.value)} placeholder="employee@company.com" />
+                                    {accountEmailTaken
+                                        ? <span style={{fontSize:11, color:"#ef4444", marginTop:3, fontWeight:500}}>This email is already registered — use a different one for the login.</span>
+                                        : <span style={{fontSize:11, color:"#999", marginTop:3}}>{emailCheck.loading ? "Checking availability…" : "Uses the email from Personal Information"}</span>}
                                 </div>
                                 <div className="ep-field">
                                     <label className="ep-label">Username<span className="ep-req"/></label>
@@ -1182,7 +1401,7 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
             <Modal
                 title={isAdd ? "Add Employee" : "Edit Employee"}
                 subtitle={<span style={{userSelect:"none"}}>{sensitiveCount} fields will be end-to-end encrypted <FontAwesomeIcon icon={faCircleQuestion} style={{fontSize:12,cursor:"pointer",opacity:0.6,color:"#f59e0b"}} title="Sensitive fields are encrypted before leaving your device. Only authorized personnel with the decryption key can view them." /></span>}
-                onClose={isEdit ? switchToView : onClose}
+                onClose={isEdit ? switchToView : closeAddWithDraft}
             >
                 <div className="ep-modal-layout">
                     <div className="ep-modal-tabs-bar">
@@ -1190,6 +1409,18 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                     </div>
 
                     <div className="ep-modal-scroll">
+                        {(isAdd || isEdit) && draftFound && (
+                            <div className="ep-draft">
+                                <div className="ep-draft-msg">
+                                    <FontAwesomeIcon icon={faRotate} style={{fontSize:13}} />
+                                    <span>{isEdit ? "You have unsaved changes from before. Restore them?" : "You have an unsaved draft. Restore your previous entries?"}</span>
+                                </div>
+                                <div className="ep-draft-acts">
+                                    <button className="ep-draft-restore" onClick={restoreDraft}>Restore</button>
+                                    <button className="ep-draft-discard" onClick={() => { clearDraft(); setDraftFound(false); }}>Discard</button>
+                                </div>
+                            </div>
+                        )}
                         {renderSectionBody()}
                     </div>
 
@@ -1199,8 +1430,8 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                             <span className="ep-legend-item"><span className="ep-legend-dot ep-legend-dot-enc"></span> Encrypted</span>
                         </div>
                         <div className="ep-foot-btns">
-                            <button className="ep-btn-cancel" onClick={isEdit ? switchToView : onClose}>Cancel</button>
-                            <button className="ep-btn-primary" onClick={handleSave} disabled={saving}>
+                            <button className="ep-btn-cancel" onClick={isEdit ? switchToView : closeAddWithDraft}>Cancel</button>
+                            <button className="ep-btn-primary" onClick={handleSave} disabled={saving || (isAdd && createAccount && accountEmailTaken)}>
                                 {saving ? "Encrypting..." : isAdd ? (createAccount ? "Save & Create Account" : "Save Employee") : "Save Changes"}
                             </button>
                         </div>
@@ -1262,7 +1493,10 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                         <div style={{display:"flex", flexDirection:"column", gap:14}}>
                             <div>
                                 <label className="ep-label">Email<span className="ep-req"/></label>
-                                <input className="ep-input" type="email" value={linkEmail} onChange={e => setLinkEmail(e.target.value)} placeholder="employee@company.com" />
+                                <input className={`ep-input ${accountEmailTaken ? "ep-input-err" : ""}`} type="email" value={linkEmail} onChange={e => setLinkEmail(e.target.value)} placeholder="employee@company.com" />
+                                {accountEmailTaken
+                                    ? <span style={{fontSize:11, color:"#ef4444", marginTop:3, display:"block", fontWeight:500}}>This email is already registered — use a different one for the employee's login.</span>
+                                    : emailCheck.loading && <span style={{fontSize:11, color:"#999", marginTop:3, display:"block"}}>Checking availability…</span>}
                             </div>
                             <div>
                                 <label className="ep-label">Username<span className="ep-req"/></label>
@@ -1276,7 +1510,7 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                         </div>
                         <div style={{display:"flex", gap:8, marginTop:20, justifyContent:"flex-end"}}>
                             <button className="ep-btn-cancel" onClick={() => setShowLinkAccount(false)}>Cancel</button>
-                            <button className="ep-btn-primary" onClick={handleCreateAccountForExisting} disabled={saving}>
+                            <button className="ep-btn-primary" onClick={handleCreateAccountForExisting} disabled={saving || accountEmailTaken}>
                                 {saving ? "Creating..." : "Create Account"}
                             </button>
                         </div>
@@ -1369,6 +1603,12 @@ const panelCSS = `
   .ep-textarea{resize:vertical;min-height:60px}
   .ep-err{font-size:11px;color:#ef4444;margin-top:2px}
 
+  /* Click-to-reveal toggle for sensitive fields (view mode) */
+  .ep-input-reveal{padding-right:38px}
+  .ep-reveal{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border:none;border-radius:6px;background:transparent;color:#999;cursor:pointer;transition:color .15s,background .15s}
+  .ep-reveal:hover{color:#2d9e8b;background:rgba(45,158,139,.08)}
+  .ep-textarea ~ .ep-reveal{top:8px;transform:none}
+
   select.ep-input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;cursor:pointer}
   select.ep-input:disabled{cursor:default}
 
@@ -1430,6 +1670,15 @@ const panelCSS = `
   .ep-modal-tabs-bar{flex-shrink:0}
   .ep-modal-scroll{flex:1;overflow-y:auto;padding:16px 0 0}
   .ep-modal-foot{flex-shrink:0;padding:16px 0 0;margin-top:auto}
+
+  /* Draft-restore banner (Add mode) */
+  .ep-draft{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;padding:10px 14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px}
+  .ep-draft-msg{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:500;color:#92400e}
+  .ep-draft-acts{display:flex;gap:8px;flex-shrink:0}
+  .ep-draft-restore{padding:6px 14px;border:none;border-radius:7px;background:#2d9e8b;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;color:#fff;cursor:pointer}
+  .ep-draft-restore:hover{background:#268a79}
+  .ep-draft-discard{padding:6px 12px;border:1px solid #fde68a;border-radius:7px;background:#fff;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:500;color:#92400e;cursor:pointer}
+  .ep-draft-discard:hover{background:#fef3c7}
 
   /* Legend */
   .ep-legend{display:flex;align-items:center;gap:14px;margin-bottom:12px}

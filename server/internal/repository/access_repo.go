@@ -111,6 +111,21 @@ func (r *AccessRepo) UpdatePermissions(ctx context.Context, userID, companyID st
 	return rows, nil
 }
 
+// SetRole forces a user's role for a company. Used to guarantee an account that
+// is linked to an employee is "employee" — even when an existing (possibly
+// elevated) account is reused, an employee login must never be superadmin.
+func (r *AccessRepo) SetRole(ctx context.Context, userID, companyID, role string) (int64, error) {
+	result, err := r.db.ExecContext(ctx,
+		"UPDATE user_company_access SET role = ? WHERE user_id = ? AND company_id = ? AND is_active = 1",
+		role, userID, companyID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	rows, _ := result.RowsAffected()
+	return rows, nil
+}
+
 func (r *AccessRepo) GetPermissions(ctx context.Context, userID, companyID string) (json.RawMessage, error) {
 	var perms sql.NullString
 	err := r.db.QueryRowContext(ctx,

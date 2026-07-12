@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faEye, faEyeSlash } from "@fortawesome/pro-light-svg-icons";
 import { I } from "../../layouts/ERPLayout";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
@@ -17,6 +19,17 @@ async function api(action, body = {}) {
 }
 
 const peso = (v) => "₱" + Number(v || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// Mask a currency value behind dots when the page-level "hide amounts" toggle is on.
+const money = (v, hide) => hide ? "••••••" : peso(v);
+
+// Page-level toggle to hide/show all payroll amounts (screen-share privacy).
+function AmountsToggle({ hidden, onToggle }) {
+    return (
+        <button className="pr-btn-s" onClick={onToggle} title={hidden ? "Show amounts" : "Hide amounts"}>
+            <FontAwesomeIcon icon={hidden ? faEyeSlash : faEye} style={{ fontSize: 14 }} /> {hidden ? "Show" : "Hide"} amounts
+        </button>
+    );
+}
 
 /* ================================================================
    PH STATUTORY TABLES (2024)
@@ -140,6 +153,7 @@ export default function PayrollTab({ employees = [] }) {
     const [items, setItems] = useState([]);
     const [computing, setComputing] = useState(false);
     const [loading, setLoading] = useState(false);
+    const [hideAmounts, setHideAmounts] = useState(false);
 
     const loadRuns = useCallback(async () => {
         try { const d = await api("get_payroll_runs"); setRuns(d.runs || []); } catch {}
@@ -336,6 +350,8 @@ export default function PayrollTab({ employees = [] }) {
         <RunDetail
             run={activeRun} items={items} settings={settings}
             computing={computing}
+            hideAmounts={hideAmounts}
+            onToggleAmounts={() => setHideAmounts(v => !v)}
             onCompute={computePayroll}
             onApprove={approveRun}
             onDelete={() => deleteRun(activeRun.id)}
@@ -349,12 +365,13 @@ export default function PayrollTab({ employees = [] }) {
     return (<>
         <div className="pr-bar">
             <span className="pr-bar-count">{visibleRuns.length} payroll runs</span>
-            {!isEmployee && (
-                <div className="pr-bar-right">
+            <div className="pr-bar-right">
+                <AmountsToggle hidden={hideAmounts} onToggle={() => setHideAmounts(v => !v)} />
+                {!isEmployee && (<>
                     <button className="pr-btn-s" onClick={() => setView("settings")}><I name="settings" size={14}/> Settings</button>
                     <NewRunButton settings={settings} onCreate={createRun} />
-                </div>
-            )}
+                </>)}
+            </div>
         </div>
 
         {visibleRuns.length === 0 ? (
@@ -374,9 +391,9 @@ export default function PayrollTab({ employees = [] }) {
                             <tr key={r.id} className="pr-row" onClick={() => openRun(r)}>
                                 <td className="pr-td-period">{fmtPeriod(r.period_start, r.period_end)}</td>
                                 <td className="pr-td-count">{r.employee_count}</td>
-                                <td className="pr-td-amt">{peso(r.total_gross)}</td>
-                                <td className="pr-td-amt">{peso(r.total_deductions)}</td>
-                                <td className="pr-td-amt pr-td-net">{peso(r.total_net)}</td>
+                                <td className="pr-td-amt">{money(r.total_gross, hideAmounts)}</td>
+                                <td className="pr-td-amt">{money(r.total_deductions, hideAmounts)}</td>
+                                <td className="pr-td-amt pr-td-net">{money(r.total_net, hideAmounts)}</td>
                                 <td><span className="pr-badge" style={{background:sc+"18",color:sc}}>{r.status}</span></td>
                                 <td><span style={{color:"#6366f1",fontWeight:600,fontSize:12}}>View →</span></td>
                             </tr>
@@ -444,9 +461,10 @@ function NewRunButton({ settings, onCreate }) {
 /* ================================================================
    RUN DETAIL
 ================================================================ */
-function RunDetail({ run, items, settings, computing, onCompute, onApprove, onDelete, onBack }) {
+function RunDetail({ run, items, settings, computing, hideAmounts, onToggleAmounts, onCompute, onApprove, onDelete, onBack }) {
     const isDraft = run.status === "Draft";
     const sc = run.status === "Approved" ? "#22c55e" : run.status === "Paid" ? "#0ea5e9" : "#f59e0b";
+    const m = (v) => money(v, hideAmounts);
 
     return (<>
         <div className="pr-run-head">
@@ -456,6 +474,7 @@ function RunDetail({ run, items, settings, computing, onCompute, onApprove, onDe
                 <span className="pr-badge" style={{background:sc+"18",color:sc}}>{run.status}</span>
             </div>
             <div className="pr-run-actions">
+                <AmountsToggle hidden={hideAmounts} onToggle={onToggleAmounts} />
                 {isDraft && <button className="pr-btn-compute" onClick={onCompute} disabled={computing}>{computing ? "Computing..." : "⚡ Compute Payroll"}</button>}
                 {isDraft && items.length > 0 && <button className="lv-foot-approve" onClick={onApprove}><I name="check" size={13}/> Approve</button>}
                 {isDraft && <button className="bp-btn-danger" onClick={onDelete}>Delete</button>}
@@ -465,9 +484,9 @@ function RunDetail({ run, items, settings, computing, onCompute, onApprove, onDe
         <div className="pr-summary">
             {[
                 { label: "Employees", value: items.length, color: "#6366f1" },
-                { label: "Gross Pay", value: peso(run.total_gross), color: "#22c55e" },
-                { label: "Deductions", value: peso(run.total_deductions), color: "#ef4444" },
-                { label: "Net Pay", value: peso(run.total_net), color: "#0ea5e9" },
+                { label: "Gross Pay", value: m(run.total_gross), color: "#22c55e" },
+                { label: "Deductions", value: m(run.total_deductions), color: "#ef4444" },
+                { label: "Net Pay", value: m(run.total_net), color: "#0ea5e9" },
             ].map((s,i) => (
                 <div key={i} className="pr-sum-card">
                     <div className="pr-sum-l">{s.label}</div>
@@ -508,28 +527,28 @@ function RunDetail({ run, items, settings, computing, onCompute, onApprove, onDe
                                     <div><div className="pr-emp-name">{it.first_name} {it.last_name}</div><div className="pr-emp-dept">{it.department}</div></div>
                                 </div>
                             </td>
-                            <td className="pr-r">{peso(it.basic_pay)}</td>
-                            <td className="pr-r">{it.ot_pay > 0 ? peso(it.ot_pay) : "—"}</td>
-                            <td className="pr-r pr-bold">{peso(it.gross_pay)}</td>
-                            <td className="pr-r pr-ded">{peso(it.sss_ee)}</td>
-                            <td className="pr-r pr-ded">{peso(it.philhealth_ee)}</td>
-                            <td className="pr-r pr-ded">{peso(it.pagibig_ee)}</td>
-                            <td className="pr-r pr-ded">{peso(it.withholding_tax)}</td>
-                            <td className="pr-r pr-ded pr-bold">{peso(it.total_deductions)}</td>
-                            <td className="pr-r pr-net">{peso(it.net_pay)}</td>
+                            <td className="pr-r">{m(it.basic_pay)}</td>
+                            <td className="pr-r">{it.ot_pay > 0 ? m(it.ot_pay) : "—"}</td>
+                            <td className="pr-r pr-bold">{m(it.gross_pay)}</td>
+                            <td className="pr-r pr-ded">{m(it.sss_ee)}</td>
+                            <td className="pr-r pr-ded">{m(it.philhealth_ee)}</td>
+                            <td className="pr-r pr-ded">{m(it.pagibig_ee)}</td>
+                            <td className="pr-r pr-ded">{m(it.withholding_tax)}</td>
+                            <td className="pr-r pr-ded pr-bold">{m(it.total_deductions)}</td>
+                            <td className="pr-r pr-net">{m(it.net_pay)}</td>
                         </tr>
                     ))}
                     <tr className="pr-total-row">
                         <td style={{fontWeight:700}}>TOTAL</td>
-                        <td className="pr-r pr-bold">{peso(items.reduce((s,i)=>s+i.basic_pay,0))}</td>
-                        <td className="pr-r">{peso(items.reduce((s,i)=>s+i.ot_pay,0))}</td>
-                        <td className="pr-r pr-bold">{peso(items.reduce((s,i)=>s+i.gross_pay,0))}</td>
-                        <td className="pr-r pr-ded">{peso(items.reduce((s,i)=>s+i.sss_ee,0))}</td>
-                        <td className="pr-r pr-ded">{peso(items.reduce((s,i)=>s+i.philhealth_ee,0))}</td>
-                        <td className="pr-r pr-ded">{peso(items.reduce((s,i)=>s+i.pagibig_ee,0))}</td>
-                        <td className="pr-r pr-ded">{peso(items.reduce((s,i)=>s+i.withholding_tax,0))}</td>
-                        <td className="pr-r pr-ded pr-bold">{peso(items.reduce((s,i)=>s+i.total_deductions,0))}</td>
-                        <td className="pr-r pr-net pr-bold">{peso(items.reduce((s,i)=>s+i.net_pay,0))}</td>
+                        <td className="pr-r pr-bold">{m(items.reduce((s,i)=>s+i.basic_pay,0))}</td>
+                        <td className="pr-r">{m(items.reduce((s,i)=>s+i.ot_pay,0))}</td>
+                        <td className="pr-r pr-bold">{m(items.reduce((s,i)=>s+i.gross_pay,0))}</td>
+                        <td className="pr-r pr-ded">{m(items.reduce((s,i)=>s+i.sss_ee,0))}</td>
+                        <td className="pr-r pr-ded">{m(items.reduce((s,i)=>s+i.philhealth_ee,0))}</td>
+                        <td className="pr-r pr-ded">{m(items.reduce((s,i)=>s+i.pagibig_ee,0))}</td>
+                        <td className="pr-r pr-ded">{m(items.reduce((s,i)=>s+i.withholding_tax,0))}</td>
+                        <td className="pr-r pr-ded pr-bold">{m(items.reduce((s,i)=>s+i.total_deductions,0))}</td>
+                        <td className="pr-r pr-net pr-bold">{m(items.reduce((s,i)=>s+i.net_pay,0))}</td>
                     </tr>
                     </tbody>
                 </table>

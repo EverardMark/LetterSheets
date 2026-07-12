@@ -1,6 +1,18 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// ─── Development API switch ──────────────────────────────────────────────
+// Flip DEV_MODE to retarget EVERY API request across the whole app:
+//   true  → local server   (LOCAL_API)
+//   false → remote server  (REMOTE_API)
+// The value is baked in at build/dev time, so restart Vite (`npm run dev`)
+// or rebuild (`npm run build`) after changing it.
+const DEV_MODE = false
+const LOCAL_API = 'http://localhost:8080'
+const REMOTE_API = 'http://47.129.29.202:8080'
+const API_BASE = DEV_MODE ? LOCAL_API : REMOTE_API
+// ─────────────────────────────────────────────────────────────────────────
+
 // Inject a Content-Security-Policy into the PRODUCTION build only (so Vite's dev
 // HMR, which needs inline/eval scripts, keeps working). script-src is locked to
 // 'self'; the web-font CDNs the app injects at runtime are allowlisted.
@@ -30,6 +42,11 @@ function cspPlugin() {
 export default defineConfig({
   plugins: [react(), cspPlugin()],
   base: './',
+  // Bake the chosen API base into every `import.meta.env.VITE_API_BASE`
+  // reference so the DEV_MODE switch above controls all API calls app-wide.
+  define: {
+    'import.meta.env.VITE_API_BASE': JSON.stringify(API_BASE),
+  },
   server: {
     proxy: {
       '/api': 'http://127.0.0.1:8080'

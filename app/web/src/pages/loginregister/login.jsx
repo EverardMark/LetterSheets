@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faEye, faEyeSlash } from "@fortawesome/pro-light-svg-icons";
 import { unlockCompanyKey } from "../../utils/crypto";
 import Modal from "../components/Modal";
 import { termsContent } from "../legal/terms";
@@ -166,8 +168,8 @@ export default function Login({ onNavigate }) {
                             onKeyDown={handleKeyDown}
                             style={{paddingRight:42}}
                         />
-                        <button className="eye-btn" onClick={() => setShowPassword(!showPassword)} type="button">
-                          <i className={`fa-solid ${showPassword ? "fa-eye-slash" : "fa-eye"}`} style={{fontSize:16, color:"#999"}}></i>
+                        <button className="eye-btn" onClick={() => setShowPassword(!showPassword)} type="button" title={showPassword ? "Hide password" : "Show password"} aria-label={showPassword ? "Hide password" : "Show password"}>
+                          <FontAwesomeIcon icon={showPassword ? faEyeSlash : faEye} style={{fontSize:16, color:"#999"}} />
                         </button>
                       </div>
                       <div className="forgot-row">

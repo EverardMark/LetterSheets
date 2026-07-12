@@ -252,6 +252,9 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 	case "create_employee":
 		h.withAuth(w, r, h.createEmployee)
 
+	case "check_email":
+		h.withAuth(w, r, h.checkEmail)
+
 	case "update_employee":
 		h.withAuth(w, r, h.updateEmployee)
 
@@ -296,6 +299,9 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 
 	case "create_attendance":
 		h.withAuth(w, r, h.createAttendance)
+
+	case "create_attendance_batch":
+		h.withAuth(w, r, h.createAttendanceBatch)
 
 	case "update_attendance":
 		h.withAuth(w, r, h.updateAttendance)
@@ -1067,6 +1073,7 @@ var actionPerm = map[string]perm{
 
 	// --- Attendance / work schedules (UI groups schedules under attendance) ---
 	"create_attendance":            {"attendance", "create"},
+	"create_attendance_batch":      {"attendance", "create"},
 	"update_attendance":            {"attendance", "edit"},
 	"delete_attendance":            {"attendance", "delete"},
 	"create_work_schedule":         {"attendance", "edit"},
@@ -2630,6 +2637,56 @@ func (h *Handler) createAttendance(w http.ResponseWriter, r *http.Request, sessi
 	JSON(w, http.StatusCreated, req)
 }
 
+// createAttendanceBatch upserts many attendance records in one request (used by
+// the Bulk Time Entry screen). Each record is saved independently (best-effort):
+// a bad row is reported in "errors" without aborting the rest. sp_create_attendance
+// is an upsert, so re-saving an existing (employee, date) updates it.
+func (h *Handler) createAttendanceBatch(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		Records []models.Attendance `json:"records"`
+	}
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(req.Records) == 0 {
+		Error(w, http.StatusBadRequest, "records is required")
+		return
+	}
+	if len(req.Records) > 1000 {
+		Error(w, http.StatusBadRequest, "too many records (max 1000 per batch)")
+		return
+	}
+
+	meta := getMeta(r, session)
+	saved := 0
+	errs := make([]map[string]string, 0)
+
+	for i := range req.Records {
+		rec := &req.Records[i]
+		if rec.EmployeeID == "" || rec.Date == "" {
+			errs = append(errs, map[string]string{"employee_id": rec.EmployeeID, "error": "employee_id and date are required"})
+			continue
+		}
+		if rec.Status == "" {
+			rec.Status = "Present"
+		}
+		rec.ID = uuid.New().String()
+		rec.CompanyID = session.CompanyID
+		if err := h.attendRepo.Create(r.Context(), rec, meta); err != nil {
+			errs = append(errs, map[string]string{"employee_id": rec.EmployeeID, "error": err.Error()})
+			continue
+		}
+		saved++
+	}
+
+	JSON(w, http.StatusOK, map[string]interface{}{
+		"saved":  saved,
+		"failed": len(errs),
+		"errors": errs,
+	})
+}
+
 func (h *Handler) updateAttendance(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
 	var req models.Attendance
 	if err := Decode(r, &req); err != nil {
@@ -2867,6 +2924,30 @@ func (h *Handler) getEmployee(w http.ResponseWriter, r *http.Request, session *m
 	}
 
 	JSON(w, http.StatusOK, emp)
+}
+
+// checkEmail reports whether an email is already registered to a user account.
+// The employee "Create Account" form uses this to warn before submitting — each
+// login needs a unique email (an existing account can't double as a new
+// employee login, which is how one ends up reused/elevated).
+func (h *Handler) checkEmail(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Email == "" {
+		JSON(w, http.StatusOK, map[string]bool{"exists": false})
+		return
+	}
+	user, err := h.userRepo.GetByEmail(r.Context(), req.Email)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to check email")
+		return
+	}
+	JSON(w, http.StatusOK, map[string]bool{"exists": user != nil})
 }
 
 func (h *Handler) createEmployee(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
@@ -3368,7 +3449,9 @@ func (h *Handler) createEmployeeAccount(w http.ResponseWriter, r *http.Request, 
 			return
 		}
 		if linkedEmpID == req.EmployeeID {
-			// Already linked to the same employee. Idempotent success.
+			// Already linked to the same employee. Idempotent success — but still
+			// force employee role in case the account was elevated.
+			h.accessRepo.SetRole(r.Context(), existing.ID, session.CompanyID, models.RoleEmployee)
 			JSON(w, http.StatusOK, map[string]interface{}{
 				"user_id":  existing.ID,
 				"username": existing.Username,
@@ -3381,6 +3464,23 @@ func (h *Handler) createEmployeeAccount(w http.ResponseWriter, r *http.Request, 
 			// Linked to a different employee. Real conflict.
 			Error(w, http.StatusConflict, "email already linked to another employee")
 			return
+		}
+
+		// Guard: only reuse a genuine same-company orphan (a leftover from a
+		// partial create-account attempt). Never hijack an account that already
+		// belongs elsewhere — an email that's a real account in another company,
+		// or an admin anywhere, must not be turned into an employee login
+		// (that's how an "employee" ends up as superadmin).
+		accesses, err := h.accessRepo.GetUserCompanies(r.Context(), existing.ID)
+		if err != nil {
+			Error(w, http.StatusInternalServerError, "failed to check existing account")
+			return
+		}
+		for _, ac := range accesses {
+			if ac.CompanyID != session.CompanyID || ac.Role == models.RoleSuperAdmin || ac.Role == models.RoleAdmin {
+				Error(w, http.StatusConflict, "this email is already registered to another account and can't be used as an employee login — use a different email")
+				return
+			}
 		}
 
 		// Orphan: user exists but is not linked to any employee in this
@@ -3398,6 +3498,12 @@ func (h *Handler) createEmployeeAccount(w http.ResponseWriter, r *http.Request, 
 		}
 		if err := h.employeeRepo.LinkUser(r.Context(), req.EmployeeID, existing.ID, meta); err != nil {
 			Error(w, http.StatusInternalServerError, "failed to link employee: "+err.Error())
+			return
+		}
+		// Force employee role: a reused account (possibly superadmin) linked to an
+		// employee must log in as an employee, never as an admin.
+		if _, err := h.accessRepo.SetRole(r.Context(), existing.ID, session.CompanyID, models.RoleEmployee); err != nil {
+			Error(w, http.StatusInternalServerError, "failed to set employee role: "+err.Error())
 			return
 		}
 		JSON(w, http.StatusOK, map[string]interface{}{
