@@ -52,6 +52,7 @@ export default function LeaveTab({ employees = [] }) {
     const [search, setSearch] = useState("");
     const [panel, setPanel] = useState({ open: false, mode: "add", leave: null });
     const [rejectModal, setRejectModal] = useState({ open: false, id: null, note: "" });
+    const [balances, setBalances] = useState({}); // employee_id -> { leave_type: days left }
 
     const load = useCallback(async () => {
         setLoading(true);
@@ -62,7 +63,23 @@ export default function LeaveTab({ employees = [] }) {
         setLoading(false);
     }, [statusFilter]);
 
+    // Leave-credit balances, so we can show "days left" and warn on over-approval.
+    const loadBalances = useCallback(async () => {
+        try {
+            const d = await api("get_leave_balances", isEmployee && myEmployee ? { employee_id: myEmployee.id } : {});
+            const m = {};
+            for (const a of (d.accounts || [])) {
+                (m[a.employee_id] = m[a.employee_id] || {})[a.leave_type] = a.balance;
+            }
+            setBalances(m);
+        } catch { setBalances({}); }
+    }, [isEmployee, myEmployee]);
+
     useEffect(() => { load(); }, [load]);
+    useEffect(() => { loadBalances(); }, [loadBalances]);
+
+    // days left for an employee+type; undefined = no accruing account for that type.
+    const balanceFor = (empId, type) => balances[empId]?.[type];
 
     const openAdd = () => setPanel({ open: true, mode: "add", leave: null });
     const openView = (l) => setPanel({ open: true, mode: "view", leave: l });
@@ -77,9 +94,16 @@ export default function LeaveTab({ employees = [] }) {
     };
 
     const approveLeave = async (id) => {
+        // #3 — insufficient-balance flag: warn before over-approving an accruing leave.
+        const l = leaves.find(x => x.id === id);
+        const rem = l && balanceFor(l.employee_id, l.leave_type);
+        if (l && typeof rem === "number" && l.days > rem) {
+            const after = (rem - l.days).toFixed(1);
+            if (!window.confirm(`${l.first_name} ${l.last_name} has only ${rem} ${l.leave_type} day(s) left. Approving ${l.days} day(s) will put them at ${after}. Approve anyway?`)) return;
+        }
         try {
             await api("approve_leave", { id, status: "Approved" });
-            load();
+            load(); loadBalances();
         } catch (e) { alert("Approve failed: " + e.message); }
     };
 
@@ -89,7 +113,7 @@ export default function LeaveTab({ employees = [] }) {
         try {
             await api("approve_leave", { id: rejectModal.id, status: "Rejected", rejection_note: rejectModal.note });
             closeReject();
-            load();
+            load(); loadBalances();
         } catch (e) { alert("Reject failed: " + e.message); }
     };
 
@@ -97,7 +121,7 @@ export default function LeaveTab({ employees = [] }) {
         closePanel();
         try {
             await api("delete_leave", { id });
-            load();
+            load(); loadBalances();
         } catch (e) { alert("Delete failed: " + e.message); }
     };
 
@@ -149,6 +173,7 @@ export default function LeaveTab({ employees = [] }) {
                         <th>Type</th>
                         <th>Dates</th>
                         <th>Days</th>
+                        <th>Left</th>
                         <th>Status</th>
                         <th>Reason</th>
                         <th>Actions</th>
@@ -171,6 +196,11 @@ export default function LeaveTab({ employees = [] }) {
                                 <td><span className="lv-type">{l.leave_type}</span></td>
                                 <td className="lv-td-date">{fmtDate(l.start_date)} — {fmtDate(l.end_date)}</td>
                                 <td className="lv-td-days">{l.days}</td>
+                                <td className="lv-td-days">{(() => {
+                                    const rem = balanceFor(l.employee_id, l.leave_type);
+                                    if (typeof rem !== "number") return <span style={{ color: "#ccc" }}>—</span>;
+                                    return <b style={{ color: rem < 0 ? "#ef4444" : rem <= 1 ? "#f59e0b" : "#16a34a" }}>{rem}</b>;
+                                })()}</td>
                                 <td><span className="lv-badge" style={{ background: sc + "18", color: sc }}><I name={STATUS_ICONS[l.status] || "circle"} size={11} /> {l.status}</span></td>
                                 <td className="lv-td-reason">{l.reason || "—"}</td>
                                 <td onClick={e => e.stopPropagation()}>

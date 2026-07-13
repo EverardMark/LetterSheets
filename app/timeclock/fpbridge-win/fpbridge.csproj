@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- DPUruNet ships as a .NET Framework assembly; net48 is the safe target.
+         WebSocket-over-HttpListener also requires Windows 8+/Server 2012+. -->
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <AssemblyName>fpbridge</AssemblyName>
+    <RootNamespace>FpBridge</RootNamespace>
+    <Platforms>x86;x64</Platforms>
+    <!-- Match the bitness of the DPUruNet.dll / native reader libs you install.
+         DigitalPersona's runtime is commonly x86 — set this to x86 if you get a
+         BadImageFormatException at startup. -->
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- JavaScriptSerializer lives here (no NuGet needed on .NET Framework). -->
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Copy DPUruNet.dll from your DigitalPersona U.are.U SDK install into
+         ./lib/ (see README). The native dpfpdd/dpfj DLLs are provided by the
+         DigitalPersona RTE and must be on PATH / in the SDK's bin. -->
+    <Reference Include="DPUruNet">
+      <HintPath>lib\DPUruNet.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

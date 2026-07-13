@@ -214,6 +214,31 @@ export default function PayrollTab({ employees = [] }) {
                 else if (st === "Half Day") attMap[a.employee_id].days += 0.5;
             });
 
+            // Approved leaves overlapping this period, split into paid vs unpaid days.
+            // Paid leave (Vacation, Sick, etc.) is paid like worked days; "Unpaid
+            // Leave" / LWOP is docked. Days are clipped to the pay period.
+            const pStart = activeRun.period_start.substring(0, 10);
+            const pEnd = activeRun.period_end.substring(0, 10);
+            const isUnpaidLeave = (t) => /unpaid|lwop|without pay/i.test(t || "");
+            const overlapDays = (ls, le, total) => {
+                if (!ls || !le) return 0;
+                const s = ls > pStart ? ls : pStart;   // later of leave-start / period-start
+                const e = le < pEnd ? le : pEnd;        // earlier of leave-end / period-end
+                if (s > e) return 0;                    // no overlap
+                const cal = Math.round((new Date(e + "T00:00:00") - new Date(s + "T00:00:00")) / 86400000) + 1;
+                return Math.min(Math.max(cal, 0), total || cal); // don't exceed the leave's recorded days
+            };
+            const leaveMap = {};
+            try {
+                const lvData = await api("get_leaves", { status: "Approved" });
+                (lvData.leaves || []).forEach(l => {
+                    const days = overlapDays((l.start_date || "").substring(0, 10), (l.end_date || "").substring(0, 10), l.days || 0);
+                    if (days <= 0) return;
+                    const m = leaveMap[l.employee_id] = leaveMap[l.employee_id] || { paid: 0, unpaid: 0 };
+                    if (isUnpaidLeave(l.leave_type)) m.unpaid += days; else m.paid += days;
+                });
+            } catch {}
+
             // Active-loan amortization to withhold from net pay (apportioned per pay period).
             const loanMap = {};
             try {
@@ -242,9 +267,24 @@ export default function PayrollTab({ employees = [] }) {
                 const workingDays = settings.working_days || 22;
                 const divisor = settings.pay_schedule === "semi_monthly" ? 2 : 1;
                 const periodDays = workingDays / divisor;
-                // Default to a full period only when there is NO attendance at all;
-                // otherwise honor the worked-status days actually recorded (may be 0).
-                const daysWorked = attMap[emp.id] ? att.days : periodDays;
+
+                // Leave-aware paid days:
+                //  • with attendance → worked days + PAID leave (worked-status rows
+                //    already exclude leave; add paid leave back). UNPAID leave stays
+                //    excluded, so it's docked.
+                //  • no attendance   → assume full period present, minus UNPAID leave
+                //    (paid leave is already covered by the full period).
+                // Capped at the period so it never over-pays.
+                const lv = leaveMap[emp.id] || { paid: 0, unpaid: 0 };
+                const paidLeaveDays = lv.paid;
+                const unpaidLeaveDays = lv.unpaid;
+                let daysWorked;
+                if (attMap[emp.id]) {
+                    daysWorked = Math.min(att.days + paidLeaveDays, periodDays);
+                } else {
+                    daysWorked = Math.max(periodDays - unpaidLeaveDays, 0);
+                }
+                daysWorked = Math.round(daysWorked * 100) / 100;
 
                 const dailyRate = monthlySalary / workingDays;
                 const basicPay = Math.round(dailyRate * daysWorked * 100) / 100;
@@ -267,6 +307,8 @@ export default function PayrollTab({ employees = [] }) {
                     employee_id: emp.id,
                     basic_pay: basicPay,
                     days_worked: daysWorked,
+                    paid_leave_days: paidLeaveDays,
+                    unpaid_leave_days: unpaidLeaveDays,
                     hours_worked: att.hours,
                     ot_hours: att.ot,
                     ot_pay: otPay,
@@ -524,7 +566,15 @@ function RunDetail({ run, items, settings, computing, hideAmounts, onToggleAmoun
                             <td>
                                 <div className="pr-emp">
                                     <span className="pr-emp-av">{(it.first_name?.[0]||"")+(it.last_name?.[0]||"")}</span>
-                                    <div><div className="pr-emp-name">{it.first_name} {it.last_name}</div><div className="pr-emp-dept">{it.department}</div></div>
+                                    <div><div className="pr-emp-name">{it.first_name} {it.last_name}</div><div className="pr-emp-dept">{it.department}</div>
+                                    {(it.paid_leave_days > 0 || it.unpaid_leave_days > 0) && (
+                                        <div style={{fontSize:11,marginTop:2}}>
+                                            {it.paid_leave_days > 0 && <span style={{color:"#16a34a"}}>{it.paid_leave_days} paid leave</span>}
+                                            {it.paid_leave_days > 0 && it.unpaid_leave_days > 0 && <span style={{color:"#ccc"}}> · </span>}
+                                            {it.unpaid_leave_days > 0 && <span style={{color:"#ef4444"}}>{it.unpaid_leave_days} unpaid (docked)</span>}
+                                        </div>
+                                    )}
+                                </div>
                                 </div>
                             </td>
                             <td className="pr-r">{m(it.basic_pay)}</td>

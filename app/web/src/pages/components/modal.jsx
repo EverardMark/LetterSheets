@@ -53,6 +53,12 @@ export default function Modal({ title, subtitle, children, onClose }) {
                 }
                 .modal-overlay.modal-out {
                     animation: modalFadeOut ${ANIM_MS}ms ease forwards;
+                    /* While closing, the overlay is fading to opacity 0. It must
+                       NOT keep swallowing clicks — if the unmount timer is delayed
+                       (e.g. a backgrounded tab throttles setTimeout), an invisible
+                       overlay left with pointer-events would block the whole page
+                       and look like a hang. */
+                    pointer-events: none;
                 }
                 .modal-container {
                     position: fixed;
@@ -63,7 +69,7 @@ export default function Modal({ title, subtitle, children, onClose }) {
                     border-radius: 20px;
                     width: 92%;
                     max-width: 640px;
-                    //max-height: 85vh;
+                    max-height: 85vh;
                     display: flex;
                     flex-direction: column;
                     z-index: 9999;
@@ -72,6 +78,7 @@ export default function Modal({ title, subtitle, children, onClose }) {
                 }
                 .modal-container.modal-slide-out {
                     animation: modalSlideOut ${ANIM_MS}ms ease forwards;
+                    pointer-events: none;
                 }
                 .modal-header {
                     padding: 28px 32px 16px;
@@ -119,7 +126,11 @@ export default function Modal({ title, subtitle, children, onClose }) {
                 }
                 .modal-body {
                     padding: 24px 32px;
-                    overflow-y: hidden;
+                    overflow-y: auto;
+                    /* min-height:0 lets this flex child shrink below its content
+                       so overflow-y can actually scroll instead of overflowing
+                       the (now capped) container. */
+                    min-height: 0;
                     flex: 1;
                     line-height: 1.75;
                 }

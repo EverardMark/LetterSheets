@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src ws://127.0.0.1:52100 ws://localhost:52100;" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LetterSheets Time Clock</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- Top bar -->
+  <header id="topbar" class="topbar hidden">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span>LetterSheets <strong>Time Clock</strong></span>
+    </div>
+    <div class="topbar-right">
+      <div id="readerChip" class="reader-chip off" title="Fingerprint reader status">
+        <span class="dot"></span><span id="readerLabel">No reader</span>
+      </div>
+      <div id="clock" class="live-clock">--:--:--</div>
+      <div class="company-chip" id="companyChip"></div>
+      <button id="enrollNavBtn" class="btn btn-ghost">Enroll</button>
+      <button id="signOutBtn" class="btn btn-ghost">Sign out</button>
+    </div>
+  </header>
+
+  <!-- ================= SIGN-IN VIEW ================= -->
+  <main id="signinView" class="view center-view">
+    <div class="card signin-card">
+      <div class="signin-head">
+        <span class="brand-dot big"></span>
+        <h1>Time Clock Setup</h1>
+        <p class="muted">Sign this device in to start recording attendance.</p>
+      </div>
+
+      <label class="field">
+        <span>Email</span>
+        <input id="email" type="email" placeholder="manager@company.com" autocomplete="off" />
+      </label>
+
+      <label class="field">
+        <span>Password</span>
+        <input id="password" type="password" placeholder="••••••••" autocomplete="off" />
+      </label>
+
+      <div id="companyPickWrap" class="field hidden">
+        <span>Company</span>
+        <select id="companySelect"></select>
+      </div>
+
+      <button id="signInBtn" class="btn btn-primary btn-block">Continue</button>
+      <div id="signinMsg" class="msg"></div>
+    </div>
+  </main>
+
+  <!-- ================= CLOCK VIEW ================= -->
+  <main id="clockView" class="view hidden">
+    <!-- Fingerprint kiosk prompt (shown when a reader is connected) -->
+    <section id="fpPrompt" class="fp-prompt hidden">
+      <div class="fp-scanner" id="fpScanner">
+        <svg viewBox="0 0 24 24" width="72" height="72" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+          <path d="M12 11c0 3-.3 5.5-1.2 7.6"/>
+          <path d="M8.5 6.2A6 6 0 0 1 18 11c0 1.2 0 2.4-.2 3.5"/>
+          <path d="M5.4 9.3A6.8 6.8 0 0 1 6.6 7"/>
+          <path d="M15 11a3 3 0 0 0-5.6-1.5"/>
+          <path d="M12 11c0 3.5-.4 6.3-1.6 9"/>
+          <path d="M15.2 14.5c-.2 1.6-.6 3-1.2 4.4"/>
+        </svg>
+      </div>
+      <h2 id="fpTitle">Place your finger on the reader</h2>
+      <p id="fpHint" class="muted">The clock will identify you automatically.</p>
+    </section>
+
+    <div class="toolbar">
+      <input id="search" class="search" type="text" placeholder="Search employee by name, department…" autocomplete="off" />
+      <div class="toolbar-right">
+        <span id="statusSummary" class="summary"></span>
+        <button id="refreshBtn" class="btn btn-ghost">Refresh</button>
+      </div>
+    </div>
+
+    <div id="grid" class="grid"></div>
+    <div id="emptyState" class="empty hidden">No employees match your search.</div>
+  </main>
+
+  <!-- ================= ENROLLMENT VIEW ================= -->
+  <main id="enrollView" class="view hidden">
+    <div class="toolbar">
+      <button id="enrollBackBtn" class="btn btn-ghost">← Back to clock</button>
+      <input id="enrollSearch" class="search" type="text" placeholder="Search employee…" autocomplete="off" />
+      <span id="enrollReaderNote" class="summary"></span>
+    </div>
+    <div id="enrollGrid" class="grid"></div>
+
+    <!-- Capture modal -->
+    <div id="enrollModal" class="modal-backdrop hidden">
+      <div class="modal card">
+        <h2 id="enrollModalName">Enroll fingerprint</h2>
+        <p class="muted" id="enrollModalSub">Place the same finger 4 times.</p>
+        <div class="enroll-scans" id="enrollScans"></div>
+        <div id="enrollModalMsg" class="msg"></div>
+        <div class="modal-actions">
+          <button id="enrollCancelBtn" class="btn btn-ghost">Cancel</button>
+          <button id="enrollStartBtn" class="btn btn-primary">Start capture</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Admin gate (ESC to exit, or opening enrollment) -->
+  <div id="adminModal" class="modal-backdrop hidden">
+    <div class="modal card">
+      <h2 id="adminModalTitle">Admin sign-in required</h2>
+      <p class="muted" id="adminModalSub">Only an administrator can do this.</p>
+      <label class="field">
+        <span>Admin email</span>
+        <input id="adminEmail" type="email" placeholder="admin@company.com" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input id="adminPassword" type="password" placeholder="••••••••" autocomplete="off" />
+      </label>
+      <div id="adminMsg" class="msg"></div>
+      <div class="modal-actions">
+        <button id="adminCancelBtn" class="btn btn-ghost">Cancel</button>
+        <button id="adminConfirmBtn" class="btn btn-primary">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="fpbridge.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

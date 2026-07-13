@@ -51,6 +51,7 @@ type Handler struct {
 	soRepo         *repository.SalesRepo
 	procRepo       *repository.ProcurementRepo
 	returnsRepo    *repository.ReturnsRepo
+	lcRepo         *repository.LeaveCreditRepo
 	cfg            *config.AppConfig
 }
 
@@ -85,6 +86,7 @@ func NewHandler(
 	soRepo *repository.SalesRepo,
 	procRepo *repository.ProcurementRepo,
 	returnsRepo *repository.ReturnsRepo,
+	lcRepo *repository.LeaveCreditRepo,
 	cfg *config.AppConfig,
 ) *Handler {
 	trustProxyHeaders = cfg.Server.TrustProxyHeaders
@@ -119,6 +121,7 @@ func NewHandler(
 		soRepo:         soRepo,
 		procRepo:       procRepo,
 		returnsRepo:    returnsRepo,
+		lcRepo:         lcRepo,
 		cfg:            cfg,
 	}
 }
@@ -324,6 +327,25 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 
 	case "delete_leave":
 		h.withAuth(w, r, h.deleteLeave)
+
+	// Leave credits (accrual-based, driven by 'leave' benefits)
+	case "save_leave_plan":
+		h.withAuth(w, r, h.saveLeavePlan)
+
+	case "get_benefit_leave_credits":
+		h.withAuth(w, r, h.getBenefitLeaveCredits)
+
+	case "get_leave_balances":
+		h.withAuth(w, r, h.getLeaveBalances)
+
+	case "post_leave_accruals":
+		h.withAuth(w, r, h.postLeaveAccruals)
+
+	case "adjust_leave_credit":
+		h.withAuth(w, r, h.adjustLeaveCredit)
+
+	case "get_leave_credit_history":
+		h.withAuth(w, r, h.getLeaveCreditHistory)
 
 	// Payroll
 	case "get_payroll_settings":
@@ -1087,6 +1109,10 @@ var actionPerm = map[string]perm{
 	// --- Leave (create is self-service; approve/delete are privileged) ---
 	"approve_leave": {"leave", "approve"},
 	"delete_leave":  {"leave", "delete"},
+	// Leave credits live under Benefits; managing them needs benefits edit.
+	"save_leave_plan":     {"benefits", "edit"},
+	"post_leave_accruals": {"benefits", "edit"},
+	"adjust_leave_credit": {"benefits", "edit"},
 
 	// --- Payroll ---
 	"create_payroll_run":        {"payroll", "create"},
@@ -2523,6 +2549,19 @@ func (h *Handler) approveLeave(w http.ResponseWriter, r *http.Request, session *
 		return
 	}
 
+	// Sync the leave-credit ledger: an approval deducts an accruing leave; any
+	// other outcome (rejected / back to pending) reverses a prior deduction.
+	// Best-effort — a ledger hiccup must not fail the approval itself.
+	if req.Status == "Approved" {
+		if err := h.lcRepo.RecordUsageForLeave(r.Context(), session.CompanyID, req.ID); err != nil {
+			log.Printf("leave credit usage (leave %s): %v", req.ID, err)
+		}
+	} else {
+		if err := h.lcRepo.ReverseForLeave(r.Context(), session.CompanyID, req.ID); err != nil {
+			log.Printf("leave credit reversal (leave %s): %v", req.ID, err)
+		}
+	}
+
 	JSON(w, http.StatusOK, map[string]string{"message": "leave " + req.Status})
 }
 
@@ -2535,6 +2574,11 @@ func (h *Handler) deleteLeave(w http.ResponseWriter, r *http.Request, session *m
 		return
 	}
 
+	// Give back any credits this leave had consumed, before it's removed.
+	if err := h.lcRepo.ReverseForLeave(r.Context(), session.CompanyID, req.ID); err != nil {
+		log.Printf("leave credit reversal on delete (leave %s): %v", req.ID, err)
+	}
+
 	meta := getMeta(r, session)
 	if err := h.leaveRepo.Delete(r.Context(), req.ID, meta); err != nil {
 		Error(w, http.StatusInternalServerError, "failed to delete leave")
@@ -2542,6 +2586,153 @@ func (h *Handler) deleteLeave(w http.ResponseWriter, r *http.Request, session *m
 	}
 
 	JSON(w, http.StatusOK, map[string]string{"message": "leave deleted"})
+}
+
+// ==================== LEAVE CREDITS (accrual-based, via 'leave' benefits) ====================
+
+func (h *Handler) saveLeavePlan(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		BenefitID    string   `json:"benefit_id"`
+		LeaveType    string   `json:"leave_type"`
+		AnnualDays   float64  `json:"annual_days"`
+		AccrualType  string   `json:"accrual_type"`
+		CarryoverCap *float64 `json:"carryover_cap"`
+	}
+	if err := Decode(r, &req); err != nil || req.BenefitID == "" || req.LeaveType == "" {
+		Error(w, http.StatusBadRequest, "benefit_id and leave_type are required")
+		return
+	}
+	plan := &models.LeaveCreditPlan{
+		BenefitID:    req.BenefitID,
+		LeaveType:    req.LeaveType,
+		AnnualDays:   req.AnnualDays,
+		AccrualType:  req.AccrualType,
+		CarryoverCap: req.CarryoverCap,
+	}
+	if err := h.lcRepo.SavePlan(r.Context(), session.CompanyID, plan); err == sql.ErrNoRows {
+		Error(w, http.StatusNotFound, "benefit not found in this company")
+		return
+	} else if err != nil {
+		ServerError(w, "save_leave_plan", err)
+		return
+	}
+	// Provision/deactivate accounts to match current enrollment right away.
+	if err := h.lcRepo.SyncAccountsForBenefit(r.Context(), session.CompanyID, req.BenefitID); err != nil {
+		log.Printf("sync leave accounts (benefit %s): %v", req.BenefitID, err)
+	}
+	JSON(w, http.StatusOK, map[string]string{"message": "leave plan saved"})
+}
+
+func (h *Handler) getBenefitLeaveCredits(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		BenefitID string `json:"benefit_id"`
+	}
+	if err := Decode(r, &req); err != nil || req.BenefitID == "" {
+		Error(w, http.StatusBadRequest, "benefit_id is required")
+		return
+	}
+
+	plan, err := h.lcRepo.GetPlan(r.Context(), session.CompanyID, req.BenefitID)
+	if err != nil {
+		ServerError(w, "get_leave_plan", err)
+		return
+	}
+	// Reconcile accounts to enrollment, then catch accrual up to today.
+	if err := h.lcRepo.SyncAccountsForBenefit(r.Context(), session.CompanyID, req.BenefitID); err != nil {
+		ServerError(w, "sync_leave_accounts", err)
+		return
+	}
+	if _, err := h.lcRepo.PostAccruals(r.Context(), session.CompanyID); err != nil {
+		ServerError(w, "post_leave_accruals(read)", err)
+		return
+	}
+	accounts, err := h.lcRepo.GetBenefitCredits(r.Context(), session.CompanyID, req.BenefitID)
+	if err != nil {
+		ServerError(w, "get_benefit_leave_credits", err)
+		return
+	}
+	if accounts == nil {
+		accounts = []models.LeaveCreditAccount{}
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{"plan": plan, "accounts": accounts})
+}
+
+func (h *Handler) getLeaveBalances(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		EmployeeID string `json:"employee_id"`
+	}
+	_ = Decode(r, &req)
+
+	// Catch accrual up to today so "days left" is current, then read.
+	if _, err := h.lcRepo.PostAccruals(r.Context(), session.CompanyID); err != nil {
+		ServerError(w, "post_leave_accruals(balances)", err)
+		return
+	}
+	accounts, err := h.lcRepo.GetBalances(r.Context(), session.CompanyID, req.EmployeeID)
+	if err != nil {
+		ServerError(w, "get_leave_balances", err)
+		return
+	}
+	if accounts == nil {
+		accounts = []models.LeaveCreditAccount{}
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{"accounts": accounts})
+}
+
+func (h *Handler) postLeaveAccruals(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	posted, err := h.lcRepo.PostAccruals(r.Context(), session.CompanyID)
+	if err != nil {
+		ServerError(w, "post_leave_accruals", err)
+		return
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{"posted": posted, "message": "accruals posted"})
+}
+
+func (h *Handler) adjustLeaveCredit(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		EmployeeID string  `json:"employee_id"`
+		LeaveType  string  `json:"leave_type"`
+		Days       float64 `json:"days"`
+		Note       string  `json:"note"`
+	}
+	if err := Decode(r, &req); err != nil || req.EmployeeID == "" || req.LeaveType == "" {
+		Error(w, http.StatusBadRequest, "employee_id and leave_type are required")
+		return
+	}
+	if req.Days == 0 {
+		Error(w, http.StatusBadRequest, "days must be non-zero")
+		return
+	}
+	err := h.lcRepo.Adjust(r.Context(), session.CompanyID, req.EmployeeID, req.LeaveType, req.Days, req.Note)
+	if err == sql.ErrNoRows {
+		Error(w, http.StatusNotFound, "no credit account for this employee/type")
+		return
+	}
+	if err != nil {
+		ServerError(w, "adjust_leave_credit", err)
+		return
+	}
+	JSON(w, http.StatusOK, map[string]string{"message": "adjustment posted"})
+}
+
+func (h *Handler) getLeaveCreditHistory(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		EmployeeID string `json:"employee_id"`
+		LeaveType  string `json:"leave_type"`
+	}
+	if err := Decode(r, &req); err != nil || req.EmployeeID == "" {
+		Error(w, http.StatusBadRequest, "employee_id is required")
+		return
+	}
+	txns, err := h.lcRepo.GetTransactions(r.Context(), session.CompanyID, req.EmployeeID, req.LeaveType)
+	if err != nil {
+		ServerError(w, "get_leave_credit_history", err)
+		return
+	}
+	if txns == nil {
+		txns = []models.LeaveCreditTransaction{}
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{"transactions": txns})
 }
 
 // ==================== ATTENDANCE ====================

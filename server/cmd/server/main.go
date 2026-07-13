@@ -57,6 +57,7 @@ func main() {
 		repository.NewSalesRepo(db),
 		repository.NewProcurementRepo(db),
 		repository.NewReturnsRepo(db),
+		repository.NewLeaveCreditRepo(db),
 		cfg,
 	)
 

@@ -548,6 +548,7 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
     const [savingPerms, setSavingPerms] = useState(false);
     // Which sensitive fields are currently revealed in view mode (id -> bool)
     const [revealed, setRevealed] = useState({});
+    const [leaveBalances, setLeaveBalances] = useState([]); // [{leave_type, balance, ...}]
     const toggleReveal = (id) => setRevealed(prev => ({ ...prev, [id]: !prev[id] }));
     // Draft autosave (Add/Edit): true when a cached draft is available to restore.
     const [draftFound, setDraftFound] = useState(false);
@@ -645,6 +646,24 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                         empPermissionsRef.current = json.data?.permissions || null;
                     }
                 } catch (err) { console.error("load permissions:", err); }
+            })();
+        }
+
+        // Leave-credit balances for this employee (shown in the Compensation tab).
+        setLeaveBalances([]);
+        if (employee?.id && (mode === "view" || mode === "edit")) {
+            (async () => {
+                try {
+                    const API_URL = (import.meta.env.VITE_API_BASE || "") + "/api/execute";
+                    const session = localStorage.getItem("ls_session");
+                    const res = await fetch(`${API_URL}?action=get_leave_balances`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json", ...(session ? { Authorization: `Bearer ${session}` } : {}) },
+                        body: JSON.stringify({ employee_id: employee.id }),
+                    });
+                    const json = await res.json();
+                    if (res.ok && json.success) setLeaveBalances(json.data?.accounts || []);
+                } catch { /* ignore */ }
             })();
         }
     }, [employee, mode, open]);
@@ -1342,6 +1361,23 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                             isView={isView}
                             onChange={(ids) => set("enrolled_benefits", ids)}
                         />
+                    </>
+                )}
+
+                {/* Leave balances — accrual-based "days left" per leave type */}
+                {currentSection.hasBenefits && isView && leaveBalances.length > 0 && (
+                    <>
+                        <div className="ep-benefits-divider">
+                            <span className="ep-benefits-divider-label">Leave Balances</span>
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginTop: 8 }}>
+                            {leaveBalances.map(a => (
+                                <div key={a.leave_type} style={{ display: "flex", flexDirection: "column", gap: 2, padding: "10px 14px", background: "#f9fafb", border: "1px solid #eee", borderRadius: 10, minWidth: 130 }}>
+                                    <span style={{ fontSize: 11, color: "#888", fontWeight: 600, textTransform: "uppercase", letterSpacing: ".03em" }}>{a.leave_type}</span>
+                                    <span style={{ fontSize: 18, fontWeight: 700, color: a.balance < 0 ? "#ef4444" : "#16a34a" }}>{a.balance} <span style={{ fontSize: 12, fontWeight: 500, color: "#999" }}>left</span></span>
+                                </div>
+                            ))}
+                        </div>
                     </>
                 )}
 

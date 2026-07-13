@@ -264,6 +264,61 @@ type Leave struct {
 	Position   string `json:"position,omitempty" db:"position"`
 }
 
+// LeaveCreditPlan is the accrual config carried by a benefit of type 'leave'.
+type LeaveCreditPlan struct {
+	ID           string   `json:"id" db:"id"`
+	CompanyID    string   `json:"company_id" db:"company_id"`
+	BenefitID    string   `json:"benefit_id" db:"benefit_id"`
+	LeaveType    string   `json:"leave_type" db:"leave_type"`
+	AnnualDays   float64  `json:"annual_days" db:"annual_days"`
+	AccrualType  string   `json:"accrual_type" db:"accrual_type"`
+	CarryoverCap *float64 `json:"carryover_cap,omitempty" db:"carryover_cap"`
+	CreatedAt    string   `json:"created_at" db:"created_at"`
+	UpdatedAt    string   `json:"updated_at" db:"updated_at"`
+}
+
+// LeaveCreditAccount is an employee's accruing balance for one leave type.
+type LeaveCreditAccount struct {
+	ID               string   `json:"id" db:"id"`
+	CompanyID        string   `json:"company_id" db:"company_id"`
+	EmployeeID       string   `json:"employee_id" db:"employee_id"`
+	LeaveType        string   `json:"leave_type" db:"leave_type"`
+	BenefitID        *string  `json:"benefit_id,omitempty" db:"benefit_id"`
+	AnnualDays       float64  `json:"annual_days" db:"annual_days"`
+	AccrualType      string   `json:"accrual_type" db:"accrual_type"`
+	AccrualStartDate string   `json:"accrual_start_date" db:"accrual_start_date"`
+	CarryoverCap     *float64 `json:"carryover_cap,omitempty" db:"carryover_cap"`
+	LastAccruedDate  *string  `json:"last_accrued_date,omitempty" db:"last_accrued_date"`
+	Active           bool     `json:"active" db:"active"`
+	CreatedAt        string   `json:"created_at" db:"created_at"`
+	UpdatedAt        string   `json:"updated_at" db:"updated_at"`
+	// Computed
+	Balance float64 `json:"balance"`
+	Accrued float64 `json:"accrued"`
+	Used    float64 `json:"used"`
+	// Joined
+	FirstName string `json:"first_name,omitempty"`
+	LastName  string `json:"last_name,omitempty"`
+}
+
+// LeaveCreditTransaction is one signed movement in the credit ledger.
+type LeaveCreditTransaction struct {
+	ID            string  `json:"id" db:"id"`
+	CompanyID     string  `json:"company_id" db:"company_id"`
+	EmployeeID    string  `json:"employee_id" db:"employee_id"`
+	LeaveType     string  `json:"leave_type" db:"leave_type"`
+	TxnType       string  `json:"txn_type" db:"txn_type"`
+	Days          float64 `json:"days" db:"days"`
+	BalanceAfter  float64 `json:"balance_after" db:"balance_after"`
+	EffectiveDate string  `json:"effective_date" db:"effective_date"`
+	Note          string  `json:"note" db:"note"`
+	LeaveID       *string `json:"leave_id,omitempty" db:"leave_id"`
+	CreatedAt     string  `json:"created_at" db:"created_at"`
+	// Joined
+	FirstName string `json:"first_name,omitempty"`
+	LastName  string `json:"last_name,omitempty"`
+}
+
 // Attendance represents a daily attendance record
 type Attendance struct {
 	ID            string   `json:"id" db:"id"`

@@ -1,0 +1,16 @@
+{
+  "name": "lettersheets-timeclock",
+  "version": "1.0.0",
+  "description": "LetterSheets employee time-clock kiosk (clock in / clock out) for the LetterSheets ERP.",
+  "main": "main.js",
+  "author": "LetterSheets",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}

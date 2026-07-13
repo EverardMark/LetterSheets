@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 
@@ -17,6 +17,8 @@ async function api(action, body = {}) {
         },
         body: JSON.stringify(body),
     });
+    // 401 (expired/invalid session) is handled app-wide by installAuthInterceptor
+    // in main.jsx — it retries once then redirects to sign in.
     if (!res.ok) throw new Error(`API ${action} failed: ${res.status}`);
     const json = await res.json();
     if (!json.success) throw new Error(json.error || `API ${action} failed`);
@@ -39,23 +41,26 @@ const BENEFIT_TYPES = [
     { value: "communication", label: "Communication Allowance" },
     { value: "education",    label: "Education / Training" },
     { value: "wellness",     label: "Wellness / Gym" },
+    { value: "leave",        label: "Leave" },
     { value: "other",        label: "Other" },
 ];
 
 const FREQUENCIES = ["Monthly", "Quarterly", "Semi-Annual", "Yearly", "One-time"];
+// Leave request types a "Leave" benefit can grant credits for (matches leave.jsx).
+const LEAVE_TYPES = ["Vacation Leave", "Sick Leave", "Emergency Leave", "Maternity Leave", "Paternity Leave", "Bereavement Leave", "Unpaid Leave"];
 
 const TYPE_ICONS = {
     health: "heart", life: "shield", dental: "smile", vision: "eye",
     retirement: "banknote", rice: "coffee", clothing: "briefcase",
     transportation: "truck", meal: "coffee", communication: "phone",
-    education: "book", wellness: "activity", other: "star",
+    education: "book", wellness: "activity", leave: "calendar", other: "star",
 };
 
 const TYPE_COLORS = {
     health: "#ef4444", life: "#8b5cf6", dental: "#0ea5e9", vision: "#06b6d4",
     retirement: "#f59e0b", rice: "#22c55e", clothing: "#ec4899",
     transportation: "#6366f1", meal: "#f97316", communication: "#14b8a6",
-    education: "#3b82f6", wellness: "#10b981", other: "#9ca3af",
+    education: "#3b82f6", wellness: "#10b981", leave: "#eab308", other: "#9ca3af",
 };
 
 function freqShort(f) {
@@ -141,8 +146,19 @@ export default function BenefitsTab({ benefits, setBenefits, employees = [] }) {
 
         try {
             const data = await api(isNew ? "create_benefit" : "update_benefit", saved);
+            const benefitId = isNew ? data?.id : saved.id;
             if (isNew && data?.id) {
                 setBenefits(prev => prev.map(b => b._temp && b.name === saved.name ? { ...saved, id: data.id, tiers: data.tiers || saved.tiers, _temp: undefined } : b));
+            }
+            // A "Leave" benefit carries an accrual plan — save it alongside.
+            if (saved.type === "leave" && benefitId && saved.leave_type) {
+                await api("save_leave_plan", {
+                    benefit_id: benefitId,
+                    leave_type: saved.leave_type,
+                    annual_days: Number(saved.annual_days) || 0,
+                    accrual_type: saved.accrual_type || "monthly",
+                    carryover_cap: saved.carryover_cap === "" || saved.carryover_cap == null ? null : Number(saved.carryover_cap),
+                });
             }
         } catch (err) {
             console.warn("Benefit save failed:", err);
@@ -238,9 +254,22 @@ export default function BenefitsTab({ benefits, setBenefits, employees = [] }) {
    BENEFIT PANEL — Slide-out from right
 ================================================================ */
 function BenefitPanel({ open, mode, benefit, idx, employees, onClose, onSave, onDelete }) {
+    const company = JSON.parse(localStorage.getItem("ls_company") || "{}");
     const [form, setForm] = useState({});
     const [currentMode, setCurrentMode] = useState(mode);
     const [detailTab, setDetailTab] = useState("details");
+    const [credit, setCredit] = useState(null); // { plan, accounts } for leave benefits
+    const [creditBusy, setCreditBusy] = useState(false);
+    const [creditMsg, setCreditMsg] = useState("");
+
+    const loadCredits = useCallback(async (benefitId) => {
+        if (!benefitId) { setCredit({ plan: null, accounts: [] }); return; }
+        try {
+            const d = await api("get_benefit_leave_credits", { benefit_id: benefitId });
+            setCredit({ plan: d.plan || null, accounts: d.accounts || [] });
+            return d;
+        } catch { setCredit({ plan: null, accounts: [] }); }
+    }, []);
 
     useEffect(() => {
         if (benefit && (mode === "view" || mode === "edit")) {
@@ -250,7 +279,15 @@ function BenefitPanel({ open, mode, benefit, idx, employees, onClose, onSave, on
         }
         setCurrentMode(mode);
         setDetailTab("details");
-    }, [benefit, mode, open]);
+        setCredit(null);
+        setCreditMsg("");
+        // For an existing Leave benefit, load its plan (and prefill the edit form).
+        if (benefit?.id && benefit.type === "leave") {
+            loadCredits(benefit.id).then(d => {
+                if (d?.plan) setForm(prev => ({ ...prev, leave_type: d.plan.leave_type, annual_days: d.plan.annual_days, accrual_type: d.plan.accrual_type, carryover_cap: d.plan.carryover_cap ?? "" }));
+            });
+        }
+    }, [benefit, mode, open, loadCredits]);
 
     if (!open) return null;
 
@@ -296,9 +333,28 @@ function BenefitPanel({ open, mode, benefit, idx, employees, onClose, onSave, on
                                 <button className={`bf-detail-tab ${detailTab === "employees" ? "bf-detail-tab-a" : ""}`} onClick={() => setDetailTab("employees")}>
                                     Employees {(() => { try { return `(${employees.filter(e => { const eb = typeof e.enrolled_benefits === "string" ? JSON.parse(e.enrolled_benefits) : (e.enrolled_benefits || []); return Array.isArray(eb) && eb.includes(form.id); }).length})`; } catch { return "(0)"; } })()}
                                 </button>
+                                {form.type === "leave" && (
+                                    <button className={`bf-detail-tab ${detailTab === "credits" ? "bf-detail-tab-a" : ""}`} onClick={() => setDetailTab("credits")}>Credits</button>
+                                )}
                             </div>
 
-                            {detailTab === "details" ? (
+                            {detailTab === "credits" ? (
+                                <LeaveCreditsPanel
+                                    benefitId={form.id}
+                                    credit={credit}
+                                    busy={creditBusy}
+                                    msg={creditMsg}
+                                    isEmployee={company.role === "employee"}
+                                    onPost={async () => {
+                                        setCreditBusy(true);
+                                        try { const r = await api("post_leave_accruals", {}); setCreditMsg(`Posted ${r.posted} accrual(s).`); await loadCredits(form.id); }
+                                        catch (e) { setCreditMsg("Post failed: " + e.message); }
+                                        setCreditBusy(false);
+                                    }}
+                                    onReload={() => loadCredits(form.id)}
+                                    setMsg={setCreditMsg}
+                                />
+                            ) : detailTab === "details" ? (
                                 <>
                                     <div className="ap-section">
                                         <h4 className="ap-sec-title">Benefit Details</h4>
@@ -454,6 +510,37 @@ function BenefitPanel({ open, mode, benefit, idx, employees, onClose, onSave, on
                                 </div>
                             </div>
 
+                            {form.type === "leave" && (
+                                <div className="ap-section">
+                                    <h4 className="ap-sec-title">Leave Credit Plan <span className="ap-req"/></h4>
+                                    <p style={{fontSize:12,color:"#bbb",margin:"-6px 0 12px"}}>Employees enrolled in this benefit accrue leave credits of the chosen type.</p>
+                                    <div className="ap-fields">
+                                        <div className="ap-field">
+                                            <label className="ap-label">Leave Type <span className="ap-req"/></label>
+                                            <select className="ap-input" value={form.leave_type||""} onChange={e=>set("leave_type",e.target.value)}>
+                                                <option value="" disabled>Select…</option>
+                                                {LEAVE_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                                            </select>
+                                        </div>
+                                        <div className="ap-field">
+                                            <label className="ap-label">Days per Year <span className="ap-req"/></label>
+                                            <input className="ap-input" type="number" step="0.5" min="0" value={form.annual_days ?? ""} onChange={e=>set("annual_days",e.target.value)} placeholder="e.g. 15"/>
+                                        </div>
+                                        <div className="ap-field">
+                                            <label className="ap-label">Accrual</label>
+                                            <select className="ap-input" value={form.accrual_type||"monthly"} onChange={e=>set("accrual_type",e.target.value)}>
+                                                <option value="monthly">Monthly (days ÷ 12 each month)</option>
+                                                <option value="yearly">Yearly (full grant each year)</option>
+                                            </select>
+                                        </div>
+                                        <div className="ap-field">
+                                            <label className="ap-label">Carry-over Cap (optional)</label>
+                                            <input className="ap-input" type="number" step="0.5" min="0" value={form.carryover_cap ?? ""} onChange={e=>set("carryover_cap",e.target.value)} placeholder="No cap"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="ap-section">
                                 <h4 className="ap-sec-title">Tiers & Costs <span className="ap-req"/></h4>
                                 <p style={{fontSize:12,color:"#bbb",margin:"-6px 0 12px"}}>Add one or more tiers with different cost levels.</p>
@@ -516,9 +603,161 @@ function BenefitPanel({ open, mode, benefit, idx, employees, onClose, onSave, on
 }
 
 /* ================================================================
+   LEAVE CREDITS  (inside a "Leave" benefit's detail)
+================================================================ */
+function LeaveCreditsPanel({ benefitId, credit, busy, msg, isEmployee, onPost, onReload, setMsg }) {
+    const [adjust, setAdjust] = useState(null);
+    const [history, setHistory] = useState(null);
+
+    if (!credit) return <div className="lc-loading">Loading…</div>;
+    const { plan, accounts } = credit;
+
+    if (!plan) {
+        return <div className="lc-empty">No credit plan configured. Edit this benefit and set the Leave Credit Plan (leave type, days per year, accrual).</div>;
+    }
+
+    return (
+        <div className="lc-panel">
+            <div className="lc-plan">
+                <div className="lc-plan-item"><span className="lc-plan-l">Leave Type</span><span className="lc-plan-v">{plan.leave_type}</span></div>
+                <div className="lc-plan-item"><span className="lc-plan-l">Days / Year</span><span className="lc-plan-v">{plan.annual_days}</span></div>
+                <div className="lc-plan-item"><span className="lc-plan-l">Accrual</span><span className="lc-plan-v" style={{textTransform:"capitalize"}}>{plan.accrual_type}</span></div>
+                <div className="lc-plan-item"><span className="lc-plan-l">Carry-over Cap</span><span className="lc-plan-v">{plan.carryover_cap ?? "None"}</span></div>
+            </div>
+
+            <div className="lc-actbar">
+                <span className="lc-count">{accounts.length} enrolled</span>
+                {msg && <span className="lc-msg">{msg}</span>}
+                {!isEmployee && <button className="lv-btn-g" onClick={onPost} disabled={busy}><I name="refresh-cw" size={13}/> Post Accruals</button>}
+            </div>
+
+            {accounts.length === 0 ? (
+                <div className="lc-empty">No employees enrolled in this benefit yet. Enroll them from the employee record, then reopen this tab.</div>
+            ) : (
+                <table className="lc-tbl">
+                    <thead><tr><th>Employee</th><th>Accrued</th><th>Used</th><th>Balance</th>{!isEmployee && <th></th>}</tr></thead>
+                    <tbody>
+                    {accounts.map(a => (
+                        <tr key={a.id}>
+                            <td>{a.first_name} {a.last_name}</td>
+                            <td className="lc-num">{a.accrued}</td>
+                            <td className="lc-num">{a.used}</td>
+                            <td className="lc-num"><b className={a.balance < 0 ? "lc-neg" : "lc-pos"}>{a.balance}</b></td>
+                            {!isEmployee && (
+                                <td>
+                                    <div className="lc-row-acts">
+                                        <button className="lv-act" title="Adjust" onClick={() => setAdjust({ employee_id: a.employee_id, leave_type: a.leave_type, name: `${a.first_name} ${a.last_name}` })}><I name="edit-2" size={13}/></button>
+                                        <button className="lv-act" title="History" onClick={() => setHistory({ employee_id: a.employee_id, leave_type: a.leave_type, name: `${a.first_name} ${a.last_name}` })}><I name="list" size={13}/></button>
+                                    </div>
+                                </td>
+                            )}
+                        </tr>
+                    ))}
+                    </tbody>
+                </table>
+            )}
+
+            {adjust && <CreditAdjustModal {...adjust} onClose={() => setAdjust(null)} onDone={() => { setAdjust(null); setMsg("Adjustment posted."); onReload(); }} />}
+            {history && <CreditHistoryModal {...history} onClose={() => setHistory(null)} />}
+        </div>
+    );
+}
+
+function CreditAdjustModal({ employee_id, leave_type, name, onClose, onDone }) {
+    const [days, setDays] = useState("");
+    const [note, setNote] = useState("");
+    const [saving, setSaving] = useState(false);
+    const [err, setErr] = useState("");
+    const submit = async () => {
+        const d = parseFloat(days);
+        if (!d) { setErr("Enter a non-zero number of days (use - to deduct)."); return; }
+        setSaving(true);
+        try { await api("adjust_leave_credit", { employee_id, leave_type, days: d, note }); onDone(); }
+        catch (e) { setErr(e.message); setSaving(false); }
+    };
+    return (
+        <Modal title="Adjust Leave Credit" subtitle={`${name} · ${leave_type}`} onClose={onClose}>
+            <div className="lc-form">
+                <label className="lc-lbl">Days (positive to add, negative to deduct)</label>
+                <input className="ap-input" type="number" step="0.5" value={days} onChange={e => setDays(e.target.value)} placeholder="e.g. 1.5 or -1" autoFocus />
+                <label className="lc-lbl">Note</label>
+                <input className="ap-input" value={note} onChange={e => setNote(e.target.value)} placeholder="Reason for adjustment" />
+                {err && <div className="lc-err">{err}</div>}
+                <div className="lc-modal-btns">
+                    <button className="ap-btn-cancel" onClick={onClose}>Cancel</button>
+                    <button className="bf-btn-p" onClick={submit} disabled={saving}>{saving ? "Saving…" : "Post Adjustment"}</button>
+                </div>
+            </div>
+        </Modal>
+    );
+}
+
+function CreditHistoryModal({ employee_id, leave_type, name, onClose }) {
+    const [rows, setRows] = useState(null);
+    useEffect(() => {
+        (async () => {
+            try { const d = await api("get_leave_credit_history", { employee_id, leave_type }); setRows(d.transactions || []); }
+            catch { setRows([]); }
+        })();
+    }, [employee_id, leave_type]);
+    const C = { accrual: "#22c55e", usage: "#ef4444", reversal: "#3b82f6", adjustment: "#f59e0b", opening: "#9ca3af" };
+    const fmt = (d) => { if (!d) return "—"; const dt = new Date(String(d).slice(0, 10) + "T00:00:00"); return isNaN(dt) ? d : dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); };
+    return (
+        <Modal title="Credit History" subtitle={`${name} · ${leave_type}`} onClose={onClose}>
+            {rows === null ? <div className="lc-loading">Loading…</div> : rows.length === 0 ? (
+                <p className="lc-empty">No transactions yet.</p>
+            ) : (
+                <table className="lc-tbl lc-hist">
+                    <thead><tr><th>Date</th><th>Type</th><th>Days</th><th>Balance</th><th>Note</th></tr></thead>
+                    <tbody>
+                    {rows.map(t => (
+                        <tr key={t.id}>
+                            <td>{fmt(t.effective_date)}</td>
+                            <td><span className="lc-txn" style={{ background: (C[t.txn_type] || "#ccc") + "18", color: C[t.txn_type] || "#555" }}>{t.txn_type}</span></td>
+                            <td className="lc-num" style={{ color: t.days < 0 ? "#ef4444" : "#16a34a" }}>{t.days > 0 ? "+" : ""}{t.days}</td>
+                            <td className="lc-num">{t.balance_after}</td>
+                            <td>{t.note || "—"}</td>
+                        </tr>
+                    ))}
+                    </tbody>
+                </table>
+            )}
+        </Modal>
+    );
+}
+
+/* ================================================================
    STYLES
 ================================================================ */
 const benefitsCSS = `
+  .lc-panel{display:flex;flex-direction:column;gap:14px}
+  .lc-loading{padding:20px;color:#999;font-size:13px}
+  .lc-empty{padding:18px;color:#999;font-size:13px;background:#fafafa;border-radius:10px;line-height:1.6}
+  .lc-plan{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;background:#fafbfa;border:1px solid #eee;border-radius:10px;padding:14px}
+  .lc-plan-item{display:flex;flex-direction:column;gap:3px}
+  .lc-plan-l{font-size:11px;color:#999;text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+  .lc-plan-v{font-size:15px;font-weight:700;color:#222}
+  .lc-actbar{display:flex;align-items:center;gap:12px}
+  .lc-count{font-size:12px;color:#888;font-weight:600}
+  .lc-msg{font-size:12px;color:#2d9e8b;font-weight:600}
+  .lv-btn-g{margin-left:auto;display:flex;align-items:center;gap:5px;padding:8px 14px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;font-family:'DM Sans',sans-serif;font-size:12.5px;font-weight:600;color:#444;cursor:pointer}
+  .lv-btn-g:hover:not(:disabled){border-color:#2d9e8b;color:#1a7a6a}
+  .lv-btn-g:disabled{opacity:.55;cursor:default}
+  .lc-tbl{width:100%;border-collapse:collapse;font-size:13px}
+  .lc-tbl th{text-align:left;padding:8px 10px;color:#999;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid #eee}
+  .lc-tbl td{padding:9px 10px;border-bottom:1px solid #f5f5f5}
+  .lc-num{text-align:right;font-variant-numeric:tabular-nums}
+  .lc-pos{color:#16a34a}.lc-neg{color:#ef4444}
+  .lv-act{width:28px;height:28px;border-radius:6px;border:1px solid #e0e0e0;background:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;color:#666}
+  .lv-act:hover{border-color:#2d9e8b;color:#2d9e8b}
+  .lc-row-acts{display:flex;gap:6px}
+  .lc-txn{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;text-transform:capitalize}
+  .lc-form{display:flex;flex-direction:column;gap:6px}
+  .lc-lbl{font-size:12px;font-weight:600;color:#666;margin-top:8px}
+  .lc-err{color:#ef4444;font-size:12px;margin-top:8px}
+  .lc-modal-btns{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+  .lc-hist td{font-size:12.5px}
+
   .bf-bar{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px}
   .bf-bar-count{font-size:13px;color:#888}
   .bf-btn-p{display:flex;align-items:center;gap:5px;padding:9px 18px;border:none;border-radius:8px;background:#2d9e8b;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s}
