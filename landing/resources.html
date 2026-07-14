@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Resources — LetterSheets</title>
+  <meta name="description" content="Guides, documentation, and support for LetterSheets — the encrypted ERP." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --page: #e8eaec; --frame: #ffffff; --ink: #16181c; --ink-2: #4a4f57;
+      --muted: #9aa0a8; --gray-head: #b3b8bf; --accent: #2d6a4f; --accent-bright: #2f9e6b;
+      --accent-ink: #1a3c2a; --mint: #e8f3ec; --line: #eef0f2;
+      --shadow-card: 0 14px 34px -12px rgba(24,39,31,.18), 0 3px 8px -2px rgba(24,39,31,.08);
+      --shadow-soft: 0 10px 24px -10px rgba(24,39,31,.16);
+      --radius-lg: 26px; --radius: 18px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--page); color: var(--ink); -webkit-font-smoothing: antialiased; padding: 14px; }
+    a { color: inherit; text-decoration: none; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-family: inherit; font-weight: 600; font-size: 14px; border: 1px solid transparent; border-radius: 12px; padding: 10px 18px; transition: transform .16s, background .16s, color .16s; white-space: nowrap; }
+    .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 10px 22px -8px rgba(45,106,79,.55); }
+    .btn-primary:hover { background: var(--accent-ink); transform: translateY(-1px); }
+    .btn-ghost { background: transparent; color: var(--ink-2); font-weight: 500; padding: 10px 8px; }
+    .btn-ghost:hover { color: var(--accent); }
+
+    .frame { position: relative; overflow: hidden; background: var(--frame); background-image: radial-gradient(#e6e8eb 1px, transparent 1px); background-size: 18px 18px; border-radius: var(--radius-lg); box-shadow: 0 30px 60px -30px rgba(24,39,31,.25), 0 2px 6px rgba(24,39,31,.05); max-width: 1320px; margin: 0 auto; }
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 22px 34px; }
+    .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; font-size: 17px; letter-spacing: -0.02em; }
+    .brand-mark { width: 30px; height: 30px; border-radius: 9px; background: #fff; box-shadow: var(--shadow-soft); display: grid; place-items: center; padding: 6px; }
+    .dotgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 100%; height: 100%; }
+    .dotgrid span { border-radius: 50%; background: var(--accent-ink); }
+    .dotgrid span.hi { background: var(--accent-bright); }
+    .nav-mid { display: flex; align-items: center; gap: 34px; }
+    .nav-mid a { font-size: 14px; font-weight: 500; color: var(--ink-2); transition: color .16s; }
+    .nav-mid a:hover, .nav-mid a.active { color: var(--accent); }
+    .nav-right { display: flex; align-items: center; gap: 14px; }
+
+    .head { text-align: center; padding: 46px 24px 56px; }
+    .head .tag { font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--accent-bright); margin-bottom: 12px; }
+    .head h1 { font-size: clamp(24px, 3.4vw, 40px); letter-spacing: -0.04em; line-height: 1.05; color: var(--ink); }
+    .head h1 .gray { color: var(--gray-head); }
+    .head p { margin: 16px auto 0; max-width: 52ch; color: var(--ink-2); font-size: 16px; }
+
+    .section { max-width: 1180px; margin: 26px auto 0; padding: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .rcard { display: flex; flex-direction: column; background: #fff; border-radius: 20px; padding: 26px; box-shadow: var(--shadow-soft); border: 1px solid rgba(24,39,31,.04); transition: transform .18s, box-shadow .18s; }
+    .rcard:hover { transform: translateY(-4px); box-shadow: var(--shadow-card); }
+    .r-ico { width: 50px; height: 50px; border-radius: 14px; background: var(--mint); color: var(--accent); display: grid; place-items: center; margin-bottom: 16px; }
+    .rcard h3 { font-size: 17px; color: var(--ink); letter-spacing: -0.015em; margin-bottom: 8px; }
+    .rcard p { font-size: 13.5px; color: var(--ink-2); line-height: 1.55; flex: 1; }
+    .rcard .go { margin-top: 16px; display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--accent); }
+    .rcard .go svg { transition: transform .16s; }
+    .rcard:hover .go svg { transform: translateX(3px); }
+
+    .note-band { max-width: 1180px; margin: 22px auto 0; padding: 8px; }
+    .note-inner { background: #fff; border-radius: 20px; padding: 22px 26px; box-shadow: var(--shadow-soft); border: 1px solid rgba(24,39,31,.04); display: flex; align-items: center; gap: 16px; }
+    .note-inner .ni { width: 42px; height: 42px; border-radius: 12px; background: var(--mint); color: var(--accent); display: grid; place-items: center; flex-shrink: 0; }
+    .note-inner p { font-size: 13.5px; color: var(--ink-2); }
+    .note-inner b { color: var(--ink); }
+
+    .cta { max-width: 1180px; margin: 30px auto 0; text-align: center; background: #fff; border-radius: var(--radius-lg); padding: 60px 24px; box-shadow: var(--shadow-card); background-image: radial-gradient(#e6e9e7 1px, transparent 1px); background-size: 18px 18px; }
+    .cta h2 { font-size: clamp(19px, 2.4vw, 26px); letter-spacing: -0.03em; color: var(--ink); line-height: 1.12; }
+    .cta h2 .gray { color: var(--gray-head); }
+    .cta p { margin: 14px auto 24px; color: var(--ink-2); font-size: 15px; max-width: 44ch; }
+
+    footer { max-width: 1180px; margin: 26px auto 6px; padding: 22px 10px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12.5px; }
+    footer .brand { font-size: 15px; color: var(--ink); }
+    footer .brand-mark { width: 24px; height: 24px; padding: 5px; }
+    footer a { color: var(--muted); margin-left: 18px; }
+    footer a:hover { color: var(--accent); }
+
+    @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 720px) { .nav-mid { display: none; } nav { padding: 18px 20px; } }
+  </style>
+</head>
+<body>
+
+  <div class="frame">
+    <nav>
+      <a class="brand" href="index.html">
+        <span class="brand-mark"><span class="dotgrid"><span class="hi"></span><span></span><span></span><span></span></span></span>
+        LetterSheets
+      </a>
+      <div class="nav-mid">
+        <a href="modules.html">Modules</a>
+        <a href="security.html">Security</a>
+        <a href="resources.html" class="active">Resources</a>
+        <a href="pricing.html">Pricing</a>
+      </div>
+      <div class="nav-right">
+        <a class="btn btn-ghost" href="#" data-app>Sign in</a>
+      </div>
+    </nav>
+
+    <div class="head">
+      <div class="tag">Resources</div>
+      <h1>Everything you need <span class="gray">to get running.</span></h1>
+      <p>Guides, documentation, and support to set up LetterSheets and get the most out of every module.</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="grid">
+
+      <a class="rcard" href="#">
+        <div class="r-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M6 3h9l4 4v14H6z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 3v5h5M9 13h6M9 16.5h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>Documentation</h3>
+        <p>Step-by-step guides for every module — from setting up payroll to reconciling the ledger.</p>
+        <span class="go">Browse docs <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </a>
+
+      <a class="rcard" href="#">
+        <div class="r-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3" stroke="currentColor" stroke-width="2"/><path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M15 5h5M15 8h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+        <h3>HR manual</h3>
+        <p>The complete guide to running HR and payroll in LetterSheets, with policies and workflows.</p>
+        <span class="go">Read the manual <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </a>
+
+      <a class="rcard" href="#">
+        <div class="r-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="12" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 20h8M12 16v4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M8 10l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>Installation guide</h3>
+        <p>Get the desktop app running on macOS, Windows, or Linux, or set up the web build.</p>
+        <span class="go">Install steps <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </a>
+
+      <a class="rcard" href="#">
+        <div class="r-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 15a4 4 0 014-4 5 5 0 019.6-1.5A3.5 3.5 0 0119 16H8a4 4 0 01-4-4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 12v6M9.5 15.5L12 18l2.5-2.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>Deployment</h3>
+        <p>Self-host with Docker or deploy to your own server. Configuration and hardening notes included.</p>
+        <span class="go">Deployment guide <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </a>
+
+      <a class="rcard" href="security.html">
+        <div class="r-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4v5c0 4-3 7-7 8-4-1-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>Security overview</h3>
+        <p>How zero-knowledge and post-quantum encryption keep your data private — even from us.</p>
+        <span class="go">Learn about security <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </a>
+
+      <a class="rcard" href="#">
+        <div class="r-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 6a2 2 0 012-2h12a2 2 0 012 2v9a2 2 0 01-2 2H9l-4 4V6z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M8 9h8M8 12h5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+        <h3>Support</h3>
+        <p>Questions, onboarding help, or a bug to report? Reach the team and get a hand.</p>
+        <span class="go">Contact support <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </a>
+
+    </div>
+  </div>
+
+  <div class="note-band">
+    <div class="note-inner">
+      <span class="ni"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 8v4.5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+      <p><b>Product updates and release notes.</b> Want new features and security news in your inbox? Subscribe from the newsletter on the home page.</p>
+    </div>
+  </div>
+
+  <div class="cta">
+    <h2>Ready to see it <span class="gray">in action?</span></h2>
+    <p>Bring HR, accounting, inventory, and the rest onto one private platform.</p>
+    <a class="btn btn-primary" href="#" data-app>Get free demo</a>
+  </div>
+
+  <footer>
+    <a class="brand" href="index.html">
+      <span class="brand-mark"><span class="dotgrid"><span class="hi"></span><span></span><span></span><span></span></span></span>
+      LetterSheets
+    </a>
+    <div>
+      <span>&copy; <span id="yr">2026</span> LetterSheets</span>
+      <a href="index.html">Home</a>
+      <a href="modules.html">Modules</a>
+      <a href="#" data-app>Sign in</a>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById('yr').textContent = new Date().getFullYear();
+    var appUrl = new URLSearchParams(location.search).get('app') || '/';
+    document.querySelectorAll('[data-app]').forEach(function(a){ a.setAttribute('href', appUrl); });
+  </script>
+</body>
+</html>

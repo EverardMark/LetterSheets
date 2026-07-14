@@ -5,8 +5,9 @@ import {
     faUsers, faBriefcase, faPesoSign, faShieldHalved, faMoneyBill1,
     faHeart, faFaceSmile, faEye, faEyeSlash, faMugSaucer, faTruck, faPhone,
     faBook, faHeartPulse, faStar, faCheck, faMagnifyingGlass, faPlus,
-    faLock, faCircleQuestion, faRotate, faKey,
+    faLock, faCircleQuestion, faRotate, faKey, faClockRotateLeft,
 } from "@fortawesome/pro-light-svg-icons";
+import HistoryTab, { canViewHistory } from "../components/HistoryTab";
 
 /* Icon mapping for dynamic lookups */
 const FA = {
@@ -1187,6 +1188,14 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
                     <FontAwesomeIcon icon={faShieldHalved} style={{fontSize:13}} /> Permissions
                 </button>
             )}
+            {canViewHistory() && employee?.id && (
+                <button
+                    className={`ep-tab ${activeSection === "history" ? "ep-tab-on" : ""}`}
+                    onClick={() => setActiveSection("history")}
+                >
+                    <FontAwesomeIcon icon={faClockRotateLeft} style={{fontSize:13}} /> History
+                </button>
+            )}
         </div>
     );
 
@@ -1208,6 +1217,14 @@ export default function Employee({ open, mode = "view", employee, benefits = [],
     ) : null;
 
     const renderSectionBody = () => {
+        if (activeSection === "history") {
+            return (
+                <div className="ep-sec">
+                    <div className="ep-sec-head"><h3 className="ep-sec-title">Change History</h3></div>
+                    <HistoryTab table="employees" recordId={employee?.id || form.id} />
+                </div>
+            );
+        }
         if (activeSection === "permissions" && hasAccount) {
             return (
                 <div className="ep-sec">

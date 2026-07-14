@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
+import HistoryTab, { canViewHistory } from "../components/HistoryTab";
 
 /* ================================================================
    API
@@ -228,6 +229,7 @@ function DeptPanel({ open, mode, dept, idx, onClose, onSave, onDelete, employees
             {[
                 { id: "details", label: "Details", icon: "grid" },
                 { id: "employees", label: `Employees (${deptEmployees.length})`, icon: "users" },
+                ...(canViewHistory() && dept?.id ? [{ id: "history", label: "History", icon: "clock" }] : []),
             ].map(t => (
                 <button
                     key={t.id}
@@ -306,16 +308,20 @@ function DeptPanel({ open, mode, dept, idx, onClose, onSave, onDelete, employees
                 {isView && <div className="dp-modal-tabs-bar">{renderTabs()}</div>}
 
                 <div className="dp-modal-scroll">
-                    {(isAdd || isEdit || activeTab === "details") ? renderFormFields() : renderEmployees()}
+                    {activeTab === "history" ? <HistoryTab table="departments" recordId={dept?.id} /> : (isAdd || isEdit || activeTab === "details") ? renderFormFields() : renderEmployees()}
                 </div>
 
                 <div className="dp-modal-foot">
+                    {activeTab !== "history" && (
                     <div className="bp-legend">
                         <span className="bp-legend-item"><span className="bp-legend-dot bp-legend-dot-req"></span> Required</span>
                         <span className="bp-legend-item"><span className="bp-legend-dot bp-legend-dot-enc"></span> Encrypted</span>
                     </div>
+                    )}
                     <div className="bp-foot-btns">
-                        {isView ? (<>
+                        {activeTab === "history" ? (
+                            <button className="bp-btn-cancel" onClick={onClose}>Close</button>
+                        ) : isView ? (<>
                             <button className="bp-btn-danger" onClick={() => onDelete(idx)}>Delete</button>
                             <button className="bp-btn-primary" onClick={switchToEdit}>Edit</button>
                         </>) : (<>

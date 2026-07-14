@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
+import HistoryTab, { canViewHistory } from "../components/HistoryTab";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 
@@ -301,6 +302,7 @@ function SchedPanel({ open, mode, sched, idx, departments, positions, onClose, o
                 { id: "details", label: "Details", icon: "calendar" },
                 { id: "days", label: "Days", icon: "clock" },
                 { id: "assignments", label: "Assignments", icon: "users" },
+                ...(canViewHistory() && sched?.id ? [{ id: "history", label: "History", icon: "scroll" }] : []),
             ].map(t => (
                 <button
                     key={t.id}
@@ -533,18 +535,23 @@ function SchedPanel({ open, mode, sched, idx, departments, positions, onClose, o
                             {renderAssignments()}
                         </>
                     ) : (
-                        activeTab === "details" ? renderDetails()
-                            : activeTab === "days" ? renderDays()
-                                : renderAssignments()
+                        activeTab === "history" ? <HistoryTab table="work_schedules" recordId={sched?.id} />
+                            : activeTab === "details" ? renderDetails()
+                                : activeTab === "days" ? renderDays()
+                                    : renderAssignments()
                     )}
                 </div>
 
                 <div className="pp-modal-foot">
+                    {activeTab !== "history" && (
                     <div className="pp-legend">
                         <span className="pp-legend-item"><span className="pp-legend-dot pp-legend-dot-req"></span> Required</span>
                     </div>
+                    )}
                     <div className="pp-foot-btns">
-                        {isView ? (<>
+                        {activeTab === "history" ? (
+                            <button className="pp-btn-cancel" onClick={onClose}>Close</button>
+                        ) : isView ? (<>
                             <button className="pp-btn-danger" onClick={() => onDelete(idx)}>Delete</button>
                             <button className="pp-btn-primary" onClick={switchToEdit}>Edit</button>
                         </>) : (<>

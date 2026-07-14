@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
@@ -10,6 +11,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"lettersheets/internal/config"
@@ -52,8 +54,23 @@ type Handler struct {
 	procRepo       *repository.ProcurementRepo
 	returnsRepo    *repository.ReturnsRepo
 	lcRepo         *repository.LeaveCreditRepo
-	cfg            *config.AppConfig
+	recurRepo      *repository.RecurringRepo
+	// recurMu serializes recurring-entry generation so the background scheduler
+	// and a user-triggered "Generate now" can't race and double-post the same
+	// occurrence within this process (single-server deployment).
+	recurMu sync.Mutex
+	cfg     *config.AppConfig
 }
+
+// systemRecurringUser attributes journal entries auto-posted by the background
+// recurring scheduler (no human session). posted_by has no FK, and nothing joins
+// it to users, so this sentinel is safe and self-documenting.
+const systemRecurringUser = "system"
+
+// recurringSweepInterval is how often the background scheduler checks for due
+// recurring entries. Schedules are date-granular, so hourly is ample and each
+// idle sweep is a single cheap query.
+const recurringSweepInterval = time.Hour
 
 func NewHandler(
 	db *sql.DB,
@@ -87,6 +104,7 @@ func NewHandler(
 	procRepo *repository.ProcurementRepo,
 	returnsRepo *repository.ReturnsRepo,
 	lcRepo *repository.LeaveCreditRepo,
+	recurRepo *repository.RecurringRepo,
 	cfg *config.AppConfig,
 ) *Handler {
 	trustProxyHeaders = cfg.Server.TrustProxyHeaders
@@ -122,6 +140,7 @@ func NewHandler(
 		procRepo:       procRepo,
 		returnsRepo:    returnsRepo,
 		lcRepo:         lcRepo,
+		recurRepo:      recurRepo,
 		cfg:            cfg,
 	}
 }
@@ -482,6 +501,8 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 		h.withAuth(w, r, h.nextEntryNumber)
 	case "create_journal_entry":
 		h.withAuth(w, r, h.createJournalEntry)
+	case "create_simple_transaction":
+		h.withAuth(w, r, h.createSimpleTransaction)
 	case "get_journal_entries":
 		h.withAuth(w, r, h.getJournalEntries)
 	case "get_journal_entry":
@@ -496,6 +517,26 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 		h.withAuth(w, r, h.postJournalEntry)
 	case "void_journal_entry":
 		h.withAuth(w, r, h.voidJournalEntry)
+
+	// --- Recurring Entries ---
+	case "get_recurring_entries":
+		h.withAuth(w, r, h.getRecurringEntries)
+	case "get_recurring_entry":
+		h.withAuth(w, r, h.getRecurringEntry)
+	case "create_recurring_entry":
+		h.withAuth(w, r, h.createRecurringEntry)
+	case "update_recurring_entry":
+		h.withAuth(w, r, h.updateRecurringEntry)
+	case "delete_recurring_entry":
+		h.withAuth(w, r, h.deleteRecurringEntry)
+	case "toggle_recurring_active":
+		h.withAuth(w, r, h.toggleRecurringActive)
+	case "get_due_recurring":
+		h.withAuth(w, r, h.getDueRecurring)
+	case "process_due_recurring":
+		h.withAuth(w, r, h.processDueRecurring)
+	case "run_recurring_now":
+		h.withAuth(w, r, h.runRecurringNow)
 
 	// --- Account Mappings ---
 	case "get_account_mappings":
@@ -1106,7 +1147,8 @@ var actionPerm = map[string]perm{
 	"upsert_work_schedule_default": {"attendance", "edit"},
 	"delete_work_schedule_default": {"attendance", "delete"},
 
-	// --- Leave (create is self-service; approve/delete are privileged) ---
+	// --- Leave (create is self-service; edit/approve/delete are privileged) ---
+	"update_leave":  {"leave", "edit"},
 	"approve_leave": {"leave", "approve"},
 	"delete_leave":  {"leave", "delete"},
 	// Leave credits live under Benefits; managing them needs benefits edit.
@@ -1164,10 +1206,21 @@ var actionPerm = map[string]perm{
 
 	// --- Accounting: journal / general ledger ---
 	"create_journal_entry": {"accounting", "create"},
-	"update_journal_entry": {"accounting", "edit"},
+	// Simple mode records and posts in one step, so it needs post-level rights.
+	"create_simple_transaction": {"accounting", "edit"},
+	"update_journal_entry":      {"accounting", "edit"},
 	"delete_journal_entry": {"accounting", "delete"},
 	"post_journal_entry":   {"accounting", "edit"},
 	"void_journal_entry":   {"accounting", "edit"},
+
+	// --- Accounting: recurring entries ---
+	"create_recurring_entry": {"accounting", "create"},
+	"update_recurring_entry": {"accounting", "edit"},
+	"delete_recurring_entry": {"accounting", "delete"},
+	"toggle_recurring_active": {"accounting", "edit"},
+	// Generating recurring entries can post to the GL, so require post-level rights.
+	"process_due_recurring": {"accounting", "edit"},
+	"run_recurring_now":     {"accounting", "edit"},
 
 	// --- Accounting: AR (customers / invoices) ---
 	"create_customer":        {"accounting", "create"},
@@ -2510,25 +2563,51 @@ func (h *Handler) createLeave(w http.ResponseWriter, r *http.Request, session *m
 	JSON(w, http.StatusCreated, req)
 }
 
+// updateLeave lets an authorized user (admin, or a role with leave/edit) edit a
+// leave request's details — including an already-approved one. When the leave is
+// approved and accruing, its credit deduction is reconciled around the edit so the
+// balance stays correct even if the days or leave type changed.
 func (h *Handler) updateLeave(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
 	var req models.Leave
 	if err := Decode(r, &req); err != nil {
 		Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.ID == "" {
-		Error(w, http.StatusBadRequest, "id is required")
+	if req.ID == "" || req.LeaveType == "" || req.StartDate == "" || req.EndDate == "" {
+		Error(w, http.StatusBadRequest, "id, leave_type, start_date, end_date are required")
 		return
+	}
+	if req.Days <= 0 {
+		req.Days = 1
+	}
+	ctx := r.Context()
+
+	// Reconcile leave credits around the edit. ReverseForLeave must run FIRST —
+	// while the row still holds the OLD leave_type/days — so the reversal lands on
+	// the original credit account. Then update the row, then re-record usage
+	// against the new values. Both credit calls no-op for a non-approved leave or a
+	// leave type the employee has no accruing account for, so this is safe for a
+	// plain pending edit too. Best-effort: a ledger hiccup must not fail the edit.
+	if err := h.lcRepo.ReverseForLeave(ctx, session.CompanyID, req.ID); err != nil {
+		log.Printf("leave edit reversal (leave %s): %v", req.ID, err)
+	}
+
+	meta := getMeta(r, session)
+	n, err := h.leaveRepo.AdminUpdate(ctx, &req, meta)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to update leave: "+err.Error())
+		return
+	}
+	if n == 0 {
+		Error(w, http.StatusNotFound, "leave not found")
+		return
+	}
+
+	if err := h.lcRepo.RecordUsageForLeave(ctx, session.CompanyID, req.ID); err != nil {
+		log.Printf("leave edit usage (leave %s): %v", req.ID, err)
 	}
 
 	req.CompanyID = session.CompanyID
-	meta := getMeta(r, session)
-
-	if err := h.leaveRepo.Update(r.Context(), &req, meta); err != nil {
-		Error(w, http.StatusInternalServerError, "failed to update leave")
-		return
-	}
-
 	JSON(w, http.StatusOK, req)
 }
 
@@ -4514,6 +4593,559 @@ func (h *Handler) createJournalEntry(w http.ResponseWriter, r *http.Request, ses
 
 	entry, _ := h.acctRepo.GetJournalEntry(entryID, session.CompanyID)
 	JSON(w, http.StatusOK, entry)
+}
+
+// createSimpleTransaction records a plain-language transaction (e.g. "paid rent",
+// "customer paid me") as a balanced two-line journal entry, hiding debits and
+// credits from the user. The "Simple" entry mode in the UI decides — from the kind
+// of transaction the user picked — which account is debited and which is credited;
+// this endpoint just validates the single amount, writes the balanced Dr/Cr pair,
+// and posts it in the same step so a non-accountant never has to understand the
+// separate Draft -> Post workflow. Pass post=false to leave it as an editable Draft.
+func (h *Handler) createSimpleTransaction(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		EntryDate       string  `json:"entry_date"`
+		Memo            string  `json:"memo"`
+		DebitAccountID  string  `json:"debit_account_id"`
+		CreditAccountID string  `json:"credit_account_id"`
+		Amount          float64 `json:"amount"`
+		Post            *bool   `json:"post"`
+	}
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.EntryDate == "" {
+		req.EntryDate = time.Now().Format("2006-01-02")
+	}
+	if req.DebitAccountID == "" || req.CreditAccountID == "" {
+		Error(w, http.StatusBadRequest, "please choose both accounts for this transaction")
+		return
+	}
+	if req.DebitAccountID == req.CreditAccountID {
+		Error(w, http.StatusBadRequest, "the two accounts must be different")
+		return
+	}
+	amount := math.Round(req.Amount*100) / 100
+	if amount <= 0 {
+		Error(w, http.StatusBadRequest, "amount must be greater than zero")
+		return
+	}
+
+	entryNum, _ := h.acctRepo.NextEntryNumber(session.CompanyID)
+	entryID := uuid.New().String()
+	if err := h.acctRepo.CreateJournalEntry(entryID, session.CompanyID, entryNum, req.EntryDate, req.Memo, "manual", "", "Draft"); err != nil {
+		Error(w, http.StatusInternalServerError, "create entry: "+err.Error())
+		return
+	}
+	if err := h.acctRepo.AddJournalLine(entryID, session.CompanyID, req.DebitAccountID, req.Memo, amount, 0, 0); err != nil {
+		Error(w, http.StatusInternalServerError, "add debit line: "+err.Error())
+		return
+	}
+	if err := h.acctRepo.AddJournalLine(entryID, session.CompanyID, req.CreditAccountID, req.Memo, 0, amount, 1); err != nil {
+		Error(w, http.StatusInternalServerError, "add credit line: "+err.Error())
+		return
+	}
+	if err := h.acctRepo.UpdateJournalTotals(entryID, session.CompanyID); err != nil {
+		Error(w, http.StatusInternalServerError, "update totals: "+err.Error())
+		return
+	}
+
+	// Post immediately unless the caller explicitly opts out. Posting is what makes
+	// the amount hit account balances; folding it into this action means a simple
+	// user never has to find and click a separate "Post" button afterwards.
+	posted := false
+	if req.Post == nil || *req.Post {
+		if err := h.acctRepo.PostJournalEntry(entryID, session.CompanyID, session.UserID); err != nil {
+			Error(w, http.StatusInternalServerError, "post entry: "+err.Error())
+			return
+		}
+		posted = true
+	}
+
+	entry, _ := h.acctRepo.GetJournalEntry(entryID, session.CompanyID)
+	JSON(w, http.StatusOK, map[string]interface{}{"entry": entry, "posted": posted})
+}
+
+// ==================== RECURRING ENTRIES ====================
+
+var recurringFrequencies = map[string]bool{"Weekly": true, "Monthly": true, "Quarterly": true, "Yearly": true}
+
+// validateRecurringLines runs the same double-entry checks as a manual journal
+// entry: every line has an account and exactly one non-negative side, at least two
+// lines, positive total, and balanced debits/credits.
+func validateRecurringLines(lines []models.RecurringLine) error {
+	if len(lines) < 2 {
+		return fmt.Errorf("a transaction needs at least two lines")
+	}
+	var totalDebit, totalCredit float64
+	for _, l := range lines {
+		if l.AccountID == "" {
+			return fmt.Errorf("each line requires an account")
+		}
+		if l.Debit < 0 || l.Credit < 0 {
+			return fmt.Errorf("debit and credit must be non-negative")
+		}
+		if (l.Debit == 0) == (l.Credit == 0) {
+			return fmt.Errorf("each line must have exactly one of debit or credit set")
+		}
+		totalDebit += l.Debit
+		totalCredit += l.Credit
+	}
+	if totalDebit == 0 {
+		return fmt.Errorf("total must be greater than zero")
+	}
+	if math.Abs(totalDebit-totalCredit) > 0.005 {
+		return fmt.Errorf("debits must equal credits")
+	}
+	return nil
+}
+
+type recurringLineReq struct {
+	AccountID   string  `json:"account_id"`
+	Description string  `json:"description"`
+	Debit       float64 `json:"debit"`
+	Credit      float64 `json:"credit"`
+}
+
+func toRecurringLines(in []recurringLineReq) []models.RecurringLine {
+	out := make([]models.RecurringLine, 0, len(in))
+	for _, l := range in {
+		out = append(out, models.RecurringLine{
+			AccountID:   l.AccountID,
+			Description: l.Description,
+			Debit:       math.Round(l.Debit*100) / 100,
+			Credit:      math.Round(l.Credit*100) / 100,
+		})
+	}
+	return out
+}
+
+func (h *Handler) getRecurringEntries(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	entries, err := h.recurRepo.List(r.Context(), session.CompanyID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if entries == nil {
+		entries = []models.RecurringEntry{}
+	}
+	JSON(w, http.StatusOK, entries)
+}
+
+func (h *Handler) getRecurringEntry(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	e, err := h.recurRepo.Get(r.Context(), session.CompanyID, req.ID)
+	if err != nil {
+		Error(w, http.StatusNotFound, "not found")
+		return
+	}
+	JSON(w, http.StatusOK, e)
+}
+
+func (h *Handler) createRecurringEntry(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		Name             string            `json:"name"`
+		Memo             string            `json:"memo"`
+		Frequency        string            `json:"frequency"`
+		IntervalCount    int               `json:"interval_count"`
+		StartDate        string            `json:"start_date"`
+		EndDate          string            `json:"end_date"`
+		AutoPost         *bool             `json:"auto_post"`
+		OccurrencesLimit *int              `json:"occurrences_limit"`
+		Lines            []recurringLineReq `json:"lines"`
+	}
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.Name == "" || req.StartDate == "" {
+		Error(w, http.StatusBadRequest, "name and start_date are required")
+		return
+	}
+	if !recurringFrequencies[req.Frequency] {
+		Error(w, http.StatusBadRequest, "frequency must be Weekly, Monthly, Quarterly or Yearly")
+		return
+	}
+	if req.IntervalCount < 1 {
+		req.IntervalCount = 1
+	}
+	lines := toRecurringLines(req.Lines)
+	if err := validateRecurringLines(lines); err != nil {
+		Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// Default to drafts-for-review: an unattended schedule shouldn't post to the GL
+	// unless the user explicitly opts in. The UI sends the flag explicitly; this
+	// default only applies to API callers that omit it.
+	autoPost := false
+	if req.AutoPost != nil {
+		autoPost = *req.AutoPost
+	}
+	e := &models.RecurringEntry{
+		Name: req.Name, Memo: req.Memo, Frequency: req.Frequency, IntervalCount: req.IntervalCount,
+		StartDate: req.StartDate, NextRunDate: req.StartDate, EndDate: req.EndDate,
+		AutoPost: autoPost, OccurrencesLimit: req.OccurrencesLimit, IsActive: true, Lines: lines,
+	}
+	id, err := h.recurRepo.Create(r.Context(), session.CompanyID, e)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "create recurring: "+err.Error())
+		return
+	}
+	saved, _ := h.recurRepo.Get(r.Context(), session.CompanyID, id)
+	JSON(w, http.StatusOK, saved)
+}
+
+func (h *Handler) updateRecurringEntry(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ID               string            `json:"id"`
+		Name             string            `json:"name"`
+		Memo             string            `json:"memo"`
+		Frequency        string            `json:"frequency"`
+		IntervalCount    int               `json:"interval_count"`
+		StartDate        string            `json:"start_date"`
+		EndDate          string            `json:"end_date"`
+		AutoPost         *bool             `json:"auto_post"`
+		OccurrencesLimit *int              `json:"occurrences_limit"`
+		IsActive         *bool             `json:"is_active"`
+		Lines            []recurringLineReq `json:"lines"`
+	}
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.ID == "" {
+		Error(w, http.StatusBadRequest, "id required")
+		return
+	}
+	if !recurringFrequencies[req.Frequency] {
+		Error(w, http.StatusBadRequest, "invalid frequency")
+		return
+	}
+	if req.IntervalCount < 1 {
+		req.IntervalCount = 1
+	}
+	lines := toRecurringLines(req.Lines)
+	if err := validateRecurringLines(lines); err != nil {
+		Error(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	// Re-anchor the next run to the (possibly changed) start date + periods already
+	// generated, so editing the schedule doesn't double-post or skip a period.
+	existing, err := h.recurRepo.Get(r.Context(), session.CompanyID, req.ID)
+	if err != nil {
+		Error(w, http.StatusNotFound, "not found")
+		return
+	}
+	startT, perr := time.Parse("2006-01-02", req.StartDate)
+	if perr != nil {
+		Error(w, http.StatusBadRequest, "invalid start_date")
+		return
+	}
+	nextRun := repository.NextOccurrence(startT, req.Frequency, req.IntervalCount, existing.OccurrencesCount).Format("2006-01-02")
+
+	autoPost := existing.AutoPost
+	if req.AutoPost != nil {
+		autoPost = *req.AutoPost
+	}
+	isActive := existing.IsActive
+	if req.IsActive != nil {
+		isActive = *req.IsActive
+	}
+	e := &models.RecurringEntry{
+		ID: req.ID, Name: req.Name, Memo: req.Memo, Frequency: req.Frequency, IntervalCount: req.IntervalCount,
+		StartDate: req.StartDate, NextRunDate: nextRun, EndDate: req.EndDate,
+		AutoPost: autoPost, OccurrencesLimit: req.OccurrencesLimit, IsActive: isActive, Lines: lines,
+	}
+	if err := h.recurRepo.Update(r.Context(), session.CompanyID, e); err != nil {
+		Error(w, http.StatusInternalServerError, "update recurring: "+err.Error())
+		return
+	}
+	saved, _ := h.recurRepo.Get(r.Context(), session.CompanyID, req.ID)
+	JSON(w, http.StatusOK, saved)
+}
+
+func (h *Handler) deleteRecurringEntry(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if err := h.recurRepo.Delete(r.Context(), session.CompanyID, req.ID); err != nil {
+		Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+func (h *Handler) toggleRecurringActive(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ID     string `json:"id"`
+		Active bool   `json:"active"`
+	}
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if err := h.recurRepo.SetActive(r.Context(), session.CompanyID, req.ID, req.Active); err != nil {
+		Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, map[string]bool{"active": req.Active})
+}
+
+func (h *Handler) getDueRecurring(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	today := time.Now().Format("2006-01-02")
+	due, err := h.recurRepo.GetDue(r.Context(), session.CompanyID, today)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if due == nil {
+		due = []models.RecurringEntry{}
+	}
+	JSON(w, http.StatusOK, due)
+}
+
+// generateRecurringJE creates one journal entry from a recurring template's lines,
+// dated runDate, and posts it when the template is set to auto-post.
+func (h *Handler) generateRecurringJE(companyID, userID string, e *models.RecurringEntry, lines []models.RecurringLine, runDate string) (string, error) {
+	memo := e.Memo
+	if memo == "" {
+		memo = e.Name
+	}
+	entryNum, _ := h.acctRepo.NextEntryNumber(companyID)
+	entryID := uuid.New().String()
+	if err := h.acctRepo.CreateJournalEntry(entryID, companyID, entryNum, runDate, memo, "recurring", e.ID, "Draft"); err != nil {
+		return "", err
+	}
+	for i, l := range lines {
+		if err := h.acctRepo.AddJournalLine(entryID, companyID, l.AccountID, l.Description, l.Debit, l.Credit, i); err != nil {
+			return "", err
+		}
+	}
+	if err := h.acctRepo.UpdateJournalTotals(entryID, companyID); err != nil {
+		return "", err
+	}
+	if e.AutoPost {
+		if err := h.acctRepo.PostJournalEntry(entryID, companyID, userID); err != nil {
+			return "", err
+		}
+	}
+	return entryID, nil
+}
+
+// recurGenResult summarises what one template produced during a generation pass.
+type recurGenResult struct {
+	RecurringID string   `json:"recurring_id"`
+	Name        string   `json:"name"`
+	Generated   int      `json:"generated"`
+	JournalIDs  []string `json:"journal_ids"`
+}
+
+// generateDueForCompany generates every occurrence that has come due for one
+// company (catching up on missed periods) and advances each schedule. Shared by
+// the HTTP "Generate now" action and the background scheduler. Callers MUST hold
+// h.recurMu so two passes can't double-generate the same occurrence. userID
+// attributes any auto-posts (a real user for the HTTP path, systemRecurringUser
+// for the scheduler).
+func (h *Handler) generateDueForCompany(ctx context.Context, companyID, userID string) ([]recurGenResult, error) {
+	today := time.Now().Format("2006-01-02")
+	todayT, _ := time.Parse("2006-01-02", today)
+	due, err := h.recurRepo.GetDue(ctx, companyID, today)
+	if err != nil {
+		return nil, err
+	}
+	results := []recurGenResult{}
+	for i := range due {
+		e := due[i]
+		lines, err := h.recurRepo.GetLines(ctx, companyID, e.ID)
+		if err != nil || len(lines) == 0 {
+			continue
+		}
+		startT, err := time.Parse("2006-01-02", e.StartDate)
+		if err != nil {
+			continue
+		}
+		nextT, err := time.Parse("2006-01-02", e.NextRunDate)
+		if err != nil {
+			continue
+		}
+		var endT time.Time
+		hasEnd := false
+		if e.EndDate != "" {
+			if t, e2 := time.Parse("2006-01-02", e.EndDate); e2 == nil {
+				endT, hasEnd = t, true
+			}
+		}
+		count := e.OccurrencesCount
+		active := true
+		var jids []string
+
+		// Catch-up loop, hard-capped so a long-dormant weekly schedule can't spin
+		// forever. Each pass generates one occurrence and advances next_run_date.
+		for guard := 0; !nextT.After(todayT) && active && guard < 120; guard++ {
+			jid, gerr := h.generateRecurringJE(companyID, userID, &e, lines, nextT.Format("2006-01-02"))
+			if gerr != nil {
+				log.Printf("recurring generate %s: %v", e.ID, gerr)
+				break
+			}
+			jids = append(jids, jid)
+			ranDate := nextT.Format("2006-01-02")
+			count++
+			nextT = repository.NextOccurrence(startT, e.Frequency, e.IntervalCount, count)
+			active = true
+			if e.OccurrencesLimit != nil && count >= *e.OccurrencesLimit {
+				active = false
+			}
+			if hasEnd && nextT.After(endT) {
+				active = false
+			}
+			if err := h.recurRepo.RecordRun(ctx, companyID, e.ID, ranDate, nextT.Format("2006-01-02"), count, active); err != nil {
+				log.Printf("recurring record %s: %v", e.ID, err)
+				break
+			}
+		}
+		if len(jids) > 0 {
+			results = append(results, recurGenResult{e.ID, e.Name, len(jids), jids})
+		}
+	}
+	return results, nil
+}
+
+// RunRecurringSweep generates due recurring entries across every company that has
+// any. Called by the background scheduler; idempotent, so redundant runs are safe.
+func (h *Handler) RunRecurringSweep(ctx context.Context) (int, error) {
+	today := time.Now().Format("2006-01-02")
+	companies, err := h.recurRepo.CompaniesWithDue(ctx, today)
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for _, cid := range companies {
+		h.recurMu.Lock()
+		results, err := h.generateDueForCompany(ctx, cid, systemRecurringUser)
+		h.recurMu.Unlock()
+		if err != nil {
+			log.Printf("recurring sweep company %s: %v", cid, err)
+			continue
+		}
+		for _, r := range results {
+			total += r.Generated
+		}
+	}
+	return total, nil
+}
+
+// StartRecurringScheduler runs an initial catch-up then sweeps on an interval,
+// forever. Launch it once, in a goroutine, at server start.
+func (h *Handler) StartRecurringScheduler() {
+	sweep := func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("recurring scheduler recovered from panic: %v", r)
+			}
+		}()
+		n, err := h.RunRecurringSweep(context.Background())
+		if err != nil {
+			log.Printf("recurring sweep failed: %v", err)
+			return
+		}
+		if n > 0 {
+			log.Printf("recurring scheduler generated %d journal entr(y/ies)", n)
+		}
+	}
+	sweep()
+	ticker := time.NewTicker(recurringSweepInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		sweep()
+	}
+}
+
+// processDueRecurring generates every occurrence that has come due for the current
+// company (catching up on missed periods) and advances each schedule. It is the
+// same work the background scheduler performs, scoped to one company and triggerable
+// on demand from the UI. Idempotent: a second call the same day finds nothing due.
+func (h *Handler) processDueRecurring(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	h.recurMu.Lock()
+	results, err := h.generateDueForCompany(r.Context(), session.CompanyID, session.UserID)
+	h.recurMu.Unlock()
+	if err != nil {
+		Error(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	total := 0
+	for _, res := range results {
+		total += res.Generated
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{"generated": total, "results": results})
+}
+
+// runRecurringNow generates the next scheduled occurrence of one template right
+// away and advances its schedule by one period.
+func (h *Handler) runRecurringNow(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	ctx := r.Context()
+	// Hold the generation lock across the fetch+generate so the background sweep
+	// can't advance this template underneath us and cause a duplicate.
+	h.recurMu.Lock()
+	defer h.recurMu.Unlock()
+	e, err := h.recurRepo.Get(ctx, session.CompanyID, req.ID)
+	if err != nil {
+		Error(w, http.StatusNotFound, "not found")
+		return
+	}
+	if !e.IsActive {
+		Error(w, http.StatusBadRequest, "this recurring entry is paused")
+		return
+	}
+	if e.OccurrencesLimit != nil && e.OccurrencesCount >= *e.OccurrencesLimit {
+		Error(w, http.StatusBadRequest, "this recurring entry has reached its run limit")
+		return
+	}
+	if len(e.Lines) == 0 {
+		Error(w, http.StatusBadRequest, "this recurring entry has no lines")
+		return
+	}
+	startT, err := time.Parse("2006-01-02", e.StartDate)
+	if err != nil {
+		Error(w, http.StatusBadRequest, "invalid start_date")
+		return
+	}
+	runDate := e.NextRunDate
+	jid, gerr := h.generateRecurringJE(session.CompanyID, session.UserID, e, e.Lines, runDate)
+	if gerr != nil {
+		Error(w, http.StatusInternalServerError, "generate: "+gerr.Error())
+		return
+	}
+	count := e.OccurrencesCount + 1
+	nextT := repository.NextOccurrence(startT, e.Frequency, e.IntervalCount, count)
+	active := true
+	if e.OccurrencesLimit != nil && count >= *e.OccurrencesLimit {
+		active = false
+	}
+	if e.EndDate != "" {
+		if endT, e2 := time.Parse("2006-01-02", e.EndDate); e2 == nil && nextT.After(endT) {
+			active = false
+		}
+	}
+	h.recurRepo.RecordRun(ctx, session.CompanyID, e.ID, runDate, nextT.Format("2006-01-02"), count, active)
+	JSON(w, http.StatusOK, map[string]interface{}{"journal_id": jid, "posted": e.AutoPost, "next_run_date": nextT.Format("2006-01-02")})
 }
 
 func (h *Handler) getJournalEntries(w http.ResponseWriter, r *http.Request, session *models.UserSession) {

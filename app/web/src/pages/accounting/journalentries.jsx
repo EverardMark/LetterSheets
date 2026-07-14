@@ -20,8 +20,16 @@ function fmtMoney(n) {
 }
 
 const STATUS_CLR = { Draft: "#f59e0b", Posted: "#22c55e", Voided: "#ef4444" };
-const SRC_LABEL = { manual: "Manual", payroll: "Payroll", loan: "Loan", adjustment: "Adjustment" };
-const SRC_ICON = { manual: "edit-3", payroll: "users", loan: "dollar-sign", adjustment: "sliders" };
+const SRC_LABEL = { manual: "Manual", payroll: "Payroll", loan: "Loan", adjustment: "Adjustment", recurring: "Recurring" };
+const SRC_ICON = { manual: "edit-3", payroll: "users", loan: "dollar-sign", adjustment: "sliders", recurring: "repeat" };
+
+const FREQ_OPTIONS = ["Weekly", "Monthly", "Quarterly", "Yearly"];
+const FREQ_UNIT = { Weekly: "week", Monthly: "month", Quarterly: "quarter", Yearly: "year" };
+// Human summary of a schedule, e.g. "Monthly" or "Every 2 weeks".
+function freqLabel(freq, interval) {
+    if (interval > 1) return `Every ${interval} ${FREQ_UNIT[freq]}s`;
+    return freq;
+}
 
 /* ===== MAPPING KEY DEFINITIONS ===== */
 const MAPPING_DEFS = [
@@ -43,6 +51,68 @@ const MAPPING_DEFS = [
     { key: "LOAN_DISBURSEMENT_CR", label: "Cash (Loan Disbursement)", side: "Cr", group: "Loan" },
 ];
 
+/* ===== SIMPLE-MODE TRANSACTION PRESETS =====
+   Each preset is a plain-language transaction. The user only chooses a type, an
+   amount and (in friendly terms) which accounts are involved — never a debit or a
+   credit. The `debit`/`credit` sides fix the accounting direction; `role:"cash"`
+   asks for a cash/bank account, `role:"category"` asks for the matching income /
+   expense / etc. account, filtered to `types` and with the named account floated to
+   the top of the list via `hint`. */
+const TXN_PRESETS = [
+    // ---- MONEY OUT ----
+    {
+        id: "pay_expense", group: "Money Out", icon: "trending-down", color: "#ef4444",
+        label: "Pay an expense", sub: "Rent, utilities, supplies, fuel…",
+        debit: { role: "category", types: ["Expense"], label: "What was it for?", hint: "" },
+        credit: { role: "cash", types: ["Asset"], label: "Paid from", hint: "cash" },
+    },
+    {
+        id: "pay_supplier", group: "Money Out", icon: "receipt", color: "#f97316",
+        label: "Pay a supplier / bill", sub: "Settle money you already owe",
+        debit: { role: "category", types: ["Liability"], label: "Which payable?", hint: "payable" },
+        credit: { role: "cash", types: ["Asset"], label: "Paid from", hint: "cash" },
+    },
+    {
+        id: "buy_asset", group: "Money Out", icon: "cube", color: "#8b5cf6",
+        label: "Buy equipment / asset", sub: "Something you'll keep and use",
+        debit: { role: "category", types: ["Asset"], label: "What did you buy?", hint: "equip" },
+        credit: { role: "cash", types: ["Asset"], label: "Paid from", hint: "cash" },
+    },
+    {
+        id: "owner_draw", group: "Money Out", icon: "user-minus", color: "#ec4899",
+        label: "Owner withdrawal", sub: "Money the owner took out",
+        debit: { role: "category", types: ["Equity"], label: "Drawings account", hint: "draw" },
+        credit: { role: "cash", types: ["Asset"], label: "Paid from", hint: "cash" },
+    },
+    // ---- MONEY IN ----
+    {
+        id: "cash_sale", group: "Money In", icon: "trending-up", color: "#22c55e",
+        label: "Sale / income received", sub: "Cash sale or other income",
+        debit: { role: "cash", types: ["Asset"], label: "Received into", hint: "cash" },
+        credit: { role: "category", types: ["Revenue"], label: "Kind of income", hint: "" },
+    },
+    {
+        id: "collect_ar", group: "Money In", icon: "hand-coin", color: "#10b981",
+        label: "Customer paid me", sub: "Collecting money owed to you",
+        debit: { role: "cash", types: ["Asset"], label: "Received into", hint: "cash" },
+        credit: { role: "category", types: ["Asset"], label: "Which receivable?", hint: "receivable" },
+    },
+    {
+        id: "owner_invest", group: "Money In", icon: "user-plus", color: "#0ea5e9",
+        label: "Owner investment", sub: "Owner put money into the business",
+        debit: { role: "cash", types: ["Asset"], label: "Received into", hint: "cash" },
+        credit: { role: "category", types: ["Equity"], label: "Capital account", hint: "capital" },
+    },
+    // ---- MOVE MONEY ----
+    {
+        id: "transfer", group: "Move Money", icon: "repeat", color: "#6366f1",
+        label: "Transfer / deposit", sub: "Move money between cash & bank",
+        debit: { role: "cash", types: ["Asset"], label: "To (destination)", hint: "bank" },
+        credit: { role: "cash", types: ["Asset"], label: "From (source)", hint: "cash" },
+    },
+];
+const TXN_GROUPS = ["Money Out", "Money In", "Move Money"];
+
 export default function JournalEntries() {
     const [entries, setEntries] = useState([]);
     const [accounts, setAccounts] = useState([]);
@@ -60,6 +130,30 @@ export default function JournalEntries() {
     const [formMemo, setFormMemo] = useState("");
     const [formLines, setFormLines] = useState([{ account_id: "", description: "", debit: 0, credit: 0 }]);
     const [editingId, setEditingId] = useState(null);
+
+    // Simple (guided) entry mode — default for new entries; "advanced" reveals the raw grid
+    const [entryMode, setEntryMode] = useState("simple"); // simple | advanced
+    const [simpleType, setSimpleType] = useState("");      // preset id
+    const [simpleAmount, setSimpleAmount] = useState("");
+    const [sDebit, setSDebit] = useState("");
+    const [sCredit, setSCredit] = useState("");
+    const [saving, setSaving] = useState(false);
+
+    // Recurring entries
+    const [recurringList, setRecurringList] = useState([]);
+    const [dueList, setDueList] = useState([]);
+    const [editingRecId, setEditingRecId] = useState(null);
+    const [recPreset, setRecPreset] = useState("");   // preset id, "" when editing / free-form
+    const [recName, setRecName] = useState("");
+    const [recAmount, setRecAmount] = useState("");
+    const [recDebit, setRecDebit] = useState("");
+    const [recCredit, setRecCredit] = useState("");
+    const [recFreq, setRecFreq] = useState("Monthly");
+    const [recInterval, setRecInterval] = useState(1);
+    const [recStart, setRecStart] = useState(new Date().toISOString().split("T")[0]);
+    const [recEnd, setRecEnd] = useState("");
+    const [recAutoPost, setRecAutoPost] = useState(false);
+    const [recLimit, setRecLimit] = useState("");
 
     // Mapping
     const [mappings, setMappings] = useState([]);
@@ -82,6 +176,10 @@ export default function JournalEntries() {
             const je = await api("get_journal_entries", {});
             setEntries(Array.isArray(je) ? je : []);
         } catch (e) { console.error("load entries:", e); setEntries([]); }
+        try {
+            const due = await api("get_due_recurring", {});
+            setDueList(Array.isArray(due) ? due : []);
+        } catch (e) { /* recurring tables may not be migrated yet — non-fatal */ setDueList([]); }
         setLoading(false);
     }, []);
 
@@ -116,11 +214,17 @@ export default function JournalEntries() {
         setFormDate(new Date().toISOString().split("T")[0]);
         setFormMemo("");
         setFormLines([{ account_id: "", description: "", debit: 0, credit: 0 }, { account_id: "", description: "", debit: 0, credit: 0 }]);
+        setEntryMode("simple");
+        setSimpleType("");
+        setSimpleAmount("");
+        setSDebit("");
+        setSCredit("");
         setView("create");
     };
 
     const openEdit = async (e) => {
         if (e.status !== "Draft") return;
+        setEntryMode("advanced"); // existing multi-line drafts need the full grid
         setEditingId(e.id);
         setFormDate(e.entry_date?.split("T")[0] || "");
         setFormMemo(e.memo || "");
@@ -151,6 +255,181 @@ export default function JournalEntries() {
             }
             flash(editingId ? "Entry updated" : "Entry created");
             setView("list");
+            load();
+        } catch (e) { flash("Error: " + e.message); }
+    };
+
+    /* ------- SIMPLE (GUIDED) ENTRY ------- */
+    // Accounts matching a preset side, with the hinted account floated to the top.
+    const pickAccounts = useCallback((side) => {
+        if (!side) return [];
+        let list = accounts.filter(a => side.types.includes(a.account_type));
+        if (side.hint) {
+            const h = side.hint.toLowerCase();
+            const score = (a) => `${a.name || ""} ${a.code || ""}`.toLowerCase().includes(h) ? 0 : 1;
+            list = [...list].sort((a, b) => score(a) - score(b));
+        }
+        return list;
+    }, [accounts]);
+
+    // Restore the last account the user chose for this preset+side, else the best default.
+    const recallAcct = (presetId, role, list) => {
+        const saved = localStorage.getItem(`ls_simple_${presetId}_${role}`);
+        if (saved && list.some(a => a.id === saved)) return saved;
+        return list[0]?.id || "";
+    };
+
+    const activePreset = useMemo(() => TXN_PRESETS.find(p => p.id === simpleType) || null, [simpleType]);
+
+    const choosePreset = (p) => {
+        setSimpleType(p.id);
+        setSDebit(recallAcct(p.id, "debit", pickAccounts(p.debit)));
+        setSCredit(recallAcct(p.id, "credit", pickAccounts(p.credit)));
+    };
+
+    const saveSimple = async () => {
+        const p = activePreset;
+        if (!p) return;
+        const amt = Number(simpleAmount);
+        if (!amt || amt <= 0) { flash("Enter an amount"); return; }
+        if (!sDebit || !sCredit) { flash("Choose both accounts"); return; }
+        if (sDebit === sCredit) { flash("The two accounts must be different"); return; }
+        setSaving(true);
+        try {
+            await api("create_simple_transaction", {
+                entry_date: formDate,
+                memo: formMemo || p.label,
+                debit_account_id: sDebit,
+                credit_account_id: sCredit,
+                amount: amt,
+                post: true,
+            });
+            localStorage.setItem(`ls_simple_${p.id}_debit`, sDebit);
+            localStorage.setItem(`ls_simple_${p.id}_credit`, sCredit);
+            flash("Transaction recorded ✓");
+            setView("list");
+            load();
+        } catch (e) { flash("Error: " + e.message); }
+        setSaving(false);
+    };
+
+    /* ------- RECURRING ENTRIES ------- */
+    const activeRecPreset = useMemo(() => TXN_PRESETS.find(p => p.id === recPreset) || null, [recPreset]);
+
+    const loadRecurring = async () => {
+        try {
+            const list = await api("get_recurring_entries", {});
+            setRecurringList(Array.isArray(list) ? list : []);
+        } catch (e) { flash("Error: " + e.message); setRecurringList([]); }
+    };
+
+    const openRecurring = () => { setView("recurring"); loadRecurring(); };
+
+    const openRecurringCreate = () => {
+        setEditingRecId(null);
+        setRecPreset("");
+        setRecName(""); setRecAmount(""); setRecDebit(""); setRecCredit("");
+        setRecFreq("Monthly"); setRecInterval(1);
+        setRecStart(new Date().toISOString().split("T")[0]);
+        setRecEnd(""); setRecAutoPost(false); setRecLimit("");
+        setView("recurring-form");
+    };
+
+    const chooseRecPreset = (p) => {
+        setRecPreset(p.id);
+        setRecDebit(pickAccounts(p.debit)[0]?.id || "");
+        setRecCredit(pickAccounts(p.credit)[0]?.id || "");
+        setRecName(prev => prev || p.label);
+    };
+
+    const openRecurringEdit = async (rec) => {
+        try {
+            const full = await api("get_recurring_entry", { id: rec.id });
+            const lines = full?.lines || [];
+            const dr = lines.find(l => Number(l.debit) > 0) || lines[0] || {};
+            const cr = lines.find(l => Number(l.credit) > 0) || lines[1] || {};
+            setEditingRecId(rec.id);
+            setRecPreset("");
+            setRecName(full.name || "");
+            setRecAmount(Number(dr.debit) || Number(cr.credit) || "");
+            setRecDebit(dr.account_id || "");
+            setRecCredit(cr.account_id || "");
+            setRecFreq(full.frequency || "Monthly");
+            setRecInterval(full.interval_count || 1);
+            setRecStart((full.start_date || "").split("T")[0]);
+            setRecEnd((full.end_date || "").split("T")[0]);
+            setRecAutoPost(full.auto_post !== false);
+            setRecLimit(full.occurrences_limit != null ? String(full.occurrences_limit) : "");
+            setView("recurring-form");
+        } catch (e) { flash("Error: " + e.message); }
+    };
+
+    const saveRecurring = async () => {
+        const amt = Number(recAmount);
+        if (!recName.trim()) { flash("Give it a name"); return; }
+        if (!amt || amt <= 0) { flash("Enter an amount"); return; }
+        if (!recDebit || !recCredit) { flash("Choose both accounts"); return; }
+        if (recDebit === recCredit) { flash("The two accounts must be different"); return; }
+        if (!recStart) { flash("Pick a start date"); return; }
+        const payload = {
+            name: recName.trim(),
+            memo: recName.trim(),
+            frequency: recFreq,
+            interval_count: Math.max(1, Number(recInterval) || 1),
+            start_date: recStart,
+            end_date: recEnd || "",
+            auto_post: recAutoPost,
+            occurrences_limit: recLimit ? Number(recLimit) : null,
+            lines: [
+                { account_id: recDebit, debit: amt, credit: 0 },
+                { account_id: recCredit, debit: 0, credit: amt },
+            ],
+        };
+        setSaving(true);
+        try {
+            if (editingRecId) await api("update_recurring_entry", { id: editingRecId, ...payload });
+            else await api("create_recurring_entry", payload);
+            flash(editingRecId ? "Recurring entry updated" : "Recurring entry created");
+            setView("recurring");
+            loadRecurring();
+        } catch (e) { flash("Error: " + e.message); }
+        setSaving(false);
+    };
+
+    const processDue = async () => {
+        try {
+            const res = await api("process_due_recurring", {});
+            const n = res?.generated || 0;
+            flash(n > 0 ? `Generated ${n} entr${n === 1 ? "y" : "ies"}` : "Nothing due right now");
+            load();
+            if (view === "recurring") loadRecurring();
+        } catch (e) { flash("Error: " + e.message); }
+    };
+
+    const runRecurNow = async (rec) => {
+        if (!confirm(`Generate "${rec.name}" now?`)) return;
+        try {
+            await api("run_recurring_now", { id: rec.id });
+            flash("Entry generated");
+            loadRecurring();
+            load();
+        } catch (e) { flash("Error: " + e.message); }
+    };
+
+    const toggleRecur = async (rec) => {
+        try {
+            await api("toggle_recurring_active", { id: rec.id, active: !rec.is_active });
+            loadRecurring();
+            load();
+        } catch (e) { flash("Error: " + e.message); }
+    };
+
+    const deleteRecur = async (rec) => {
+        if (!confirm(`Delete recurring entry "${rec.name}"? Already-generated entries are kept.`)) return;
+        try {
+            await api("delete_recurring_entry", { id: rec.id });
+            flash("Recurring entry deleted");
+            loadRecurring();
             load();
         } catch (e) { flash("Error: " + e.message); }
     };
@@ -267,6 +546,8 @@ export default function JournalEntries() {
     if (view === "create") return renderCreateView();
     if (view === "mapping") return renderMappingView();
     if (view === "payroll") return renderPayrollView();
+    if (view === "recurring") return renderRecurringView();
+    if (view === "recurring-form") return renderRecurringForm();
 
     return (
         <div className="acc-wrap">
@@ -293,6 +574,10 @@ export default function JournalEntries() {
                     </select>
                 </div>
                 <div className="acc-bar-right">
+                    <button className="acc-btn-s" onClick={openRecurring}>
+                        <I name="repeat" size={14}/> Recurring
+                        {dueList.length > 0 && <span className="je-due-badge">{dueList.length}</span>}
+                    </button>
                     <button className="acc-btn-s" onClick={() => { setView("mapping"); loadMappings(); }}>
                         <I name="link" size={14}/> Mappings
                     </button>
@@ -304,6 +589,19 @@ export default function JournalEntries() {
                     </button>
                 </div>
             </div>
+
+            {/* Recurring due banner */}
+            {dueList.length > 0 && (
+                <div className="je-due-banner">
+                    <div className="je-due-banner-l">
+                        <I name="clock" size={16}/>
+                        <span><b>{dueList.length}</b> recurring transaction{dueList.length === 1 ? " is" : "s are"} due to be generated</span>
+                    </div>
+                    <button className="je-due-gen-btn" onClick={processDue}>
+                        <I name="check" size={13}/> Generate now
+                    </button>
+                </div>
+            )}
 
             {/* Main Content */}
             <div className="je-grid acc-fill">
@@ -428,9 +726,20 @@ export default function JournalEntries() {
                 {msg && <div className="je-flash">{msg}</div>}
                 <div className="je-view-header">
                     <button className="je-back-btn" onClick={() => setView("list")}><I name="arrow-left" size={16}/></button>
-                    <h3 className="acc-title" style={{ margin: 0 }}>{editingId ? "Edit" : "New"} Journal Entry</h3>
+                    <h3 className="acc-title" style={{ margin: 0 }}>{editingId ? "Edit Journal Entry" : "Record a Transaction"}</h3>
+                    {!editingId && (
+                        <div className="je-mode-toggle">
+                            <button className={entryMode === "simple" ? "je-mode-on" : ""} onClick={() => setEntryMode("simple")}>
+                                <I name="zap" size={13}/> Simple
+                            </button>
+                            <button className={entryMode === "advanced" ? "je-mode-on" : ""} onClick={() => setEntryMode("advanced")}>
+                                <I name="sliders" size={13}/> Advanced
+                            </button>
+                        </div>
+                    )}
                 </div>
 
+                {entryMode === "simple" && !editingId ? renderSimpleForm() : (
                 <div className="acc-card je-form-card">
                     <div className="je-form-head">
                         <div style={{ flex: 1 }}>
@@ -505,8 +814,126 @@ export default function JournalEntries() {
                         <button className="acc-btn-cancel" onClick={() => setView("list")}>Cancel</button>
                     </div>
                 </div>
+                )}
 
                 <style>{jeCSS}</style>
+            </div>
+        );
+    }
+
+    /* ===== SIMPLE (GUIDED) FORM ===== */
+    function renderSimpleForm() {
+        // Step 1 — pick the kind of transaction.
+        if (!activePreset) {
+            return (
+                <div className="je-simple-pick">
+                    <div className="je-view-desc" style={{ margin: "0 0 14px" }}>
+                        Pick what happened. We'll handle the debits and credits for you.
+                    </div>
+                    {TXN_GROUPS.map(group => (
+                        <div key={group} className="je-pick-group">
+                            <div className="je-pick-group-t">{group}</div>
+                            <div className="je-pick-grid">
+                                {TXN_PRESETS.filter(p => p.group === group).map(p => (
+                                    <button key={p.id} className="je-pick-card" onClick={() => choosePreset(p)}>
+                                        <span className="je-pick-ic" style={{ background: p.color + "18", color: p.color }}>
+                                            <I name={p.icon} size={18}/>
+                                        </span>
+                                        <span className="je-pick-txt">
+                                            <span className="je-pick-label">{p.label}</span>
+                                            <span className="je-pick-sub">{p.sub}</span>
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+
+        // Step 2 — fill in amount + the two friendly account pickers.
+        const p = activePreset;
+        const debitList = pickAccounts(p.debit);
+        const creditList = pickAccounts(p.credit);
+        const acctName = (id) => { const a = acctMap[id]; return a ? `${a.code} ${a.name}` : "—"; };
+        const amt = Number(simpleAmount) || 0;
+        const ready = amt > 0 && sDebit && sCredit && sDebit !== sCredit;
+        const missingAccts = debitList.length === 0 || creditList.length === 0;
+
+        return (
+            <div className="acc-card je-form-card">
+                <button className="je-change-type" onClick={() => { setSimpleType(""); }}>
+                    <I name="chevron-left" size={13}/> Change type
+                </button>
+                <div className="je-simple-title">
+                    <span className="je-pick-ic" style={{ background: p.color + "18", color: p.color }}><I name={p.icon} size={18}/></span>
+                    <div>
+                        <div className="je-pick-label" style={{ fontSize: 15 }}>{p.label}</div>
+                        <div className="je-pick-sub">{p.sub}</div>
+                    </div>
+                </div>
+
+                {missingAccts && (
+                    <div className="je-simple-warn">
+                        <I name="alert-triangle" size={14}/>
+                        You don't have the right accounts set up for this yet. Add them under
+                        <b> Chart of Accts</b>, or use <b>Advanced</b> mode.
+                    </div>
+                )}
+
+                {/* Amount — the star of the form */}
+                <label className="acc-label">Amount</label>
+                <div className="je-amount-wrap">
+                    <span className="je-amount-peso">₱</span>
+                    <input type="number" min="0" step="0.01" className="je-amount-input" placeholder="0.00"
+                        value={simpleAmount} onChange={e => setSimpleAmount(e.target.value)} autoFocus/>
+                </div>
+
+                {/* The two accounts, in plain language */}
+                <div className="je-simple-row">
+                    <div style={{ flex: 1 }}>
+                        <label className="acc-label">{p.debit.label}</label>
+                        <select className="acc-input" style={{ margin: 0 }} value={sDebit} onChange={e => setSDebit(e.target.value)}>
+                            <option value="">Select…</option>
+                            {debitList.map(a => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+                        </select>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                        <label className="acc-label">{p.credit.label}</label>
+                        <select className="acc-input" style={{ margin: 0 }} value={sCredit} onChange={e => setSCredit(e.target.value)}>
+                            <option value="">Select…</option>
+                            {creditList.map(a => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+                        </select>
+                    </div>
+                </div>
+
+                <div className="je-simple-row">
+                    <div style={{ flex: 1 }}>
+                        <label className="acc-label">Date</label>
+                        <input type="date" className="acc-input" style={{ margin: 0 }} value={formDate} onChange={e => setFormDate(e.target.value)}/>
+                    </div>
+                    <div style={{ flex: 2 }}>
+                        <label className="acc-label">Note <span style={{ color: "#aaa", fontWeight: 400 }}>(optional)</span></label>
+                        <input className="acc-input" style={{ margin: 0 }} placeholder="e.g. July office rent" value={formMemo} onChange={e => setFormMemo(e.target.value)}/>
+                    </div>
+                </div>
+
+                {/* Transparent "here's the entry we'll post" — educational, collapsible-feel */}
+                {ready && (
+                    <div className="je-accountant-peek">
+                        <div className="je-peek-head"><I name="book-open" size={12}/> Accountant view</div>
+                        <div className="je-peek-line"><span className="je-peek-dr">Dr</span> {acctName(sDebit)} <span className="je-peek-amt">{fmtMoney(amt)}</span></div>
+                        <div className="je-peek-line"><span className="je-peek-cr">Cr</span> {acctName(sCredit)} <span className="je-peek-amt">{fmtMoney(amt)}</span></div>
+                    </div>
+                )}
+
+                <div className="acc-foot-btns" style={{ justifyContent: "flex-start", marginTop: 16 }}>
+                    <button className="acc-btn-primary" onClick={saveSimple} disabled={!ready || saving}>
+                        <I name={saving ? "loader" : "check"} size={14}/> {saving ? "Recording…" : "Record Transaction"}
+                    </button>
+                    <button className="acc-btn-cancel" onClick={() => setView("list")}>Cancel</button>
+                </div>
             </div>
         );
     }
@@ -646,6 +1073,231 @@ export default function JournalEntries() {
             </div>
         );
     }
+
+    /* ===== RECURRING LIST VIEW ===== */
+    function renderRecurringView() {
+        return (
+            <div className="acc-wrap">
+                {msg && <div className="je-flash">{msg}</div>}
+                <div className="je-view-header">
+                    <button className="je-back-btn" onClick={() => setView("list")}><I name="arrow-left" size={16}/></button>
+                    <h3 className="acc-title" style={{ margin: 0 }}>Recurring Transactions</h3>
+                    <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
+                        {dueList.length > 0 && (
+                            <button className="acc-btn-s" onClick={processDue}>
+                                <I name="clock" size={14}/> Generate {dueList.length} due
+                            </button>
+                        )}
+                        <button className="acc-btn-p" onClick={openRecurringCreate}>
+                            <I name="plus" size={14}/> New Recurring
+                        </button>
+                    </div>
+                </div>
+
+                <div className="je-view-desc">
+                    Set up transactions that repeat on a schedule — rent, subscriptions, loan payments.
+                    Each one generates a journal entry automatically when it falls due.
+                </div>
+
+                {recurringList.length === 0 ? (
+                    <div className="acc-empty">
+                        <div className="acc-empty-ic"><I name="repeat" size={28}/></div>
+                        <div className="acc-empty-t">No recurring transactions yet</div>
+                        <div className="acc-empty-d">Create one to have it post on a schedule</div>
+                    </div>
+                ) : (
+                    <div className="je-rec-list">
+                        {recurringList.map(rec => {
+                            const due = new Date(rec.next_run_date) <= new Date(new Date().toISOString().split("T")[0]);
+                            return (
+                                <div key={rec.id} className={`je-rec-card${rec.is_active ? "" : " je-rec-card-off"}`}>
+                                    <div className="je-rec-main">
+                                        <div className="je-rec-ic" style={{ background: (rec.is_active ? "#6366f1" : "#9ca3af") + "18", color: rec.is_active ? "#6366f1" : "#9ca3af" }}>
+                                            <I name="repeat" size={16}/>
+                                        </div>
+                                        <div style={{ minWidth: 0 }}>
+                                            <div className="je-rec-name">{rec.name}</div>
+                                            <div className="je-rec-sub">
+                                                {freqLabel(rec.frequency, rec.interval_count)}
+                                                {rec.auto_post ? " · auto-posts" : " · saves as draft"}
+                                                {rec.occurrences_limit ? ` · ${rec.occurrences_count}/${rec.occurrences_limit} runs` : ""}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="je-rec-mid">
+                                        <div className="je-rec-amt acc-cell-mono">{fmtMoney(rec.total_debit)}</div>
+                                        <div className={`je-rec-next${due && rec.is_active ? " je-rec-next-due" : ""}`}>
+                                            {rec.is_active ? <>Next: {rec.next_run_date?.split("T")[0]}{due ? " (due)" : ""}</> : "Paused"}
+                                        </div>
+                                    </div>
+                                    <div className="je-rec-actions">
+                                        {rec.is_active && (
+                                            <button className="je-icon-act" title="Generate now" onClick={() => runRecurNow(rec)}><I name="play" size={14}/></button>
+                                        )}
+                                        <button className="je-icon-act" title={rec.is_active ? "Pause" : "Resume"} onClick={() => toggleRecur(rec)}>
+                                            <I name={rec.is_active ? "pause" : "play"} size={14}/>
+                                        </button>
+                                        <button className="je-icon-act" title="Edit" onClick={() => openRecurringEdit(rec)}><I name="edit-2" size={14}/></button>
+                                        <button className="je-icon-act je-icon-act-danger" title="Delete" onClick={() => deleteRecur(rec)}><I name="trash-2" size={14}/></button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+
+                <style>{jeCSS}</style>
+            </div>
+        );
+    }
+
+    /* ===== RECURRING CREATE / EDIT FORM ===== */
+    function renderRecurringForm() {
+        // Step 1 (create only) — pick the kind of transaction, like Simple mode.
+        if (!editingRecId && !activeRecPreset) {
+            return (
+                <div className="acc-wrap">
+                    {msg && <div className="je-flash">{msg}</div>}
+                    <div className="je-view-header">
+                        <button className="je-back-btn" onClick={() => setView("recurring")}><I name="arrow-left" size={16}/></button>
+                        <h3 className="acc-title" style={{ margin: 0 }}>New Recurring Transaction</h3>
+                    </div>
+                    <div className="je-view-desc" style={{ margin: "0 0 14px" }}>
+                        What repeats? We'll handle the debits and credits for you.
+                    </div>
+                    {TXN_GROUPS.map(group => (
+                        <div key={group} className="je-pick-group">
+                            <div className="je-pick-group-t">{group}</div>
+                            <div className="je-pick-grid">
+                                {TXN_PRESETS.filter(p => p.group === group).map(p => (
+                                    <button key={p.id} className="je-pick-card" onClick={() => chooseRecPreset(p)}>
+                                        <span className="je-pick-ic" style={{ background: p.color + "18", color: p.color }}>
+                                            <I name={p.icon} size={18}/>
+                                        </span>
+                                        <span className="je-pick-txt">
+                                            <span className="je-pick-label">{p.label}</span>
+                                            <span className="je-pick-sub">{p.sub}</span>
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                    <style>{jeCSS}</style>
+                </div>
+            );
+        }
+
+        // Step 2 — transaction details + schedule.
+        const debitList = activeRecPreset ? pickAccounts(activeRecPreset.debit) : accounts;
+        const creditList = activeRecPreset ? pickAccounts(activeRecPreset.credit) : accounts;
+        const debitLabel = activeRecPreset ? activeRecPreset.debit.label : "Money goes to (debit)";
+        const creditLabel = activeRecPreset ? activeRecPreset.credit.label : "Money comes from (credit)";
+        const acctName = (id) => { const a = acctMap[id]; return a ? `${a.code} ${a.name}` : "—"; };
+        const amt = Number(recAmount) || 0;
+        const ready = recName.trim() && amt > 0 && recDebit && recCredit && recDebit !== recCredit && recStart;
+
+        return (
+            <div className="acc-wrap">
+                {msg && <div className="je-flash">{msg}</div>}
+                <div className="je-view-header">
+                    <button className="je-back-btn" onClick={() => setView("recurring")}><I name="arrow-left" size={16}/></button>
+                    <h3 className="acc-title" style={{ margin: 0 }}>{editingRecId ? "Edit" : "New"} Recurring Transaction</h3>
+                </div>
+
+                <div className="acc-card je-form-card">
+                    {!editingRecId && activeRecPreset && (
+                        <button className="je-change-type" onClick={() => setRecPreset("")}>
+                            <I name="chevron-left" size={13}/> Change type
+                        </button>
+                    )}
+
+                    <label className="acc-label">Name</label>
+                    <input className="acc-input" placeholder="e.g. Monthly office rent" value={recName} onChange={e => setRecName(e.target.value)}/>
+
+                    <label className="acc-label" style={{ marginTop: 14 }}>Amount</label>
+                    <div className="je-amount-wrap">
+                        <span className="je-amount-peso">₱</span>
+                        <input type="number" min="0" step="0.01" className="je-amount-input" placeholder="0.00"
+                            value={recAmount} onChange={e => setRecAmount(e.target.value)}/>
+                    </div>
+
+                    <div className="je-simple-row">
+                        <div style={{ flex: 1 }}>
+                            <label className="acc-label">{debitLabel}</label>
+                            <select className="acc-input" style={{ margin: 0 }} value={recDebit} onChange={e => setRecDebit(e.target.value)}>
+                                <option value="">Select…</option>
+                                {debitList.map(a => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+                            </select>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                            <label className="acc-label">{creditLabel}</label>
+                            <select className="acc-input" style={{ margin: 0 }} value={recCredit} onChange={e => setRecCredit(e.target.value)}>
+                                <option value="">Select…</option>
+                                {creditList.map(a => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div className="je-rec-sched">
+                        <div className="je-group-title" style={{ marginTop: 4 }}>Schedule</div>
+                        <div className="je-simple-row" style={{ marginTop: 0 }}>
+                            <div style={{ flex: 1 }}>
+                                <label className="acc-label">Repeats</label>
+                                <select className="acc-input" style={{ margin: 0 }} value={recFreq} onChange={e => setRecFreq(e.target.value)}>
+                                    {FREQ_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
+                                </select>
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <label className="acc-label">Every</label>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <input type="number" min="1" step="1" className="acc-input" style={{ margin: 0, width: 70 }}
+                                        value={recInterval} onChange={e => setRecInterval(e.target.value)}/>
+                                    <span style={{ fontSize: 12, color: "#888" }}>{FREQ_UNIT[recFreq]}(s)</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="je-simple-row">
+                            <div style={{ flex: 1 }}>
+                                <label className="acc-label">Starts</label>
+                                <input type="date" className="acc-input" style={{ margin: 0 }} value={recStart} onChange={e => setRecStart(e.target.value)}/>
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <label className="acc-label">Ends <span style={{ color: "#aaa", fontWeight: 400 }}>(optional)</span></label>
+                                <input type="date" className="acc-input" style={{ margin: 0 }} value={recEnd} onChange={e => setRecEnd(e.target.value)}/>
+                            </div>
+                            <div style={{ flex: 1 }}>
+                                <label className="acc-label">Max runs <span style={{ color: "#aaa", fontWeight: 400 }}>(optional)</span></label>
+                                <input type="number" min="1" step="1" className="acc-input" style={{ margin: 0 }} placeholder="∞"
+                                    value={recLimit} onChange={e => setRecLimit(e.target.value)}/>
+                            </div>
+                        </div>
+                        <label className="je-autopost">
+                            <input type="checkbox" checked={recAutoPost} onChange={e => setRecAutoPost(e.target.checked)}/>
+                            <span>Post automatically when generated <span style={{ color: "#888" }}>(otherwise saved as a draft for you to review and post)</span></span>
+                        </label>
+                    </div>
+
+                    {ready && (
+                        <div className="je-accountant-peek">
+                            <div className="je-peek-head"><I name="book-open" size={12}/> Each run posts</div>
+                            <div className="je-peek-line"><span className="je-peek-dr">Dr</span> {acctName(recDebit)} <span className="je-peek-amt">{fmtMoney(amt)}</span></div>
+                            <div className="je-peek-line"><span className="je-peek-cr">Cr</span> {acctName(recCredit)} <span className="je-peek-amt">{fmtMoney(amt)}</span></div>
+                        </div>
+                    )}
+
+                    <div className="acc-foot-btns" style={{ justifyContent: "flex-start", marginTop: 16 }}>
+                        <button className="acc-btn-primary" onClick={saveRecurring} disabled={!ready || saving}>
+                            <I name={saving ? "loader" : "save"} size={14}/> {saving ? "Saving…" : editingRecId ? "Update" : "Create"} Recurring
+                        </button>
+                        <button className="acc-btn-cancel" onClick={() => setView("recurring")}>Cancel</button>
+                    </div>
+                </div>
+
+                <style>{jeCSS}</style>
+            </div>
+        );
+    }
 }
 
 /* ===== PAGE-SPECIFIC STYLES (not covered by acc-layout.css) ===== */
@@ -704,5 +1356,64 @@ const jeCSS = `
   .je-payroll-card{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer;transition:all .15s}
   .je-payroll-card-sel{border:2px solid #2d9e8b;background:#edf8f5}
 
-  @media(max-width:900px){.je-grid{grid-template-columns:1fr}}
+  /* ---- simple (guided) mode ---- */
+  .je-mode-toggle{margin-left:auto;display:inline-flex;background:#f1f5f9;border-radius:8px;padding:3px}
+  .je-mode-toggle button{display:flex;align-items:center;gap:5px;border:none;background:none;padding:6px 12px;border-radius:6px;font-size:12px;font-weight:600;color:#64748b;cursor:pointer}
+  .je-mode-toggle .je-mode-on{background:#fff;color:#2d9e8b;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+  .je-pick-group{margin-bottom:18px}
+  .je-pick-group-t{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#94a3b8;margin-bottom:8px}
+  .je-pick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+  .je-pick-card{display:flex;align-items:center;gap:12px;text-align:left;padding:12px 14px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;cursor:pointer;transition:all .15s}
+  .je-pick-card:hover{border-color:#2d9e8b;box-shadow:0 2px 8px rgba(45,158,139,.12);transform:translateY(-1px)}
+  .je-pick-ic{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .je-pick-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .je-pick-label{font-size:13px;font-weight:700;color:#1a1a2e}
+  .je-pick-sub{font-size:11px;color:#94a3b8}
+
+  .je-change-type{display:inline-flex;align-items:center;gap:3px;background:none;border:none;color:#64748b;font-size:12px;font-weight:600;cursor:pointer;padding:0;margin-bottom:12px}
+  .je-change-type:hover{color:#2d9e8b}
+  .je-simple-title{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid #f1f5f9}
+  .je-simple-warn{display:flex;gap:8px;align-items:flex-start;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:12px;line-height:1.5;padding:10px 12px;border-radius:8px;margin-bottom:14px}
+  .je-simple-row{display:flex;gap:14px;margin-top:14px}
+  .je-amount-wrap{display:flex;align-items:center;border:2px solid #e5e7eb;border-radius:10px;padding:4px 14px;background:#fff;transition:border-color .15s}
+  .je-amount-wrap:focus-within{border-color:#2d9e8b}
+  .je-amount-peso{font-size:24px;font-weight:700;color:#94a3b8;margin-right:6px}
+  .je-amount-input{border:none;outline:none;font-size:28px;font-weight:700;color:#1a1a2e;width:100%;padding:6px 0;background:transparent}
+
+  .je-accountant-peek{margin-top:16px;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:8px;padding:10px 14px}
+  .je-peek-head{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:#94a3b8;margin-bottom:6px}
+  .je-peek-line{display:flex;align-items:center;font-size:12px;color:#475569;padding:2px 0}
+  .je-peek-dr,.je-peek-cr{display:inline-block;width:22px;font-weight:700}
+  .je-peek-dr{color:#2563eb}
+  .je-peek-cr{color:#db2777;margin-left:16px}
+  .je-peek-amt{margin-left:auto;font-family:ui-monospace,monospace;font-weight:600;color:#1a1a2e}
+
+  /* ---- recurring entries ---- */
+  .je-due-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;margin-left:6px;background:#ef4444;color:#fff;border-radius:8px;font-size:10px;font-weight:700}
+  .je-due-banner{display:flex;justify-content:space-between;align-items:center;gap:12px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;padding:10px 14px;margin-bottom:12px}
+  .je-due-banner-l{display:flex;align-items:center;gap:8px;font-size:13px;color:#3730a3}
+  .je-due-gen-btn{display:flex;align-items:center;gap:5px;background:#6366f1;color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:12px;font-weight:600;cursor:pointer}
+  .je-due-gen-btn:hover{background:#4f46e5}
+
+  .je-rec-list{display:flex;flex-direction:column;gap:8px}
+  .je-rec-card{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:12px 14px}
+  .je-rec-card-off{opacity:.65}
+  .je-rec-main{display:flex;align-items:center;gap:12px;flex:1;min-width:0}
+  .je-rec-ic{width:38px;height:38px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .je-rec-name{font-size:13px;font-weight:700;color:#1a1a2e;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .je-rec-sub{font-size:11px;color:#94a3b8;margin-top:2px}
+  .je-rec-mid{text-align:right;margin-right:6px}
+  .je-rec-amt{font-size:14px;font-weight:700;color:#1a1a2e}
+  .je-rec-next{font-size:11px;color:#94a3b8;margin-top:2px}
+  .je-rec-next-due{color:#6366f1;font-weight:600}
+  .je-rec-actions{display:flex;gap:4px}
+  .je-icon-act{background:#f8fafc;border:1px solid #e5e7eb;border-radius:7px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:#64748b}
+  .je-icon-act:hover{background:#f1f5f9;color:#2d9e8b;border-color:#cbd5e1}
+  .je-icon-act-danger:hover{color:#ef4444;border-color:#fecaca;background:#fef2f2}
+  .je-rec-sched{background:#f8fafc;border:1px solid #eef2f7;border-radius:10px;padding:12px 14px;margin-top:16px}
+  .je-autopost{display:flex;align-items:center;gap:8px;font-size:12px;color:#475569;margin-top:14px;cursor:pointer}
+  .je-autopost input{width:15px;height:15px;cursor:pointer}
+
+  @media(max-width:900px){.je-grid{grid-template-columns:1fr}.je-simple-row{flex-direction:column;gap:12px}}
 `;

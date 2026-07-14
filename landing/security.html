@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Security — LetterSheets</title>
+  <meta name="description" content="Zero-knowledge, post-quantum encrypted ERP. Sensitive records are encrypted in your browser with ML-KEM-768 and ML-DSA-65 — the server only ever stores ciphertext." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --page: #e8eaec; --frame: #ffffff; --ink: #16181c; --ink-2: #4a4f57;
+      --muted: #9aa0a8; --gray-head: #b3b8bf; --accent: #2d6a4f; --accent-bright: #2f9e6b;
+      --accent-ink: #1a3c2a; --mint: #e8f3ec; --line: #eef0f2;
+      --shadow-card: 0 14px 34px -12px rgba(24,39,31,.18), 0 3px 8px -2px rgba(24,39,31,.08);
+      --shadow-soft: 0 10px 24px -10px rgba(24,39,31,.16);
+      --radius-lg: 26px; --radius: 18px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--page); color: var(--ink); -webkit-font-smoothing: antialiased; padding: 14px; }
+    a { color: inherit; text-decoration: none; }
+    .mono { font-family: 'DM Mono', ui-monospace, monospace; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-family: inherit; font-weight: 600; font-size: 14px; border: 1px solid transparent; border-radius: 12px; padding: 10px 18px; transition: transform .16s, background .16s, color .16s; white-space: nowrap; }
+    .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 10px 22px -8px rgba(45,106,79,.55); }
+    .btn-primary:hover { background: var(--accent-ink); transform: translateY(-1px); }
+    .btn-ghost { background: transparent; color: var(--ink-2); font-weight: 500; padding: 10px 8px; }
+    .btn-ghost:hover { color: var(--accent); }
+
+    .term { color: var(--accent); border-bottom: 1px dashed rgba(45,106,79,.5); cursor: help; position: relative; outline: none; }
+    .term:hover, .term:focus { border-bottom-color: var(--accent); }
+    .term > .tip { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%) translateY(4px); width: max-content; max-width: 250px; background: #1b2a22; color: #eaf1ed; font-size: 12.5px; font-weight: 400; line-height: 1.5; letter-spacing: 0; text-transform: none; text-align: left; padding: 10px 13px; border-radius: 11px; box-shadow: 0 12px 28px -8px rgba(0,0,0,.4); opacity: 0; visibility: hidden; transition: opacity .16s, transform .16s; z-index: 30; pointer-events: none; }
+    .term > .tip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: #1b2a22; }
+    .term:hover > .tip, .term:focus > .tip { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+
+    .frame { position: relative; overflow: hidden; background: var(--frame); background-image: radial-gradient(#e6e8eb 1px, transparent 1px); background-size: 18px 18px; border-radius: var(--radius-lg); box-shadow: 0 30px 60px -30px rgba(24,39,31,.25), 0 2px 6px rgba(24,39,31,.05); max-width: 1320px; margin: 0 auto; }
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 22px 34px; }
+    .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; font-size: 17px; letter-spacing: -0.02em; }
+    .brand-mark { width: 30px; height: 30px; border-radius: 9px; background: #fff; box-shadow: var(--shadow-soft); display: grid; place-items: center; padding: 6px; }
+    .dotgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 100%; height: 100%; }
+    .dotgrid span { border-radius: 50%; background: var(--accent-ink); }
+    .dotgrid span.hi { background: var(--accent-bright); }
+    .nav-mid { display: flex; align-items: center; gap: 34px; }
+    .nav-mid a { font-size: 14px; font-weight: 500; color: var(--ink-2); transition: color .16s; }
+    .nav-mid a:hover, .nav-mid a.active { color: var(--accent); }
+    .nav-right { display: flex; align-items: center; gap: 14px; }
+
+    .head { text-align: center; padding: 46px 24px 60px; }
+    .head .tag { font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--accent-bright); margin-bottom: 12px; }
+    .head h1 { font-size: clamp(24px, 3.4vw, 40px); letter-spacing: -0.04em; line-height: 1.05; color: var(--ink); }
+    .head h1 .gray { color: var(--gray-head); }
+    .head p { margin: 16px auto 0; max-width: 54ch; color: var(--ink-2); font-size: 16px; }
+    .head .stats { display: inline-flex; gap: 26px; margin-top: 26px; flex-wrap: wrap; justify-content: center; }
+    .head .stat b { font-size: 20px; color: var(--ink); letter-spacing: -0.02em; }
+    .head .stat span { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+    .section { max-width: 1180px; margin: 26px auto 0; padding: 8px; }
+    .sec-title { text-align: center; max-width: 620px; margin: 30px auto 26px; }
+    .sec-title h2 { font-size: clamp(19px, 2.4vw, 26px); letter-spacing: -0.03em; color: var(--ink); line-height: 1.12; }
+    .sec-title h2 .gray { color: var(--gray-head); }
+    .sec-title p { margin-top: 12px; color: var(--ink-2); font-size: 15px; }
+
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .card { background: #fff; border-radius: 20px; padding: 26px; box-shadow: var(--shadow-soft); border: 1px solid rgba(24,39,31,.04); transition: transform .18s, box-shadow .18s; }
+    .card:hover { transform: translateY(-4px); box-shadow: var(--shadow-card); }
+    .c-ico { width: 50px; height: 50px; border-radius: 14px; background: var(--mint); color: var(--accent); display: grid; place-items: center; margin-bottom: 16px; }
+    .card h3 { font-size: 17px; color: var(--ink); letter-spacing: -0.015em; margin-bottom: 8px; }
+    .card p { font-size: 13.5px; color: var(--ink-2); line-height: 1.55; }
+    .card .algo { margin-top: 14px; display: inline-flex; gap: 7px; align-items: center; font-size: 12px; color: var(--accent); background: var(--mint); border-radius: 8px; padding: 5px 10px; }
+
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .step { background: #fff; border-radius: 18px; padding: 24px; box-shadow: var(--shadow-soft); border: 1px solid rgba(24,39,31,.04); }
+    .step .n { width: 32px; height: 32px; border-radius: 9px; background: var(--accent-ink); color: #fff; display: grid; place-items: center; font-family: 'DM Mono', monospace; font-size: 13px; margin-bottom: 14px; }
+    .step h3 { font-size: 16px; color: var(--ink); margin-bottom: 6px; }
+    .step p { font-size: 13.5px; color: var(--ink-2); line-height: 1.5; }
+
+    .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .col { background: #fff; border-radius: 20px; padding: 26px; box-shadow: var(--shadow-soft); border: 1px solid rgba(24,39,31,.04); }
+    .col h3 { font-size: 15px; margin-bottom: 16px; display: flex; align-items: center; gap: 9px; }
+    .col.no h3 { color: var(--accent); }
+    .col.yes h3 { color: #b5522e; }
+    .col ul { list-style: none; display: flex; flex-direction: column; gap: 11px; }
+    .col li { display: flex; gap: 10px; font-size: 13.5px; color: var(--ink-2); line-height: 1.45; }
+    .col li svg { flex-shrink: 0; margin-top: 1px; }
+    .badge-ico { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; }
+
+    .cta { max-width: 1180px; margin: 30px auto 0; text-align: center; background: #fff; border-radius: var(--radius-lg); padding: 60px 24px; box-shadow: var(--shadow-card); background-image: radial-gradient(#e6e9e7 1px, transparent 1px); background-size: 18px 18px; }
+    .cta h2 { font-size: clamp(19px, 2.4vw, 26px); letter-spacing: -0.03em; color: var(--ink); line-height: 1.12; }
+    .cta h2 .gray { color: var(--gray-head); }
+    .cta p { margin: 14px auto 24px; color: var(--ink-2); font-size: 15px; max-width: 44ch; }
+
+    footer { max-width: 1180px; margin: 26px auto 6px; padding: 22px 10px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12.5px; }
+    footer .brand { font-size: 15px; color: var(--ink); }
+    footer .brand-mark { width: 24px; height: 24px; padding: 5px; }
+    footer a { color: var(--muted); margin-left: 18px; }
+    footer a:hover { color: var(--accent); }
+
+    @media (max-width: 860px) { .grid, .steps, .compare { grid-template-columns: 1fr; } }
+    @media (max-width: 720px) { .nav-mid { display: none; } nav { padding: 18px 20px; } }
+  </style>
+</head>
+<body>
+
+  <div class="frame">
+    <nav>
+      <a class="brand" href="index.html">
+        <span class="brand-mark"><span class="dotgrid"><span class="hi"></span><span></span><span></span><span></span></span></span>
+        LetterSheets
+      </a>
+      <div class="nav-mid">
+        <a href="modules.html">Modules</a>
+        <a href="security.html" class="active">Security</a>
+        <a href="resources.html">Resources</a>
+        <a href="pricing.html">Pricing</a>
+      </div>
+      <div class="nav-right">
+        <a class="btn btn-ghost" href="#" data-app>Sign in</a>
+      </div>
+    </nav>
+
+    <div class="head">
+      <div class="tag">Security first</div>
+      <h1>Your data stays private, <span class="gray">even from us.</span></h1>
+      <p>Most ERPs protect data in transit and trust the server with the rest. LetterSheets encrypts your most sensitive records in your browser and keeps the keys with you.</p>
+      <div class="stats">
+        <div class="stat"><b>E2E</b><span>Client-side</span></div>
+        <div class="stat"><b class="mono">ML-KEM-768</b><span>Key exchange</span></div>
+        <div class="stat"><b class="mono">ML-DSA-65</b><span>Signatures</span></div>
+        <div class="stat"><b>0</b><span>Vendor backdoors</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="grid">
+      <div class="card">
+        <div class="c-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><rect x="4" y="10" width="16" height="10" rx="2" stroke="currentColor" stroke-width="2"/><path d="M8 10V7a4 4 0 018 0v3" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="15" r="1.7" fill="currentColor"/></svg></div>
+        <h3>Zero-knowledge by design</h3>
+        <p>Employee <span class="term" tabindex="0">PII<span class="tip">Personally identifiable information — data that can identify a specific person.</span></span>, payroll figures, and financial records are encrypted <span class="term" tabindex="0">client-side<span class="tip">Encryption that happens in your own browser, before the data is sent anywhere.</span></span>. The server stores <span class="term" tabindex="0">ciphertext<span class="tip">Data after it has been encrypted — unreadable without the key.</span></span> it cannot read — a breach exposes nothing usable.</p>
+      </div>
+      <div class="card">
+        <div class="c-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 3l7 4v5c0 4-3 7-7 8-4-1-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="11" r="2.2" stroke="currentColor" stroke-width="2"/><path d="M12 13v3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+        <h3>Quantum-safe cryptography</h3>
+        <p>Key exchange and signatures use NIST <span class="term" tabindex="0">post-quantum<span class="tip">Cryptography designed to resist attacks from future quantum computers.</span></span> standards, so data captured today can't be decrypted by future quantum machines.</p>
+        <span class="algo mono"><span class="term" tabindex="0" style="border-bottom-color:rgba(45,106,79,.35)">ML-KEM-768<span class="tip">A NIST-standardized post-quantum algorithm for securely exchanging encryption keys.</span></span> &middot; <span class="term" tabindex="0" style="border-bottom-color:rgba(45,106,79,.35)">ML-DSA-65<span class="tip">A NIST-standardized post-quantum algorithm for digital signatures.</span></span></span>
+      </div>
+      <div class="card">
+        <div class="c-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></div>
+        <h3>You hold the recovery key</h3>
+        <p>Each company gets a downloadable <span class="term" tabindex="0">recovery key<span class="tip">A secret key you download at setup — the only way to regain access to your encrypted data.</span></span> at setup. Access is unlockable only by you — no silent backdoor, no vendor master key.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="sec-title">
+      <h2>Secure from the <span class="gray">first login.</span></h2>
+      <p>Encryption isn't a setting you switch on — it's how the platform works from the moment you create a company.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="n">01</div>
+        <h3>Create your company</h3>
+        <p>Spin up an encrypted workspace and download your recovery key — the only path back into your data.</p>
+      </div>
+      <div class="step">
+        <div class="n">02</div>
+        <h3>Unlock with your password</h3>
+        <p>Your password derives the key that decrypts sensitive fields, right in the browser. The server never sees it.</p>
+      </div>
+      <div class="step">
+        <div class="n">03</div>
+        <h3>Work as usual</h3>
+        <p>Records encrypt and decrypt transparently as you use the app — nothing to manage, nothing exposed.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="sec-title">
+      <h2>What the server <span class="gray">can and can't see.</span></h2>
+    </div>
+    <div class="compare">
+      <div class="col no">
+        <h3><span class="badge-ico" style="background:var(--mint); color:var(--accent)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4 4 10-10.5" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span> Encrypted &amp; private</h3>
+        <ul>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="4" y="10" width="16" height="10" rx="2" stroke="#2d6a4f" stroke-width="2"/><path d="M8 10V7a4 4 0 018 0v3" stroke="#2d6a4f" stroke-width="2"/></svg> Employee personal information</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="4" y="10" width="16" height="10" rx="2" stroke="#2d6a4f" stroke-width="2"/><path d="M8 10V7a4 4 0 018 0v3" stroke="#2d6a4f" stroke-width="2"/></svg> Salaries and payroll figures</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="4" y="10" width="16" height="10" rx="2" stroke="#2d6a4f" stroke-width="2"/><path d="M8 10V7a4 4 0 018 0v3" stroke="#2d6a4f" stroke-width="2"/></svg> Sensitive financial amounts</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="4" y="10" width="16" height="10" rx="2" stroke="#2d6a4f" stroke-width="2"/><path d="M8 10V7a4 4 0 018 0v3" stroke="#2d6a4f" stroke-width="2"/></svg> Your encryption keys and password</li>
+        </ul>
+      </div>
+      <div class="col yes">
+        <h3><span class="badge-ico" style="background:#f7ede7; color:#b5522e"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 8v5M12 16.5v.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/></svg></span> Operational metadata</h3>
+        <ul>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.5" stroke="#b5522e" stroke-width="2"/></svg> Record structure and timestamps</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.5" stroke="#b5522e" stroke-width="2"/></svg> Which company a record belongs to</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.5" stroke="#b5522e" stroke-width="2"/></svg> Non-sensitive reference fields</li>
+          <li><svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.5" stroke="#b5522e" stroke-width="2"/></svg> What's needed to route and store data</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="cta">
+    <h2>Run your business on encryption <span class="gray">you control.</span></h2>
+    <p>Bring HR, accounting, inventory, and the rest onto one private, quantum-safe platform.</p>
+    <a class="btn btn-primary" href="#" data-app>Get free demo</a>
+  </div>
+
+  <footer>
+    <a class="brand" href="index.html">
+      <span class="brand-mark"><span class="dotgrid"><span class="hi"></span><span></span><span></span><span></span></span></span>
+      LetterSheets
+    </a>
+    <div>
+      <span>&copy; <span id="yr">2026</span> LetterSheets</span>
+      <a href="index.html">Home</a>
+      <a href="modules.html">Modules</a>
+      <a href="#" data-app>Sign in</a>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById('yr').textContent = new Date().getFullYear();
+    var appUrl = new URLSearchParams(location.search).get('app') || '/';
+    document.querySelectorAll('[data-app]').forEach(function(a){ a.setAttribute('href', appUrl); });
+  </script>
+</body>
+</html>

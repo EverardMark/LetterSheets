@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
+import HistoryTab, { canViewHistory } from "../components/HistoryTab";
 
 /* ================================================================
    API HELPER
@@ -336,9 +337,14 @@ function BenefitPanel({ open, mode, benefit, idx, employees, onClose, onSave, on
                                 {form.type === "leave" && (
                                     <button className={`bf-detail-tab ${detailTab === "credits" ? "bf-detail-tab-a" : ""}`} onClick={() => setDetailTab("credits")}>Credits</button>
                                 )}
+                                {canViewHistory() && form.id && (
+                                    <button className={`bf-detail-tab ${detailTab === "history" ? "bf-detail-tab-a" : ""}`} onClick={() => setDetailTab("history")}>History</button>
+                                )}
                             </div>
 
-                            {detailTab === "credits" ? (
+                            {detailTab === "history" ? (
+                                <HistoryTab table="benefits" recordId={form.id} />
+                            ) : detailTab === "credits" ? (
                                 <LeaveCreditsPanel
                                     benefitId={form.id}
                                     credit={credit}
@@ -588,7 +594,9 @@ function BenefitPanel({ open, mode, benefit, idx, employees, onClose, onSave, on
 
                 <div className="ap-modal-foot">
                     <div className="ap-foot-btns">
-                        {isView ? (<>
+                        {isView && detailTab === "history" ? (
+                            <button className="ap-btn-cancel" onClick={onClose}>Close</button>
+                        ) : isView ? (<>
                             {onDelete && <button className="ap-btn-danger" onClick={() => onDelete(idx)}>Delete</button>}
                             <button className="ap-btn-primary" onClick={switchToEdit}><I name="briefcase" size={13}/> Edit</button>
                         </>) : (<>

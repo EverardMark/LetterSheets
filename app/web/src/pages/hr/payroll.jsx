@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye, faEyeSlash } from "@fortawesome/pro-light-svg-icons";
 import { I } from "../../layouts/ERPLayout";
+import HistoryTab, { canViewHistory } from "../components/HistoryTab";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 
@@ -507,6 +508,7 @@ function RunDetail({ run, items, settings, computing, hideAmounts, onToggleAmoun
     const isDraft = run.status === "Draft";
     const sc = run.status === "Approved" ? "#22c55e" : run.status === "Paid" ? "#0ea5e9" : "#f59e0b";
     const m = (v) => money(v, hideAmounts);
+    const [showHist, setShowHist] = useState(false);
 
     return (<>
         <div className="pr-run-head">
@@ -517,6 +519,11 @@ function RunDetail({ run, items, settings, computing, hideAmounts, onToggleAmoun
             </div>
             <div className="pr-run-actions">
                 <AmountsToggle hidden={hideAmounts} onToggle={onToggleAmounts} />
+                {canViewHistory() && (
+                    <button className="pr-btn-hist" onClick={() => setShowHist(v => !v)} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"8px 14px",border:"1px solid "+(showHist?"#2d9e8b":"#e0e0e0"),borderRadius:8,background:showHist?"#eafaf6":"#fff",color:showHist?"#2d9e8b":"#555",fontSize:13,fontWeight:600,cursor:"pointer"}}>
+                        <I name="clock" size={13}/> History
+                    </button>
+                )}
                 {isDraft && <button className="pr-btn-compute" onClick={onCompute} disabled={computing}>{computing ? "Computing..." : "⚡ Compute Payroll"}</button>}
                 {isDraft && items.length > 0 && <button className="lv-foot-approve" onClick={onApprove}><I name="check" size={13}/> Approve</button>}
                 {isDraft && <button className="bp-btn-danger" onClick={onDelete}>Delete</button>}
@@ -536,6 +543,13 @@ function RunDetail({ run, items, settings, computing, hideAmounts, onToggleAmoun
                 </div>
             ))}
         </div>
+
+        {showHist && (
+            <div style={{background:"#fff",border:"1px solid #eef0f2",borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+                <h3 style={{fontSize:14,fontWeight:700,color:"#333",marginBottom:6}}>Change History</h3>
+                <HistoryTab table="payroll_runs" recordId={run.id} />
+            </div>
+        )}
 
         {items.length === 0 ? (
             <div className="pr-empty">

@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LetterSheets — Encrypted ERP, all in one place</title>
+  <meta name="description" content="LetterSheets is an end-to-end encrypted ERP — HR & payroll, accounting, inventory, assets, sales, and procurement, all in one secure place." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Caveat:wght@500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --page: #e8eaec;
+      --frame: #ffffff;
+      --ink: #16181c;
+      --ink-2: #4a4f57;
+      --muted: #9aa0a8;
+      --gray-head: #b3b8bf;
+      --accent: #2d6a4f;
+      --accent-bright: #2f9e6b;
+      --accent-ink: #1a3c2a;
+      --mint: #e8f3ec;
+      --line: #eef0f2;
+      --card: #ffffff;
+      --shadow-card: 0 14px 34px -12px rgba(24, 39, 31, 0.18), 0 3px 8px -2px rgba(24, 39, 31, 0.08);
+      --shadow-soft: 0 10px 24px -10px rgba(24, 39, 31, 0.16);
+      --shadow-float: 0 20px 46px -16px rgba(24, 39, 31, 0.28);
+      --radius-lg: 26px;
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: var(--page);
+      color: var(--ink);
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      padding: 14px;
+    }
+    a { color: inherit; text-decoration: none; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
+      font-family: inherit; font-weight: 600; font-size: 14px;
+      border: 1px solid transparent; border-radius: 12px; padding: 10px 18px;
+      transition: transform .16s ease, box-shadow .16s ease, background .16s;
+      white-space: nowrap;
+    }
+    .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 10px 22px -8px rgba(45,106,79,.55); }
+    .btn-primary:hover { background: var(--accent-ink); transform: translateY(-1px); }
+    .btn-outline { background: #fff; color: var(--ink); border-color: #e3e6e9; }
+    .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-ghost { background: transparent; color: var(--ink-2); font-weight: 500; padding: 11px 8px; }
+    .btn-ghost:hover { color: var(--accent); }
+
+    .term { color: var(--accent); border-bottom: 1px dashed rgba(45,106,79,.5); cursor: help; position: relative; outline: none; }
+    .term:hover, .term:focus { border-bottom-color: var(--accent); }
+    .term > .tip { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%) translateY(4px); width: max-content; max-width: 250px; background: #1b2a22; color: #eaf1ed; font-size: 12.5px; font-weight: 400; line-height: 1.5; letter-spacing: 0; text-transform: none; text-align: left; padding: 10px 13px; border-radius: 11px; box-shadow: 0 12px 28px -8px rgba(0,0,0,.4); opacity: 0; visibility: hidden; transition: opacity .16s, transform .16s; z-index: 30; pointer-events: none; }
+    .term > .tip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: #1b2a22; }
+    .term:hover > .tip, .term:focus > .tip { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+
+    /* ---------- Frame ---------- */
+    .frame {
+      position: relative; overflow: hidden;
+      background: var(--frame);
+      background-image: radial-gradient(#e6e8eb 1px, transparent 1px);
+      background-size: 18px 18px;
+      border-radius: var(--radius-lg);
+      box-shadow: 0 30px 60px -30px rgba(24,39,31,.25), 0 2px 6px rgba(24,39,31,.05);
+      max-width: 1320px; margin: 0 auto;
+    }
+
+    /* ---------- Nav ---------- */
+    nav {
+      position: relative; z-index: 5;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 22px 34px;
+    }
+    .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; font-size: 17px; letter-spacing: -0.02em; }
+    .brand-mark {
+      width: 30px; height: 30px; border-radius: 9px; background: #fff;
+      box-shadow: var(--shadow-soft); display: grid; place-items: center; padding: 6px;
+    }
+    .dotgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 100%; height: 100%; }
+    .dotgrid span { border-radius: 50%; background: var(--accent-ink); }
+    .dotgrid span.hi { background: var(--accent-bright); }
+    .nav-mid { display: flex; align-items: center; gap: 34px; }
+    .nav-mid a { font-size: 14px; font-weight: 500; color: var(--ink-2); transition: color .16s; }
+    .nav-mid a:hover { color: var(--accent); }
+    .nav-right { display: flex; align-items: center; gap: 14px; }
+
+    /* ---------- Hero ---------- */
+    .hero { position: relative; z-index: 2; text-align: center; padding: 40px 24px 96px; min-height: 660px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .hero-badge {
+      width: 74px; height: 74px; border-radius: 20px; background: #fff;
+      box-shadow: var(--shadow-card); display: grid; place-items: center; padding: 18px; margin-bottom: 34px;
+    }
+    .hero-badge .dotgrid { gap: 7px; }
+    .hero h1 { font-size: clamp(19px, 2.4vw, 26px); line-height: 1.12; letter-spacing: -0.03em; font-weight: 700; color: var(--ink); }
+    .hero h1 .gray { color: var(--gray-head); }
+    .hero p.sub { margin-top: 22px; font-size: clamp(14px, 1.5vw, 16px); color: var(--ink-2); font-weight: 400; }
+    .hero-cta { margin-top: 30px; }
+    .hero-cta .btn-primary { padding: 13px 26px; font-size: 15px; border-radius: 13px; }
+
+    /* ---------- Floating cards ---------- */
+    .float { position: absolute; z-index: 3; }
+    .card {
+      background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow-float);
+      border: 1px solid rgba(24,39,31,.04);
+    }
+    .note {
+      background: #fdf4c8; width: 218px; padding: 20px 20px 24px;
+      border-radius: 4px 12px 12px 12px; box-shadow: 0 16px 34px -14px rgba(120,100,20,.4);
+      transform: rotate(-5deg);
+      font-family: 'Caveat', cursive; font-size: 21px; line-height: 1.25; color: #6b5a12;
+    }
+    .note .pin { position: absolute; top: -8px; left: 50%; width: 15px; height: 15px; border-radius: 50%; background: #e0524d; box-shadow: 0 3px 6px rgba(0,0,0,.25), inset 0 -2px 3px rgba(0,0,0,.2); transform: translateX(-50%); }
+    .tile {
+      width: 66px; height: 66px; border-radius: 18px; display: grid; place-items: center;
+      box-shadow: var(--shadow-float); background: #fff;
+    }
+    .tile.accent { background: var(--accent); color: #fff; }
+    .tile.icon3d { background: linear-gradient(160deg,#fff, #f1f3f4); }
+
+    .mini { width: 250px; padding: 18px; }
+    .mini .mini-h { display: flex; align-items: center; justify-content: space-between; font-size: 15px; font-weight: 700; color: var(--ink); margin-bottom: 4px; }
+    .mini .mini-h .more { font-size: 12px; color: var(--muted); font-weight: 500; }
+    .mini .row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+    .mini .row:first-of-type { border-top: none; }
+    .avatar { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; display: grid; place-items: center; font-size: 12px; font-weight: 600; color: #fff; }
+    .rlabel { flex: 1; min-width: 0; }
+    .rlabel .t { font-size: 13.5px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rlabel .d { font-size: 11.5px; color: var(--muted); }
+    .bar { height: 5px; border-radius: 4px; background: #eef0f2; overflow: hidden; margin-top: 5px; }
+    .bar > i { display: block; height: 100%; border-radius: 4px; }
+    .pct { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+    .pill { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; background: var(--mint); color: var(--accent); }
+
+    .reminders { width: 236px; padding: 18px; }
+    .reminders .top { display:flex; align-items:center; justify-content: space-between; margin-bottom: 14px; }
+    .reminders .top b { font-size: 15px; }
+    .reminders .top span { font-size: 11.5px; color: var(--muted); }
+    .reminders .ev-title { font-size: 15px; font-weight: 700; color: var(--ink); }
+    .reminders .ev-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+    .reminders .time-lbl { font-size: 12px; color: var(--ink-2); font-weight: 600; margin-top: 14px; }
+    .reminders .time-chip { display:inline-flex; align-items:center; gap:6px; margin-top:6px; background: var(--mint); color: var(--accent); font-size: 12.5px; font-weight:600; padding: 6px 11px; border-radius: 9px; }
+
+    .integ { width: 256px; padding: 20px; }
+    .integ .integ-h { font-size: 16px; font-weight: 700; color: var(--ink); margin-bottom: 14px; }
+    .integ .apps { display: flex; gap: 12px; }
+    .integ .app { width: 52px; height: 52px; border-radius: 14px; display: grid; place-items: center; box-shadow: 0 8px 18px -8px rgba(24,39,31,.3); }
+
+    /* ---------- Section (below fold) ---------- */
+    .section { max-width: 1320px; margin: 26px auto 0; padding: 0 8px; }
+    .sec-head { text-align: center; max-width: 640px; margin: 40px auto 34px; }
+    .sec-head .tag { font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--accent-bright); margin-bottom: 11px; }
+    .sec-head h2 { font-size: clamp(19px, 2.4vw, 26px); letter-spacing: -0.03em; line-height: 1.12; color: var(--ink); }
+    .sec-head h2 .gray { color: var(--gray-head); }
+    .sec-head p { margin-top: 13px; color: var(--ink-2); font-size: 15px; }
+
+    .mods { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+    .mod {
+      background: #fff; border-radius: 18px; padding: 22px; box-shadow: var(--shadow-soft);
+      border: 1px solid rgba(24,39,31,.04); transition: transform .18s, box-shadow .18s;
+    }
+    .mod:hover { transform: translateY(-4px); box-shadow: var(--shadow-card); }
+    .mod .m-ico { width: 46px; height: 46px; border-radius: 13px; background: var(--mint); color: var(--accent); display: grid; place-items: center; margin-bottom: 14px; }
+    .mod h3 { font-size: 15px; color: var(--ink); margin-bottom: 6px; letter-spacing: -0.01em; }
+    .mod p { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+
+    /* ---------- CTA + footer ---------- */
+    .cta {
+      max-width: 1320px; margin: 30px auto 0; text-align: center;
+      background: #fff; border-radius: var(--radius-lg); padding: 66px 24px;
+      box-shadow: var(--shadow-card);
+      background-image: radial-gradient(#e6e9e7 1px, transparent 1px); background-size: 18px 18px;
+    }
+    .cta h2 { font-size: clamp(19px, 2.4vw, 26px); letter-spacing: -0.03em; color: var(--ink); line-height: 1.12; }
+    .cta h2 .gray { color: var(--gray-head); }
+    .cta p { margin: 15px auto 26px; color: var(--ink-2); font-size: 16px; max-width: 44ch; }
+    .cta .btn-primary { padding: 13px 26px; font-size: 15px; }
+
+    .news {
+      max-width: 1320px; margin: 26px auto 0; text-align: center;
+      background: #fff; border-radius: var(--radius-lg); padding: 48px 24px;
+      box-shadow: var(--shadow-card);
+      background-image: radial-gradient(#e6e9e7 1px, transparent 1px); background-size: 18px 18px;
+    }
+    .news h2 { font-size: clamp(19px, 2.4vw, 26px); letter-spacing: -0.03em; color: var(--ink); line-height: 1.12; }
+    .news p { margin: 12px auto 22px; color: var(--ink-2); font-size: 15px; max-width: 42ch; }
+    .news-form { display: inline-flex; gap: 8px; background: #fff; padding: 6px; border: 1px solid #e3e6e9; border-radius: 14px; box-shadow: var(--shadow-soft); }
+    .news-form input { border: none; outline: none; font-family: inherit; font-size: 14px; padding: 10px 14px; width: 250px; color: var(--ink); background: transparent; }
+    .news-form input::placeholder { color: var(--muted); }
+    .news-done { color: var(--accent); font-weight: 600; font-size: 14px; margin-top: 6px; }
+    .news-fine { margin: 14px auto 0; font-size: 12px; color: var(--muted); }
+    @media (max-width: 480px) {
+      .news-form { flex-direction: column; width: 100%; max-width: 320px; }
+      .news-form input { width: 100%; }
+    }
+
+    footer { max-width: 1320px; margin: 26px auto 6px; padding: 22px 10px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12.5px; }
+    footer .brand { font-size: 15px; color: var(--ink); }
+    footer .brand-mark { width: 24px; height: 24px; padding: 5px; }
+    footer a { color: var(--muted); margin-left: 18px; }
+    footer a:hover { color: var(--accent); }
+
+    @media (max-width: 1080px) {
+      .float { display: none; }
+      .hero { min-height: 480px; padding: 20px 20px 60px; }
+      .mods { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 720px) {
+      .nav-mid { display: none; }
+      .mods { grid-template-columns: 1fr; }
+      nav { padding: 18px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HERO FRAME -->
+  <div class="frame">
+    <nav>
+      <a class="brand" href="#top">
+        <span class="brand-mark"><span class="dotgrid"><span class="hi"></span><span></span><span></span><span></span></span></span>
+        LetterSheets
+      </a>
+      <div class="nav-mid">
+        <a href="modules.html">Modules</a>
+        <a href="security.html">Security</a>
+        <a href="resources.html">Resources</a>
+        <a href="pricing.html">Pricing</a>
+      </div>
+      <div class="nav-right">
+        <a class="btn btn-ghost" href="#" data-app>Sign in</a>
+      </div>
+    </nav>
+
+    <div class="hero" id="top">
+      <div class="hero-badge"><span class="dotgrid"><span class="hi"></span><span></span><span></span><span></span></span></div>
+      <h1>Run your business,<br><span class="gray">all in one place</span></h1>
+      <p class="sub">Encrypted ERP for HR, accounting, inventory, and more.</p>
+      <div class="hero-cta"><a class="btn btn-primary" href="#cta">Get free demo</a></div>
+    </div>
+
+    <!-- floating decorations -->
+    <div class="float" style="top: 8%; left: 3.5%;">
+      <div class="note"><span class="pin"></span>Keep every record encrypted — even from us — and stay audit-ready.</div>
+    </div>
+    <div class="float" style="top: 38%; left: 8%;">
+      <div class="tile accent">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none"><path d="M5 12.5l4 4 10-10.5" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+    </div>
+
+    <div class="float" style="bottom: 5%; left: 3.5%;">
+      <div class="card mini">
+        <div class="mini-h">Recent activity <span class="more">Today</span></div>
+        <div class="row">
+          <span class="avatar" style="background:#e0524d">IV</span>
+          <div class="rlabel">
+            <div class="t">Invoice #1042 posted</div>
+            <div class="bar"><i style="width:60%; background:var(--accent-bright)"></i></div>
+          </div>
+          <span class="pct">60%</span>
+        </div>
+        <div class="row">
+          <span class="avatar" style="background:#2d6a4f">PO</span>
+          <div class="rlabel">
+            <div class="t">PO #338 received</div>
+            <div class="bar"><i style="width:100%; background:#4c9be0"></i></div>
+          </div>
+          <span class="pct">100%</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="float" style="top: 15%; right: 15%;">
+      <div class="tile icon3d">
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none"><rect x="4" y="10" width="16" height="10" rx="2.4" stroke="#2d6a4f" stroke-width="2"/><path d="M8 10V7a4 4 0 018 0v3" stroke="#2d6a4f" stroke-width="2"/><circle cx="12" cy="15" r="1.7" fill="#2f9e6b"/></svg>
+      </div>
+    </div>
+
+    <div class="float" style="top: 21%; right: 3.5%;">
+      <div class="card reminders">
+        <div class="top"><b>Approvals</b><span>Pending</span></div>
+        <div class="ev-title">Leave request</div>
+        <div class="ev-sub">Juan Dela Cruz · 2 days</div>
+        <div class="time-lbl">Window</div>
+        <div class="time-chip">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="2"/><path d="M12 8v4.5l3 2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Aug 4 – Aug 5
+        </div>
+      </div>
+    </div>
+
+    <div class="float" style="bottom: 6%; right: 3.5%;">
+      <div class="card integ">
+        <div class="integ-h">7 modules, one core</div>
+        <div class="apps">
+          <span class="app" style="background:#e8f3ec; color:#2d6a4f"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3" stroke="currentColor" stroke-width="2"/><path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+          <span class="app" style="background:#eaf1fb; color:#2f6fb0"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M6 3h9l4 4v14H6z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 13h6M9 16.5h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+          <span class="app" style="background:#fbf1e3; color:#c58a2e"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODULES -->
+  <div class="section" id="modules">
+    <div class="sec-head">
+      <div class="tag">One platform</div>
+      <h2>Every part of your business, <span class="gray">connected.</span></h2>
+      <p>Each module posts into a shared <span class="term" tabindex="0">double-entry ledger<span class="tip">An accounting method where every transaction hits at least two accounts and must always balance.</span></span>, so everything reconciles automatically.</p>
+    </div>
+    <div class="mods">
+      <div class="mod">
+        <div class="m-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3" stroke="currentColor" stroke-width="2"/><circle cx="17" cy="9.5" r="2.3" stroke="currentColor" stroke-width="2"/><path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5M15 14.5c2.5 0 4.5 1.7 4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+        <h3>HR &amp; Payroll</h3>
+        <p>Encrypted employee records, attendance, leave, benefits, and payroll.</p>
+      </div>
+      <div class="mod">
+        <div class="m-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M6 3h9l4 4v14H6z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 3v5h5M9 13h6M9 16.5h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3>Accounting</h3>
+        <p>A true double-entry ledger with payables, receivables, and reports.</p>
+      </div>
+      <div class="mod">
+        <div class="m-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M4 7.5l8 4.5 8-4.5" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></div>
+        <h3>Inventory</h3>
+        <p>Multi-warehouse stock and movements that post straight to the GL.</p>
+      </div>
+      <div class="mod">
+        <div class="m-ico"><svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 5h2l2 11h9l2-7H7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="19.5" r="1.5" stroke="currentColor" stroke-width="2"/><circle cx="16.5" cy="19.5" r="1.5" stroke="currentColor" stroke-width="2"/></svg></div>
+        <h3>Sales &amp; Procurement</h3>
+        <p>Quote-to-cash and requisition-to-pay with <span class="term" tabindex="0">3-way matching<span class="tip">Checking that the purchase order, goods receipt, and vendor bill all agree before paying.</span></span>.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SECURITY strip anchor reused as CTA lead-in -->
+  <div class="section" id="security" style="margin-top:8px">
+    <div class="sec-head" style="margin-bottom:8px">
+      <div class="tag">Security first</div>
+      <h2>Your data stays private, <span class="gray">even from us.</span></h2>
+      <p>Sensitive records are encrypted in your browser with <span class="term" tabindex="0">post-quantum cryptography<span class="tip">Encryption designed to stay secure even against future quantum computers.</span></span> (<span class="term" tabindex="0">ML-KEM-768<span class="tip">A NIST-standardized post-quantum algorithm for securely exchanging encryption keys.</span></span> &amp; <span class="term" tabindex="0">ML-DSA-65<span class="tip">A NIST-standardized post-quantum algorithm for digital signatures.</span></span>). The server only ever stores <span class="term" tabindex="0">ciphertext<span class="tip">Data after it has been encrypted — unreadable without the key.</span></span>.</p>
+    </div>
+  </div>
+
+  <!-- CTA -->
+  <div class="cta" id="cta">
+    <h2>Run everything, <span class="gray">in one secure place.</span></h2>
+    <p>Bring HR, accounting, inventory, and the rest onto one private platform.</p>
+    <a class="btn btn-primary" href="#" data-app>Get free demo</a>
+  </div>
+
+  <!-- NEWSLETTER -->
+  <div class="news" id="newsletter">
+    <h2>Stay in the loop</h2>
+    <p>Product updates and security news, now and then. No spam — unsubscribe anytime.</p>
+    <form class="news-form" id="newsForm" novalidate>
+      <input type="email" required placeholder="you@company.com" aria-label="Email address" />
+      <button type="submit" class="btn btn-primary">Subscribe</button>
+    </form>
+    <p class="news-done" id="newsDone" hidden>Thanks — you're on the list.</p>
+    <p class="news-fine">We'll only use your email for LetterSheets updates.</p>
+  </div>
+
+  <footer>
+    <a class="brand" href="#top">
+      <span class="brand-mark"><span class="dotgrid"><span class="hi"></span><span></span><span></span><span></span></span></span>
+      LetterSheets
+    </a>
+    <div>
+      <span>&copy; <span id="yr">2026</span> LetterSheets</span>
+      <a href="modules.html">Modules</a>
+      <a href="#security">Security</a>
+      <a href="#" data-app>Sign in</a>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById('yr').textContent = new Date().getFullYear();
+    var appUrl = new URLSearchParams(location.search).get('app') || '/';
+    document.querySelectorAll('[data-app]').forEach(function(a){ a.setAttribute('href', appUrl); });
+
+    var nf = document.getElementById('newsForm');
+    if (nf) nf.addEventListener('submit', function(e){
+      e.preventDefault();
+      var email = nf.querySelector('input');
+      if (!email.value || !email.checkValidity()) { email.focus(); return; }
+      nf.hidden = true;
+      document.getElementById('newsDone').hidden = false;
+    });
+  </script>
+</body>
+</html>

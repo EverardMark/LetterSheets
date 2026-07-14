@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Modules — LetterSheets</title>
+  <meta name="description" content="Seven connected modules on one encrypted core: HR & payroll, accounting, inventory, fixed assets, sales, procurement, and ticketing." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --page: #e8eaec; --frame: #ffffff; --ink: #16181c; --ink-2: #4a4f57;
+      --muted: #9aa0a8; --gray-head: #b3b8bf; --accent: #2d6a4f; --accent-bright: #2f9e6b;
+      --accent-ink: #1a3c2a; --mint: #e8f3ec; --line: #eef0f2;
+      --shadow-card: 0 14px 34px -12px rgba(24,39,31,.18), 0 3px 8px -2px rgba(24,39,31,.08);
+      --shadow-soft: 0 10px 24px -10px rgba(24,39,31,.16);
+      --radius-lg: 26px; --radius: 18px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--page); color: var(--ink); -webkit-font-smoothing: antialiased; padding: 14px; }
+    a { color: inherit; text-decoration: none; }
+    .btn { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-family: inherit; font-weight: 600; font-size: 14px; border: 1px solid transparent; border-radius: 12px; padding: 10px 18px; transition: transform .16s, background .16s, color .16s; white-space: nowrap; }
+    .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 10px 22px -8px rgba(45,106,79,.55); }
+    .btn-primary:hover { background: var(--accent-ink); transform: translateY(-1px); }
+    .btn-ghost { background: transparent; color: var(--ink-2); font-weight: 500; padding: 10px 8px; }
+    .btn-ghost:hover { color: var(--accent); }
+
+    .term { color: var(--accent); border-bottom: 1px dashed rgba(45,106,79,.5); cursor: help; position: relative; outline: none; }
+    .term:hover, .term:focus { border-bottom-color: var(--accent); }
+    .term > .tip { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%) translateY(4px); width: max-content; max-width: 250px; background: #1b2a22; color: #eaf1ed; font-size: 12.5px; font-weight: 400; line-height: 1.5; letter-spacing: 0; text-transform: none; text-align: left; padding: 10px 13px; border-radius: 11px; box-shadow: 0 12px 28px -8px rgba(0,0,0,.4); opacity: 0; visibility: hidden; transition: opacity .16s, transform .16s; z-index: 30; pointer-events: none; }
+    .term > .tip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: #1b2a22; }
+    .term:hover > .tip, .term:focus > .tip { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0); }
+
+    .frame { position: relative; overflow: hidden; background: var(--frame); background-image: radial-gradient(#e6e8eb 1px, transparent 1px); background-size: 18px 18px; border-radius: var(--radius-lg); box-shadow: 0 30px 60px -30px rgba(24,39,31,.25), 0 2px 6px rgba(24,39,31,.05); max-width: 1320px; margin: 0 auto; }
+    nav { display: flex; align-items: center; justify-content: space-between; padding: 22px 34px; }
+    .brand { display: flex; align-items: center; gap: 11px; font-weight: 700; font-size: 17px; letter-spacing: -0.02em; }
+    .brand-mark { width: 30px; height: 30px; border-radius: 9px; background: #fff; box-shadow: var(--shadow-soft); display: grid; place-items: center; padding: 6px; }
+    .dotgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; width: 100%; height: 100%; }
+    .dotgrid span { border-radius: 50%; background: var(--accent-ink); }
+    .dotgrid span.hi { background: var(--accent-bright); }
+    .nav-mid { display: flex; align-items: center; gap: 34px; }
+    .nav-mid a { font-size: 14px; font-weight: 500; color: var(--ink-2); transition: color .16s; }
+    .nav-mid a:hover, .nav-mid a.active { color: var(--accent); }
+    .nav-right { display: flex; align-items: center; gap: 14px; }
+
+    .head { text-align: center; padding: 46px 24px 60px; }
+    .head .tag { font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--accent-bright); margin-bottom: 12px; }
+    .head h1 { font-size: clamp(24px, 3.4vw, 40px); letter-spacing: -0.04em; line-height: 1.05; color: var(--ink); }
+    .head h1 .gray { color: var(--gray-head); }
+    .head p { margin: 16px auto 0; max-width: 52ch; color: var(--ink-2); font-size: 16px; }
+    .head .stats { display: inline-flex; gap: 26px; margin-top: 26px; flex-wrap: wrap; justify-content: center; }
+    .head .stat b { font-size: 22px; color: var(--ink); letter-spacing: -0.02em; }
+    .head .stat span { display: block; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+
+    .section { max-width: 1320px; margin: 26px auto 0; padding: 0; }
+    .mgrid { display: grid; grid-template-columns: 1fr; gap: 18px; align-items: start; }
+    .mcard { background: #fff; border-radius: 20px; padding: 26px 28px; box-shadow: var(--shadow-soft); border: 1px solid rgba(24,39,31,.04); transition: transform .18s, box-shadow .18s; }
+    .mcard:hover { transform: translateY(-4px); box-shadow: var(--shadow-card); }
+    .mcard-top { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 16px; }
+    .m-ico { width: 52px; height: 52px; border-radius: 15px; background: var(--mint); color: var(--accent); display: grid; place-items: center; flex-shrink: 0; }
+    .mcard h3 { font-size: 18px; color: var(--ink); letter-spacing: -0.015em; }
+    .mcard .kicker { font-size: 12px; font-weight: 600; color: var(--accent-bright); letter-spacing: .04em; text-transform: uppercase; margin-bottom: 3px; }
+    .mcard .desc { font-size: 14px; color: var(--ink-2); line-height: 1.55; margin-bottom: 16px; }
+    .feats { display: flex; flex-wrap: wrap; gap: 7px; }
+    .feat { font-size: 12px; font-weight: 500; color: var(--accent-ink); background: var(--mint); padding: 5px 11px; border-radius: 8px; }
+
+    .more { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; }
+    .more-toggle { background: none; border: none; padding: 0; font-family: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--accent); user-select: none; }
+    .more-toggle .chev { transition: transform .3s ease; }
+    .more.open .more-toggle .chev { transform: rotate(180deg); }
+    .more .detail { height: 0; overflow: hidden; padding-top: 14px; }
+    @media (prefers-reduced-motion: reduce) { .more-toggle .chev { transition: none; } }
+    .more .dlist { list-style: none; display: flex; flex-direction: column; gap: 9px; }
+    .more .dlist li { font-size: 12.5px; color: var(--ink-2); line-height: 1.5; padding-left: 15px; position: relative; }
+    .more .dlist li::before { content: ''; position: absolute; left: 0; top: 7px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent-bright); }
+    .more .dlist li b { color: var(--ink); font-weight: 600; }
+    .more .connect { margin-top: 16px; font-size: 12.5px; color: var(--ink-2); background: var(--mint); border-radius: 12px; padding: 11px 13px; line-height: 1.55; }
+    .more .connect b { color: var(--accent-ink); }
+
+    .cta { max-width: 1320px; margin: 30px auto 0; text-align: center; background: #fff; border-radius: var(--radius-lg); padding: 60px 24px; box-shadow: var(--shadow-card); background-image: radial-gradient(#e6e9e7 1px, transparent 1px); background-size: 18px 18px; }
+    .cta h2 { font-size: clamp(19px, 2.4vw, 26px); letter-spacing: -0.03em; color: var(--ink); line-height: 1.12; }
+    .cta h2 .gray { color: var(--gray-head); }
+    .cta p { margin: 14px auto 24px; color: var(--ink-2); font-size: 15px; max-width: 44ch; }
+
+    footer { max-width: 1320px; margin: 26px auto 6px; padding: 22px 10px; display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12.5px; }
+    footer .brand { font-size: 15px; color: var(--ink); }
+    footer .brand-mark { width: 24px; height: 24px; padding: 5px; }
+    footer a { color: var(--muted); margin-left: 18px; }
+    footer a:hover { color: var(--accent); }
+
+    @media (max-width: 860px) { .mgrid { grid-template-columns: 1fr; } }
+    @media (max-width: 720px) { .nav-mid { display: none; } nav { padding: 18px 20px; } }
+  </style>
+</head>
+<body>
+
+  <div class="frame">
+    <nav>
+      <a class="brand" href="index.html">
+        <span class="brand-mark"><span class="dotgrid"><span class="hi"></span><span></span><span></span><span></span></span></span>
+        LetterSheets
+      </a>
+      <div class="nav-mid">
+        <a href="modules.html" class="active">Modules</a>
+        <a href="security.html">Security</a>
+        <a href="resources.html">Resources</a>
+        <a href="pricing.html">Pricing</a>
+      </div>
+      <div class="nav-right">
+        <a class="btn btn-ghost" href="#" data-app>Sign in</a>
+      </div>
+    </nav>
+
+    <div class="head">
+      <div class="tag">The platform</div>
+      <h1>Seven modules, <span class="gray">one encrypted core.</span></h1>
+      <p>Every module writes into the same double-entry ledger, so operations and financials never drift apart — and every sensitive record is encrypted before it leaves your browser.</p>
+      <div class="stats">
+        <div class="stat"><b>7</b><span>Modules</span></div>
+        <div class="stat"><b>1</b><span>Shared ledger</span></div>
+        <div class="stat"><b>E2E</b><span>Encryption</span></div>
+        <div class="stat"><b>3-way</b><span>Matching</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="mgrid">
+
+      <div class="mcard">
+        <div class="mcard-top">
+          <div class="m-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3" stroke="currentColor" stroke-width="2"/><circle cx="17" cy="9.5" r="2.3" stroke="currentColor" stroke-width="2"/><path d="M3.5 19c0-3 2.5-5 5.5-5s5.5 2 5.5 5M15 14.5c2.5 0 4.5 1.7 4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></div>
+          <div><div class="kicker">People</div><h3>Human Resource</h3></div>
+        </div>
+        <p class="desc">The full employee lifecycle on encrypted records — from onboarding to payroll, with attendance, leave, benefits, and loans in one place.</p>
+        <div class="feats">
+          <span class="feat">Employees</span><span class="feat">Departments</span><span class="feat">Positions</span><span class="feat">Work schedules</span><span class="feat">Attendance</span><span class="feat">Leave &amp; credits</span><span class="feat">Onboarding</span><span class="feat">Payroll</span><span class="feat">Benefits</span><span class="feat">Loans</span><span class="feat">Compliance</span>
+        </div>
+        <div class="more">
+          <button type="button" class="more-toggle" aria-expanded="false">Learn more <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="detail-wrap"><div class="detail">
+            <ul class="dlist">
+              <li><b>Employees</b> — the encrypted master record; sensitive fields are revealed per-field on the detail form.</li>
+              <li><b>Departments &amp; positions</b> — the org structure that drives reporting lines and payroll grouping.</li>
+              <li><b>Work schedules</b> — shift and working-time definitions used to evaluate attendance and pay.</li>
+              <li><b>Attendance</b> — time in/out records; receives clock events from the Time Clock kiosk app.</li>
+              <li><b>Leave</b> — types, requests, and approvals, backed by accrual-based leave credits that deduct automatically on approval.</li>
+              <li><b>Onboarding</b> — structured intake for new hires.</li>
+              <li><b>Payroll</b> — gross-to-net with contributions and withholding tax, producing payslips, and posting the employer share into Accounting.</li>
+              <li><b>Benefits</b> — benefit definitions; the "Leave" type drives credit accrual.</li>
+              <li><b>Loans</b> — employee loans with amortization and payroll deductions.</li>
+              <li><b>Compliance</b> — statutory obligations and reporting.</li>
+            </ul>
+            <p class="connect"><b>How it connects:</b> payroll and employer-cost entries flow into the general ledger automatically.</p>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="mcard">
+        <div class="mcard-top">
+          <div class="m-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M6 3h9l4 4v14H6z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M14 3v5h5M9 13h6M9 16.5h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div><div class="kicker">Finance</div><h3>Accounting</h3></div>
+        </div>
+        <p class="desc">A true <span class="term" tabindex="0">double-entry ledger<span class="tip">An accounting method where every transaction hits at least two accounts and must always balance.</span></span> that stays in balance. Every other module posts here, so your books reconcile in real time.</p>
+        <div class="feats">
+          <span class="feat">Chart of accounts</span><span class="feat">Journal</span><span class="feat">General ledger</span><span class="feat">Payables</span><span class="feat">Receivables</span><span class="feat">Tax</span><span class="feat">Bank reconciliation</span><span class="feat">Financial reports</span>
+        </div>
+        <div class="more">
+          <button type="button" class="more-toggle" aria-expanded="false">Learn more <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="detail-wrap"><div class="detail">
+            <ul class="dlist">
+              <li><b>Chart of accounts</b> — the account tree across assets, liabilities, equity, income, and expense.</li>
+              <li><b>Journal</b> — manual and system-generated journal entries.</li>
+              <li><b>General ledger</b> — the posted, running record of every account.</li>
+              <li><b>Payables (AP)</b> — vendor bills and their payments; paying a bill posts Dr Accounts Payable / Cr Cash.</li>
+              <li><b>Receivables (AR)</b> — customer invoices and collections; a receipt posts Dr Cash / Cr Accounts Receivable.</li>
+              <li><b>Tax</b> — tax accounts and handling.</li>
+              <li><b>Bank reconciliation</b> — matching book cash against the bank statement.</li>
+              <li><b>Financial reports</b> — balance sheet, income statement, and related reports.</li>
+            </ul>
+            <p class="connect"><b>How it connects:</b> Inventory, Sales, Procurement, Fixed Assets, and Payroll all write here — no manual double entry required.</p>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="mcard">
+        <div class="mcard-top">
+          <div class="m-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></div>
+          <div><div class="kicker">Stock</div><h3>Inventory</h3></div>
+        </div>
+        <p class="desc">Track products across warehouses with every movement posting straight to the general ledger for accurate valuation.</p>
+        <div class="feats">
+          <span class="feat">Products</span><span class="feat">Categories</span><span class="feat">Warehouses</span><span class="feat">Stock movements</span><span class="feat">Purchase orders</span><span class="feat">Suppliers</span>
+        </div>
+        <div class="more">
+          <button type="button" class="more-toggle" aria-expanded="false">Learn more <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="detail-wrap"><div class="detail">
+            <ul class="dlist">
+              <li><b>Products &amp; categories</b> — the catalog and its grouping.</li>
+              <li><b>Warehouses</b> — physical or logical stock locations.</li>
+              <li><b>Stock movements</b> — receipts, issues, and transfers; each movement is valued and posts its own GL entry.</li>
+              <li><b>Purchase orders &amp; suppliers</b> — stock procurement and the vendors behind it.</li>
+            </ul>
+            <p class="connect"><b>How it connects:</b> inventory value ties to the GL; it's also the goods backbone Sales fulfills from and Procurement receives into.</p>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="mcard">
+        <div class="mcard-top">
+          <div class="m-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none"><rect x="4" y="8" width="16" height="12" rx="1.5" stroke="currentColor" stroke-width="2"/><path d="M8 8V5h8v3M9 20v-6h6v6" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></div>
+          <div><div class="kicker">Capital</div><h3>Fixed Assets</h3></div>
+        </div>
+        <p class="desc">Register, depreciate, and dispose of assets with straight-line, declining-balance, and double-declining methods that post automatically.</p>
+        <div class="feats">
+          <span class="feat">Asset register</span><span class="feat">Categories</span><span class="feat">Depreciation</span><span class="feat">Disposals</span><span class="feat">Maintenance</span><span class="feat">Transfers</span><span class="feat">Revaluation</span>
+        </div>
+        <div class="more">
+          <button type="button" class="more-toggle" aria-expanded="false">Learn more <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="detail-wrap"><div class="detail">
+            <ul class="dlist">
+              <li><b>Asset register &amp; categories</b> — capitalized assets and their classes.</li>
+              <li><b>Depreciation</b> — straight-line, declining-balance, and double-declining methods; each period posts to the ledger.</li>
+              <li><b>Disposals</b> — retiring or selling an asset, computing the gain or loss.</li>
+              <li><b>Maintenance</b> — service records against assets.</li>
+              <li><b>Transfers</b> — moving assets between locations or departments.</li>
+              <li><b>Revaluation</b> — adjusting an asset's carrying value.</li>
+            </ul>
+            <p class="connect"><b>How it connects:</b> depreciation expense and the asset / accumulated-depreciation accounts post to the GL automatically.</p>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="mcard">
+        <div class="mcard-top">
+          <div class="m-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M4 5h2l2 11h9l2-7H7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="19.5" r="1.5" stroke="currentColor" stroke-width="2"/><circle cx="16.5" cy="19.5" r="1.5" stroke="currentColor" stroke-width="2"/></svg></div>
+          <div><div class="kicker">Revenue</div><h3>Sales &amp; Orders</h3></div>
+        </div>
+        <p class="desc">Quote to cash — reservations, fulfillment to <span class="term" tabindex="0">COGS<span class="tip">Cost of goods sold — the direct cost of the products you sold.</span></span>, invoicing to revenue, and order-based returns, all wired to accounting.</p>
+        <div class="feats">
+          <span class="feat">Quotes</span><span class="feat">Orders</span><span class="feat">Deliveries</span><span class="feat">Price lists</span><span class="feat">Credit memos</span>
+        </div>
+        <div class="more">
+          <button type="button" class="more-toggle" aria-expanded="false">Learn more <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="detail-wrap"><div class="detail">
+            <ul class="dlist">
+              <li><b>Quotes → orders</b> — a quote becomes a confirmed order.</li>
+              <li><b>Reservation &amp; fulfillment</b> — stock is reserved, then fulfilled; fulfillment posts COGS as goods leave.</li>
+              <li><b>Invoicing</b> — posts revenue and an AR receivable.</li>
+              <li><b>Deliveries</b> — the physical shipment to the customer.</li>
+              <li><b>Price lists</b> — customer and tier pricing that orders draw from.</li>
+              <li><b>Credit memos</b> — order-based returns that reverse revenue and COGS, then restock or scrap the goods.</li>
+            </ul>
+            <p class="connect"><b>How it connects:</b> reuses AR for billing and Inventory for stock; revenue, COGS, and receivables all land in the ledger.</p>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="mcard">
+        <div class="mcard-top">
+          <div class="m-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M4 6h13l-1.5 8H7L5 4H3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M14 9l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          <div><div class="kicker">Spend</div><h3>Procurement</h3></div>
+        </div>
+        <p class="desc">Requisition to pay with <span class="term" tabindex="0">three-way matching<span class="tip">Checking that the purchase order, goods receipt, and vendor bill all agree before paying.</span></span> between purchase order, goods receipt, and vendor bill — catching errors before they post.</p>
+        <div class="feats">
+          <span class="feat">Requisitions</span><span class="feat">Approvals</span><span class="feat">Purchase orders</span><span class="feat">Goods receipt</span><span class="feat">3-way match</span><span class="feat">Debit memos</span>
+        </div>
+        <div class="more">
+          <button type="button" class="more-toggle" aria-expanded="false">Learn more <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="detail-wrap"><div class="detail">
+            <ul class="dlist">
+              <li><b>Requisitions &amp; approvals</b> — internal requests routed for sign-off.</li>
+              <li><b>Purchase orders</b> — approved requisitions become POs to suppliers.</li>
+              <li><b>Goods receipt</b> — recording what actually arrived, posting into Inventory.</li>
+              <li><b>3-way match</b> — reconciles PO ↔ goods receipt ↔ vendor bill through a GR/IR clearing account that nets to zero when all three agree.</li>
+              <li><b>Debit memos</b> — supplier returns that reverse the payable and the GR/IR entries.</li>
+            </ul>
+            <p class="connect"><b>How it connects:</b> reuses AP for bills and Inventory for receipts, and owns its own GL postings for the GR/IR netting.</p>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="mcard">
+        <div class="mcard-top">
+          <div class="m-ico"><svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M4 7a2 2 0 012-2h7l7 7-7 7-7-7V7z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="8.5" cy="9.5" r="1.4" fill="currentColor"/></svg></div>
+          <div><div class="kicker">Coordinate</div><h3>Ticketing</h3></div>
+        </div>
+        <p class="desc">Track work across every module with boards, labels, timelines, reactions, and comments — so nothing falls through the cracks.</p>
+        <div class="feats">
+          <span class="feat">Board</span><span class="feat">Labels</span><span class="feat">Categories</span><span class="feat">Timeline</span><span class="feat">Comments</span>
+        </div>
+        <div class="more">
+          <button type="button" class="more-toggle" aria-expanded="false">Learn more <svg class="chev" width="13" height="13" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <div class="detail-wrap"><div class="detail">
+            <ul class="dlist">
+              <li><b>Board</b> — the working view of tickets.</li>
+              <li><b>Labels &amp; categories</b> — classification and filtering.</li>
+              <li><b>Timeline, comments &amp; reactions</b> — activity history and discussion on each ticket.</li>
+              <li><b>Tasks</b> — checklists within a ticket.</li>
+            </ul>
+            <p class="connect"><b>How it connects:</b> coordinates work across modules rather than posting to the ledger.</p>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="mcard" style="display:flex; flex-direction:column; justify-content:center; align-items:flex-start; background:linear-gradient(160deg,#f4f9f6,#ffffff);">
+        <div class="m-ico" style="margin-bottom:14px;"><svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4v5c0 4-3 7-7 8-4-1-7-4-7-8V7l7-4z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <h3 style="font-size:18px; margin-bottom:8px;">One secure core</h3>
+        <p class="desc" style="margin-bottom:18px;">Sensitive fields are encrypted <span class="term" tabindex="0">client-side<span class="tip">Encryption that happens in your own browser, before the data is sent anywhere.</span></span> with <span class="term" tabindex="0">post-quantum cryptography<span class="tip">Encryption designed to stay secure even against future quantum computers.</span></span> (ML-KEM-768 &amp; ML-DSA-65). The server only ever stores <span class="term" tabindex="0">ciphertext<span class="tip">Data after it has been encrypted — unreadable without the key.</span></span>.</p>
+        <a class="btn btn-primary" href="index.html#security">How security works</a>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="cta">
+    <h2>See every module <span class="gray">working together.</span></h2>
+    <p>Bring HR, accounting, inventory, and the rest onto one private platform.</p>
+    <a class="btn btn-primary" href="#" data-app>Get free demo</a>
+  </div>
+
+  <footer>
+    <a class="brand" href="index.html">
+      <span class="brand-mark"><span class="dotgrid"><span class="hi"></span><span></span><span></span><span></span></span></span>
+      LetterSheets
+    </a>
+    <div>
+      <span>&copy; <span id="yr">2026</span> LetterSheets</span>
+      <a href="index.html">Home</a>
+      <a href="index.html#security">Security</a>
+      <a href="#" data-app>Sign in</a>
+    </div>
+  </footer>
+
+  <script>
+    document.getElementById('yr').textContent = new Date().getFullYear();
+    var appUrl = new URLSearchParams(location.search).get('app') || '/';
+    document.querySelectorAll('[data-app]').forEach(function(a){ a.setAttribute('href', appUrl); });
+
+    var panels = document.querySelectorAll('.more');
+    var DUR = 300;
+    var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function ease(t){ return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2; }
+    function animate(el, from, to, done){
+      var start = null;
+      el.style.height = from + 'px';
+      requestAnimationFrame(function frame(ts){
+        if (start === null) start = ts;
+        var t = Math.min(1, (ts - start) / DUR);
+        el.style.height = (from + (to - from) * ease(t)) + 'px';
+        if (t < 1) requestAnimationFrame(frame);
+        else if (done) done();
+      });
+    }
+    function openPanel(p){
+      var d = p.querySelector('.detail');
+      p.classList.add('open');
+      p.querySelector('.more-toggle').setAttribute('aria-expanded', 'true');
+      if (reduce){ d.style.height = 'auto'; return; }
+      animate(d, 0, d.scrollHeight, function(){ d.style.height = 'auto'; });
+    }
+    function closePanel(p){
+      var d = p.querySelector('.detail');
+      p.classList.remove('open');
+      p.querySelector('.more-toggle').setAttribute('aria-expanded', 'false');
+      if (reduce){ d.style.height = '0px'; return; }
+      animate(d, d.getBoundingClientRect().height, 0);
+    }
+    panels.forEach(function(p){
+      p.querySelector('.more-toggle').addEventListener('click', function(){
+        var isOpen = p.classList.contains('open');
+        panels.forEach(function(o){ if (o !== p && o.classList.contains('open')) closePanel(o); });
+        if (isOpen) closePanel(p); else openPanel(p);
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
+import HistoryTab, { canViewHistory } from "../components/HistoryTab";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 
@@ -238,6 +239,7 @@ function PosPanel({ open, mode, pos, idx, departments, onClose, onSave, onDelete
             {[
                 { id: "details", label: "Details", icon: "briefcase" },
                 { id: "employees", label: `Employees (${posEmployees.length})`, icon: "users" },
+                ...(canViewHistory() && pos?.id ? [{ id: "history", label: "History", icon: "clock" }] : []),
             ].map(t => (
                 <button
                     key={t.id}
@@ -337,16 +339,20 @@ function PosPanel({ open, mode, pos, idx, departments, onClose, onSave, onDelete
                 {isView && <div className="pp-modal-tabs-bar">{renderTabs()}</div>}
 
                 <div className="pp-modal-scroll">
-                    {(isAdd || isEdit || activeTab === "details") ? renderFormFields() : renderEmployees()}
+                    {activeTab === "history" ? <HistoryTab table="positions" recordId={pos?.id} /> : (isAdd || isEdit || activeTab === "details") ? renderFormFields() : renderEmployees()}
                 </div>
 
                 <div className="pp-modal-foot">
+                    {activeTab !== "history" && (
                     <div className="pp-legend">
                         <span className="pp-legend-item"><span className="pp-legend-dot pp-legend-dot-req"></span> Required</span>
                         <span className="pp-legend-item"><span className="pp-legend-dot pp-legend-dot-enc"></span> Encrypted</span>
                     </div>
+                    )}
                     <div className="pp-foot-btns">
-                        {isView ? (<>
+                        {activeTab === "history" ? (
+                            <button className="pp-btn-cancel" onClick={onClose}>Close</button>
+                        ) : isView ? (<>
                             <button className="pp-btn-danger" onClick={() => onDelete(idx)}>Delete</button>
                             <button className="pp-btn-primary" onClick={switchToEdit}>Edit</button>
                         </>) : (<>

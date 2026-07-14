@@ -9,6 +9,10 @@ import {
     faMagnifyingGlass, faBell, faRightFromBracket, faLock, faTag,
     faUser, faArrowLeft, faComment, faDesktop, faHouse, faInbox,
     faChevronDown, faTags,
+    faArrowTrendDown, faArrowTrendUp, faReceipt, faCube, faUserMinus,
+    faHandHoldingDollar, faRightLeft, faBoltLightning, faSliders,
+    faChevronLeft, faTriangleExclamation, faBookOpen, faSpinner, faPlus,
+    faFloppyDisk, faPenToSquare, faTrashCan, faPlay, faPause, faCircleXmark,
 } from "@fortawesome/pro-light-svg-icons";
 import UpdateButton from "../pages/components/updatebutton";
 import { Permissions, SELF_SERVICE_MODULES } from "../utils/permissions";
@@ -240,6 +244,28 @@ const faMap = {
     home: faHouse,
     inbox: faInbox,
     chevDown: faChevronDown,
+    // Simple-mode transaction icons (guided journal entry)
+    "trending-down": faArrowTrendDown,
+    "trending-up": faArrowTrendUp,
+    receipt: faReceipt,
+    cube: faCube,
+    "user-minus": faUserMinus,
+    "user-plus": faUserPlus,
+    "hand-coin": faHandHoldingDollar,
+    repeat: faRightLeft,
+    zap: faBoltLightning,
+    sliders: faSliders,
+    "chevron-left": faChevronLeft,
+    "alert-triangle": faTriangleExclamation,
+    "book-open": faBookOpen,
+    loader: faSpinner,
+    plus: faPlus,
+    save: faFloppyDisk,
+    "edit-2": faPenToSquare,
+    "trash-2": faTrashCan,
+    play: faPlay,
+    pause: faPause,
+    "x-circle": faCircleXmark,
 };
 
 export const I = ({ name, size = 16 }) => {

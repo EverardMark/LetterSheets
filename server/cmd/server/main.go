@@ -58,8 +58,17 @@ func main() {
 		repository.NewProcurementRepo(db),
 		repository.NewReturnsRepo(db),
 		repository.NewLeaveCreditRepo(db),
+		repository.NewRecurringRepo(db),
 		cfg,
 	)
+
+	// Background scheduler: auto-generate due recurring journal entries so they
+	// post/draft on schedule without anyone opening the Journal. Idempotent and
+	// interval-based; can be turned off via server.disable_recurring_scheduler.
+	if !cfg.Server.DisableRecurringScheduler {
+		go handler.StartRecurringScheduler()
+		log.Println("Recurring scheduler: enabled")
+	}
 
 	http.HandleFunc("/api/execute", cors(handler.Execute, cfg.Server.AllowedOrigins))
 

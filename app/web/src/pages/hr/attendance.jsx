@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
+import HistoryTab, { canViewHistory } from "../components/HistoryTab";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 
@@ -335,8 +336,10 @@ function EmployeePicker({ employees, value, onChange }) {
 function AttendancePanel({ open, mode, record, employees, date, onClose, onSave, onDelete, readOnly }) {
     const [form, setForm] = useState({});
     const [currentMode, setCurrentMode] = useState(mode);
+    const [tab, setTab] = useState("details");
 
     useEffect(() => {
+        setTab("details");
         if (record && (mode === "view" || mode === "edit")) {
             setForm({
                 ...record,
@@ -434,17 +437,27 @@ function AttendancePanel({ open, mode, record, employees, date, onClose, onSave,
             onClose={isEdit ? switchToView : onClose}
         >
             <div className="ap-modal-layout">
+                {isView && canViewHistory() && record?.id && (
+                    <div className="at-tabnav">
+                        <button className={`at-tabnav-btn ${tab === "details" ? "on" : ""}`} onClick={() => setTab("details")}>Details</button>
+                        <button className={`at-tabnav-btn ${tab === "history" ? "on" : ""}`} onClick={() => setTab("history")}><I name="clock" size={12} /> History</button>
+                    </div>
+                )}
                 <div className="ap-modal-scroll">
-                    {renderFormFields()}
+                    {tab === "history" ? <HistoryTab table="attendance" recordId={record?.id} /> : renderFormFields()}
                 </div>
 
                 <div className="ap-modal-foot">
+                    {tab !== "history" && (
                     <div className="ap-legend">
                         <span className="ap-legend-item"><span className="ap-legend-dot ap-legend-dot-req"></span> Required</span>
                         <span className="ap-legend-item"><span className="ap-legend-dot ap-legend-dot-enc"></span> Encrypted</span>
                     </div>
+                    )}
                     <div className="ap-foot-btns">
-                        {isView ? (<>
+                        {tab === "history" ? (
+                            <button className="ap-btn-cancel" onClick={onClose}>Close</button>
+                        ) : isView ? (<>
                             {!readOnly && <button className="ap-btn-danger" onClick={() => onDelete(record.id)}>Delete</button>}
                             {!readOnly && <button className="ap-btn-primary" onClick={switchToEdit}>Edit</button>}
                         </>) : (<>
@@ -745,6 +758,10 @@ const panelCSS = `
   .ap-legend-dot-enc{background:#2d9e8b}
 
   /* Modal fixed-height layout */
+  .at-tabnav{display:flex;gap:2px;border-bottom:1px solid #eee;margin-bottom:4px;flex-shrink:0}
+  .at-tabnav-btn{display:inline-flex;align-items:center;gap:5px;padding:9px 16px;border:none;background:none;border-bottom:2px solid transparent;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#999;cursor:pointer;margin-bottom:-1px}
+  .at-tabnav-btn:hover{color:#555}
+  .at-tabnav-btn.on{color:#2d9e8b;border-bottom-color:#2d9e8b}
   .ap-modal-layout{display:flex;flex-direction:column;min-height:200px;max-height:60vh}
   .ap-modal-scroll{flex:1;overflow-y:auto;padding:16px 0 0}
   .ap-modal-foot{flex-shrink:0;padding:16px 0 0;margin-top:auto}

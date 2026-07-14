@@ -715,6 +715,45 @@ type AccountMapping struct {
 	UpdatedAt   string `json:"updated_at,omitempty"`
 }
 
+// RecurringEntry is a saved journal-entry template plus a schedule. The Go layer
+// generates a real JE from it whenever next_run_date falls due.
+type RecurringEntry struct {
+	ID               string          `json:"id"`
+	CompanyID        string          `json:"company_id"`
+	Name             string          `json:"name"`
+	Memo             string          `json:"memo,omitempty"`
+	Frequency        string          `json:"frequency"` // Weekly | Monthly | Quarterly | Yearly
+	IntervalCount    int             `json:"interval_count"`
+	StartDate        string          `json:"start_date"`
+	NextRunDate      string          `json:"next_run_date"`
+	EndDate          string          `json:"end_date,omitempty"`
+	AutoPost         bool            `json:"auto_post"`
+	OccurrencesLimit *int            `json:"occurrences_limit,omitempty"`
+	OccurrencesCount int             `json:"occurrences_count"`
+	LastRunDate      string          `json:"last_run_date,omitempty"`
+	IsActive         bool            `json:"is_active"`
+	IsDeleted        int             `json:"-"`
+	CreatedAt        string          `json:"created_at,omitempty"`
+	UpdatedAt        string          `json:"updated_at,omitempty"`
+	Lines            []RecurringLine `json:"lines,omitempty"`
+	// Derived, for list display.
+	TotalDebit float64 `json:"total_debit,omitempty"`
+	LineCount  int     `json:"line_count,omitempty"`
+}
+
+// RecurringLine is one debit/credit line of a recurring template.
+type RecurringLine struct {
+	ID          string  `json:"id"`
+	RecurringID string  `json:"recurring_id"`
+	AccountID   string  `json:"account_id"`
+	AccountCode string  `json:"account_code,omitempty"`
+	AccountName string  `json:"account_name,omitempty"`
+	Description string  `json:"description,omitempty"`
+	Debit       float64 `json:"debit"`
+	Credit      float64 `json:"credit"`
+	LineOrder   int     `json:"line_order"`
+}
+
 // PayrollTotals holds aggregated payroll run amounts for journal generation
 type PayrollTotals struct {
 	TotalGross         float64 `json:"total_gross"`

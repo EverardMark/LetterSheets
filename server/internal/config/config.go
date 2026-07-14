@@ -142,6 +142,9 @@ type ServerConfig struct {
 	// TrustProxyHeaders makes the server derive the client IP from
 	// X-Forwarded-For / X-Real-IP. Enable ONLY behind a trusted proxy.
 	TrustProxyHeaders bool `json:"trust_proxy_headers"`
+	// DisableRecurringScheduler turns off the background job that auto-generates
+	// due recurring journal entries. Default false ⇒ the scheduler runs.
+	DisableRecurringScheduler bool `json:"disable_recurring_scheduler"`
 }
 
 func (s *ServerConfig) Addr() string {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
+import HistoryTab, { canViewHistory } from "../components/HistoryTab";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 
@@ -90,6 +91,7 @@ export default function LeaveTab({ employees = [] }) {
         try {
             await api(isNew ? "create_leave" : "update_leave", rec);
             load();
+            loadBalances(); // an edit to an approved leave re-adjusts credit balances
         } catch (e) { alert("Save failed: " + e.message); }
     };
 
@@ -256,8 +258,10 @@ export default function LeaveTab({ employees = [] }) {
 function LeavePanel({ open, mode, leave, employees, onClose, onSave, onDelete, onApprove, onReject, readOnly }) {
     const [form, setForm] = useState({});
     const [currentMode, setCurrentMode] = useState(mode);
+    const [tab, setTab] = useState("details");
 
     useEffect(() => {
+        setTab("details");
         if (leave && (mode === "view" || mode === "edit")) {
             setForm({
                 ...leave,
@@ -301,6 +305,12 @@ function LeavePanel({ open, mode, leave, employees, onClose, onSave, onDelete, o
     const renderFormFields = () => (
         <div className="ap-section">
             <h4 className="ap-sec-title">Leave Details</h4>
+            {isEdit && form.status === "Approved" && (
+                <div className="lv-edit-note">
+                    <I name="alert-triangle" size={13} />
+                    <span>This leave is already approved — saving will adjust {empName || "the employee"}'s deducted leave-credit balance to match the new dates/type.</span>
+                </div>
+            )}
             <div className="ap-fields">
                 {isAdd && (
                     <div className="ap-field ap-field-full">
@@ -374,18 +384,28 @@ function LeavePanel({ open, mode, leave, employees, onClose, onSave, onDelete, o
             onClose={isEdit ? () => setCurrentMode("view") : onClose}
         >
             <div className="ap-modal-layout">
+                {isView && canViewHistory() && (
+                    <div className="lv-tabnav">
+                        <button className={`lv-tabnav-btn ${tab === "details" ? "on" : ""}`} onClick={() => setTab("details")}>Details</button>
+                        <button className={`lv-tabnav-btn ${tab === "history" ? "on" : ""}`} onClick={() => setTab("history")}><I name="clock" size={12} /> History</button>
+                    </div>
+                )}
                 <div className="ap-modal-scroll">
-                    {renderFormFields()}
+                    {tab === "history" ? <HistoryTab table="leaves" recordId={form.id} /> : renderFormFields()}
                 </div>
                 <div className="ap-modal-foot">
                     <div className="ap-foot-btns">
-                        {isView && form.status === "Pending" ? (<>
+                        {tab === "history" ? (
+                            <button className="ap-btn-cancel" onClick={onClose}>Close</button>
+                        ) : isView && form.status === "Pending" ? (<>
                             <button className="ap-btn-danger" onClick={() => onDelete(form.id)}>Delete</button>
+                            {!readOnly && <button className="lv-foot-edit" onClick={() => setCurrentMode("edit")}><I name="edit-2" size={13} /> Edit</button>}
                             {!readOnly && <button className="lv-foot-reject" onClick={() => { onClose(); onReject(form.id); }}>Reject</button>}
                             {!readOnly && <button className="lv-foot-approve" onClick={() => { onApprove(form.id); onClose(); }}><I name="check" size={13} /> Approve</button>}
-                        </>) : isView ? (
+                        </>) : isView ? (<>
+                            {!readOnly && <button className="lv-foot-edit" onClick={() => setCurrentMode("edit")}><I name="edit-2" size={13} /> Edit</button>}
                             <button className="ap-btn-cancel" onClick={onClose}>Close</button>
-                        ) : (<>
+                        </>) : (<>
                             <button className="ap-btn-cancel" onClick={isEdit ? () => setCurrentMode("view") : onClose}>Cancel</button>
                             <button className="ap-btn-primary" onClick={handleSave}>{isAdd ? "Submit Request" : "Save Changes"}</button>
                         </>)}
@@ -463,6 +483,9 @@ const lvCSS = `
   .lv-foot-approve:hover{background:#16a34a}
   .lv-foot-reject{padding:9px 16px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#ef4444;cursor:pointer}
   .lv-foot-reject:hover{background:#ef4444;color:#fff}
+  .lv-foot-edit{display:flex;align-items:center;gap:5px;padding:9px 16px;border:1px solid #ddd6fe;border-radius:8px;background:#f5f3ff;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#7c3aed;cursor:pointer}
+  .lv-foot-edit:hover{background:#7c3aed;color:#fff;border-color:#7c3aed}
+  .lv-edit-note{display:flex;align-items:flex-start;gap:8px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:12px;line-height:1.5;padding:9px 12px;border-radius:8px;margin-bottom:12px}
 
   /* Panel form styles */
   .ap-section{margin-bottom:20px}
@@ -485,6 +508,10 @@ const lvCSS = `
   .ap-btn-primary:hover{background:#268a79}
   .ap-btn-danger{padding:9px 16px;border:1px solid #fecaca;border-radius:8px;background:#fef2f2;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;color:#ef4444;cursor:pointer}
   .ap-btn-danger:hover{background:#ef4444;color:#fff}
+  .lv-tabnav{display:flex;gap:2px;border-bottom:1px solid #eee;margin-bottom:4px;flex-shrink:0}
+  .lv-tabnav-btn{display:inline-flex;align-items:center;gap:5px;padding:9px 16px;border:none;background:none;border-bottom:2px solid transparent;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#999;cursor:pointer;margin-bottom:-1px}
+  .lv-tabnav-btn:hover{color:#555}
+  .lv-tabnav-btn.on{color:#2d9e8b;border-bottom-color:#2d9e8b}
   .ap-modal-layout{display:flex;flex-direction:column;min-height:200px;max-height:60vh}
   .ap-modal-scroll{flex:1;overflow-y:auto;padding:16px 0 0}
   .ap-modal-foot{flex-shrink:0;padding:16px 0 0;margin-top:auto}
