@@ -1772,14 +1772,23 @@ func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request, session
 	var req struct {
 		CurrentPassword string `json:"current_password"`
 		NewPassword     string `json:"new_password"`
+		NewSalt         string `json:"new_salt"`
+		WrappedKeys     []struct {
+			CompanyID string `json:"company_id"`
+			// []byte, not string: Go's JSON decoder base64-DECODES a string into a
+			// []byte, so we persist the raw wrapped-key bytes into the blob column —
+			// exactly as registration does. Storing the base64 string instead would
+			// double-encode it on read-back and permanently break key unwrap.
+			WrappedCompanyKey []byte `json:"wrapped_company_key"`
+		} `json:"wrapped_keys"`
 	}
 	if err := Decode(r, &req); err != nil {
 		Error(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	if req.CurrentPassword == "" || req.NewPassword == "" {
-		Error(w, http.StatusBadRequest, "current_password and new_password are required")
+	if req.CurrentPassword == "" || req.NewPassword == "" || req.NewSalt == "" || len(req.WrappedKeys) == 0 {
+		Error(w, http.StatusBadRequest, "current_password, new_password, new_salt and re-wrapped company keys are required")
 		return
 	}
 
@@ -1794,19 +1803,23 @@ func (h *Handler) changePassword(w http.ResponseWriter, r *http.Request, session
 		return
 	}
 
-	newSalt := uuid.New().String()
-	newHash := hashPassword(req.NewPassword, newSalt)
+	// The client hashed nothing — it derived a KEK from (new_password, new_salt) and
+	// re-wrapped each company key with it. We must hash the new password with the SAME
+	// salt so the login-time hash check and the KEK derivation stay in lock-step.
+	newHash := hashPassword(req.NewPassword, req.NewSalt)
+	keys := make(map[string][]byte, len(req.WrappedKeys))
+	for _, wk := range req.WrappedKeys {
+		if wk.CompanyID != "" && len(wk.WrappedCompanyKey) > 0 {
+			keys[wk.CompanyID] = wk.WrappedCompanyKey
+		}
+	}
 
-	meta := getMeta(r, session)
-	if err := h.userRepo.ChangePassword(r.Context(), session.UserID, newHash, newSalt, meta); err != nil {
+	if err := h.userRepo.ChangePasswordWithKeys(r.Context(), session.UserID, newHash, req.NewSalt, keys); err != nil {
 		Error(w, http.StatusInternalServerError, "failed to change password")
 		return
 	}
 
-	JSON(w, http.StatusOK, map[string]interface{}{
-		"message":  "password changed",
-		"new_salt": newSalt,
-	})
+	JSON(w, http.StatusOK, map[string]string{"message": "password changed"})
 }
 
 func (h *Handler) deleteUser(w http.ResponseWriter, r *http.Request, session *models.UserSession) {

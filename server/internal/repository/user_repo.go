@@ -152,6 +152,33 @@ func (r *UserRepo) ChangePassword(ctx context.Context, userID, passwordHash, sal
 	return err
 }
 
+// ChangePasswordWithKeys rotates the password AND re-persists the company keys the
+// client re-wrapped under the new password-derived KEK — atomically. The old
+// single-table sp_change_password rotated the salt WITHOUT rewrapping the company
+// key, which would lock the user out of all E2E-encrypted data on next login; this
+// replaces that path. Plain SQL (ls_user has DML on both tables) — no migration.
+func (r *UserRepo) ChangePasswordWithKeys(ctx context.Context, userID, passwordHash, salt string, wrappedKeys map[string][]byte) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE users SET password_hash = ?, salt = ?, password_changed_at = NOW() WHERE id = ?`,
+		passwordHash, salt, userID); err != nil {
+		return err
+	}
+	for companyID, wrapped := range wrappedKeys {
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE user_company_access SET wrapped_company_key = ? WHERE user_id = ? AND company_id = ?`,
+			wrapped, userID, companyID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (r *UserRepo) Delete(ctx context.Context, id string, meta *models.RequestMeta) error {
 	_, err := r.db.ExecContext(ctx,
 		"CALL sp_delete_user(?, ?, ?, ?, ?, ?)",

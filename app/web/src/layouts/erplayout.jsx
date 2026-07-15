@@ -467,7 +467,7 @@ export default function ERPLayout() {
                     </div>
                     <div className="tb-r">
                         <div className="tb-srch"><I name="search" size={15}/><input type="text" placeholder="Search..." className="tb-inp"/></div>
-                        <div className="tb-prof">
+                        <div className="tb-prof" onClick={()=>navigate("/settings")} title="Account & Settings">
                             <div className="tb-av">{(user.username||"U")[0].toUpperCase()}</div>
                             <div className="tb-ui"><span className="tb-nm">{user.username||"User"}</span><span className="tb-rl">{company.role||"employee"}</span></div>
                         </div>

@@ -238,6 +238,38 @@ export async function unlockCompanyKey(password, salt, wrappedCompanyKeyB64) {
 }
 
 // ============================================================
+// CHANGE PASSWORD (logged-in, re-wrap every company key)
+// ============================================================
+
+/**
+ * Re-wrap all of a user's company keys for a password change. The company key
+ * itself never changes — only the AES-KW wrapping (which is derived from the
+ * password + salt). Unwraps each company's stored key with the OLD password/salt,
+ * re-wraps it with the NEW password/salt. Throws if the current password is wrong
+ * (AES-KW unwrap fails), which doubles as client-side verification.
+ *
+ * @param companies array of { company_id, wrapped_company_key } from get_user_companies
+ * @returns array of { company_id, wrapped_company_key } (new, base64) to persist
+ */
+export async function rewrapCompanyKeys(currentPassword, oldSalt, newPassword, newSalt, companies) {
+  const oldKek = await deriveKEK(currentPassword, oldSalt);
+  const newKek = await deriveKEK(newPassword, newSalt);
+  const out = [];
+  for (const c of companies) {
+    const wrappedBytes = new Uint8Array(base64ToBuffer(c.wrapped_company_key));
+    let companyKey;
+    try {
+      companyKey = await unwrapCompanyKey(wrappedBytes, oldKek);
+    } catch {
+      throw new Error("Current password is incorrect");
+    }
+    const newWrapped = await wrapCompanyKey(companyKey, newKek);
+    out.push({ company_id: c.company_id, wrapped_company_key: bufferToBase64(newWrapped) });
+  }
+  return out;
+}
+
+// ============================================================
 // PASSWORD RECOVERY (PQ)
 // ============================================================
 

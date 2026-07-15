@@ -9,6 +9,7 @@ import Inventory from "./pages/inventory/Dashboard";
 import FixedAssets from "./pages/fixedassets/Dashboard";
 import Sales from "./pages/sales/Dashboard";
 import Procurement from "./pages/procurement/Dashboard";
+import Settings from "./pages/settings/settings.jsx";
 
 export default function App() {
     return (
@@ -20,6 +21,10 @@ export default function App() {
                 {/* ERP Shell */}
                 <Route element={<ERPLayout />}>
                     <Route path="/dashboard" element={<Dashboard />} />
+
+                    {/* Account & Settings */}
+                    <Route path="/settings" element={<Settings />} />
+                    <Route path="/profile" element={<Settings />} />
 
                     {/* HR — single component, reads path for active sub-tab */}
                     <Route path="/hr" element={<HR />} />
