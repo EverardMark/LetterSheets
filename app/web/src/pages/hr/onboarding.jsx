@@ -485,6 +485,8 @@ function ChecklistPanel({ cl, items, templates, onToggle, onAddItem, onDelete, o
                         </div>
                     </div>
                 )}
+
+                <DocumentsSection checklistId={cl.id} readOnly={cl.status === "Completed"} />
             </div>
 
             <div className="ob-modal-btns" style={{ justifyContent: "space-between" }}>
@@ -493,6 +495,123 @@ function ChecklistPanel({ cl, items, templates, onToggle, onAddItem, onDelete, o
             </div>
         </div>
     </>);
+}
+
+/* ================================================================
+   DOCUMENTS SECTION — file uploads attached to a checklist
+================================================================ */
+const MAX_DOC_BYTES = 10 * 1024 * 1024; // keep in sync with server maxOnboardingUpload
+
+function fmtBytes(n) {
+    if (!n && n !== 0) return "";
+    if (n < 1024) return n + " B";
+    if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+    return (n / (1024 * 1024)).toFixed(1) + " MB";
+}
+
+function docIcon(mime = "", name = "") {
+    const m = mime.toLowerCase(), n = name.toLowerCase();
+    if (m.startsWith("image/")) return "image";
+    if (m === "application/pdf" || n.endsWith(".pdf")) return "file-text";
+    if (m.includes("sheet") || n.endsWith(".xlsx") || n.endsWith(".csv")) return "grid";
+    return "file";
+}
+
+function DocumentsSection({ checklistId, readOnly }) {
+    const [docs, setDocs] = useState([]);
+    const [busy, setBusy] = useState(false);
+    const [err, setErr] = useState("");
+    const fileRef = useRef(null);
+
+    const load = useCallback(async () => {
+        try { const d = await api("get_onboarding_documents", { checklist_id: checklistId }); setDocs(d.documents || []); }
+        catch { setDocs([]); }
+    }, [checklistId]);
+
+    useEffect(() => { load(); }, [load]);
+
+    const onPick = async (e) => {
+        const files = Array.from(e.target.files || []);
+        e.target.value = ""; // allow re-selecting the same file later
+        setErr("");
+        for (const file of files) {
+            if (file.size > MAX_DOC_BYTES) { setErr(`"${file.name}" exceeds the 10 MB limit`); continue; }
+            setBusy(true);
+            try {
+                const b64 = await new Promise((resolve, reject) => {
+                    const r = new FileReader();
+                    r.onload = () => resolve(String(r.result).split(",")[1] || "");
+                    r.onerror = () => reject(new Error("read failed"));
+                    r.readAsDataURL(file);
+                });
+                await api("upload_onboarding_document", {
+                    checklist_id: checklistId,
+                    file_name: file.name,
+                    mime_type: file.type || "application/octet-stream",
+                    file_data: b64,
+                });
+            } catch (ex) { setErr(ex.message || "upload failed"); }
+        }
+        setBusy(false);
+        load();
+    };
+
+    const download = async (doc) => {
+        try {
+            const full = await api("download_onboarding_document", { id: doc.id });
+            const byteStr = atob(full.file_data || "");
+            const bytes = new Uint8Array(byteStr.length);
+            for (let i = 0; i < byteStr.length; i++) bytes[i] = byteStr.charCodeAt(i);
+            const url = URL.createObjectURL(new Blob([bytes], { type: doc.mime_type || "application/octet-stream" }));
+            const a = document.createElement("a");
+            a.href = url; a.download = doc.file_name; document.body.appendChild(a); a.click();
+            a.remove(); URL.revokeObjectURL(url);
+        } catch (ex) { setErr(ex.message || "download failed"); }
+    };
+
+    const remove = async (doc) => {
+        if (!window.confirm(`Delete "${doc.file_name}"?`)) return;
+        try { await api("delete_onboarding_document", { id: doc.id }); load(); }
+        catch (ex) { setErr(ex.message || "delete failed"); }
+    };
+
+    return (
+        <div className="sp-docs">
+            <div className="sp-docs-head">
+                <div className="sp-group-icon" style={{ background: "#6366f114", color: "#6366f1" }}><I name="paperclip" size={13} /></div>
+                <span className="sp-group-title">Documents</span>
+                <span className="sp-group-count" style={{ color: "#aaa" }}>{docs.length}</span>
+                {!readOnly && (
+                    <button className="sp-doc-upload" onClick={() => fileRef.current?.click()} disabled={busy}>
+                        <I name={busy ? "loader" : "upload"} size={13} /> {busy ? "Uploading…" : "Upload"}
+                    </button>
+                )}
+                <input ref={fileRef} type="file" multiple hidden onChange={onPick} />
+            </div>
+
+            {err && <div className="sp-doc-err">{err}</div>}
+
+            {docs.length === 0 ? (
+                <div className="sp-doc-empty">No documents yet. Attach signed contracts, IDs, or government forms.</div>
+            ) : (
+                <div className="sp-doc-list">
+                    {docs.map(doc => (
+                        <div key={doc.id} className="sp-doc" onClick={() => download(doc)}>
+                            <div className="sp-doc-ic"><I name={docIcon(doc.mime_type, doc.file_name)} size={15} /></div>
+                            <div className="sp-doc-body">
+                                <span className="sp-doc-name">{doc.file_name}</span>
+                                <span className="sp-doc-meta">
+                                    {fmtBytes(doc.file_size)}{doc.uploaded_by_name ? ` · ${doc.uploaded_by_name}` : ""}{doc.created_at ? ` · ${fmtDate(doc.created_at)}` : ""}
+                                </span>
+                            </div>
+                            <button className="sp-doc-act" title="Download" onClick={e => { e.stopPropagation(); download(doc); }}><I name="download" size={14} /></button>
+                            {!readOnly && <button className="sp-doc-act sp-doc-del" title="Delete" onClick={e => { e.stopPropagation(); remove(doc); }}><I name="trash-2" size={14} /></button>}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
 }
 
 /* ================================================================
@@ -883,6 +1002,25 @@ const CSS = `
   .sp-add-btn{width:38px;height:38px;border:none;border-radius:8px;background:#f59e0b;color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0}
   .sp-add-btn:hover{background:#d97706}
   .sp-add-btn:disabled{opacity:.4;cursor:not-allowed}
+
+  /* ===== DOCUMENTS ===== */
+  .sp-docs{margin-top:16px;padding-top:14px;border-top:1px solid #f0f0f0}
+  .sp-docs-head{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .sp-doc-upload{margin-left:auto;display:inline-flex;align-items:center;gap:5px;padding:6px 11px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;color:#555;font-family:'DM Sans',sans-serif;font-size:12px;font-weight:600;cursor:pointer}
+  .sp-doc-upload:hover:not(:disabled){border-color:#6366f1;color:#6366f1;background:#6366f108}
+  .sp-doc-upload:disabled{opacity:.5;cursor:default}
+  .sp-doc-err{background:#fef2f2;color:#dc2626;font-size:12px;padding:7px 10px;border-radius:7px;margin-bottom:8px}
+  .sp-doc-empty{font-size:12px;color:#aaa;padding:10px 2px;text-align:center}
+  .sp-doc-list{display:flex;flex-direction:column;gap:6px}
+  .sp-doc{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid #eef0f2;border-radius:9px;cursor:pointer;transition:background .1s,border-color .1s}
+  .sp-doc:hover{background:#fafbfc;border-color:#e0e0e0}
+  .sp-doc-ic{width:30px;height:30px;flex-shrink:0;border-radius:7px;background:#f3f4f6;color:#6366f1;display:flex;align-items:center;justify-content:center}
+  .sp-doc-body{flex:1;min-width:0;display:flex;flex-direction:column}
+  .sp-doc-name{font-size:13px;font-weight:600;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sp-doc-meta{font-size:11px;color:#999;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sp-doc-act{width:30px;height:30px;flex-shrink:0;border:none;background:transparent;color:#999;border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .sp-doc-act:hover{background:#eef0f2;color:#555}
+  .sp-doc-del:hover{background:#fef2f2;color:#dc2626}
 
   /* ===== MODAL ===== */
   .ob-modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:600;animation:spFade .12s}

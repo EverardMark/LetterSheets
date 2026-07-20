@@ -55,6 +55,7 @@ type Handler struct {
 	returnsRepo    *repository.ReturnsRepo
 	lcRepo         *repository.LeaveCreditRepo
 	recurRepo      *repository.RecurringRepo
+	crmRepo        *repository.CRMRepo
 	// recurMu serializes recurring-entry generation so the background scheduler
 	// and a user-triggered "Generate now" can't race and double-post the same
 	// occurrence within this process (single-server deployment).
@@ -105,6 +106,7 @@ func NewHandler(
 	returnsRepo *repository.ReturnsRepo,
 	lcRepo *repository.LeaveCreditRepo,
 	recurRepo *repository.RecurringRepo,
+	crmRepo *repository.CRMRepo,
 	cfg *config.AppConfig,
 ) *Handler {
 	trustProxyHeaders = cfg.Server.TrustProxyHeaders
@@ -141,6 +143,7 @@ func NewHandler(
 		returnsRepo:    returnsRepo,
 		lcRepo:         lcRepo,
 		recurRepo:      recurRepo,
+		crmRepo:        crmRepo,
 		cfg:            cfg,
 	}
 }
@@ -425,6 +428,50 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 		h.withAuth(w, r, h.addOnboardingItem)
 	case "delete_onboarding_item":
 		h.withAuth(w, r, h.deleteOnboardingItem)
+	case "upload_onboarding_document":
+		h.withAuth(w, r, h.uploadOnboardingDocument)
+	case "get_onboarding_documents":
+		h.withAuth(w, r, h.getOnboardingDocuments)
+	case "download_onboarding_document":
+		h.withAuth(w, r, h.downloadOnboardingDocument)
+	case "delete_onboarding_document":
+		h.withAuth(w, r, h.deleteOnboardingDocument)
+
+	// CRM
+	case "get_crm_overview":
+		h.withAuth(w, r, h.getCRMOverview)
+	case "get_crm_leads":
+		h.withAuth(w, r, h.getCRMLeads)
+	case "create_crm_lead":
+		h.withAuth(w, r, h.createCRMLead)
+	case "update_crm_lead":
+		h.withAuth(w, r, h.updateCRMLead)
+	case "delete_crm_lead":
+		h.withAuth(w, r, h.deleteCRMLead)
+	case "convert_crm_lead":
+		h.withAuth(w, r, h.convertCRMLead)
+	case "get_crm_opportunities":
+		h.withAuth(w, r, h.getCRMOpportunities)
+	case "create_crm_opportunity":
+		h.withAuth(w, r, h.createCRMOpportunity)
+	case "update_crm_opportunity":
+		h.withAuth(w, r, h.updateCRMOpportunity)
+	case "set_crm_opportunity_stage":
+		h.withAuth(w, r, h.setCRMOpportunityStage)
+	case "delete_crm_opportunity":
+		h.withAuth(w, r, h.deleteCRMOpportunity)
+	case "create_quote_from_opportunity":
+		h.withAuth(w, r, h.createQuoteFromOpportunity)
+	case "get_crm_activities":
+		h.withAuth(w, r, h.getCRMActivities)
+	case "get_crm_overdue_tasks":
+		h.withAuth(w, r, h.getCRMOverdueTasks)
+	case "create_crm_activity":
+		h.withAuth(w, r, h.createCRMActivity)
+	case "complete_crm_activity":
+		h.withAuth(w, r, h.completeCRMActivity)
+	case "delete_crm_activity":
+		h.withAuth(w, r, h.deleteCRMActivity)
 
 	// Loans
 	case "get_loan_types":
@@ -2359,6 +2406,505 @@ func (h *Handler) deleteOnboardingItem(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 	if err := h.onbRepo.DeleteItem(r.Context(), req.ID); err != nil {
+		Error(w, http.StatusInternalServerError, "failed")
+		return
+	}
+	JSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+// ==================== ONBOARDING DOCUMENTS ====================
+
+// maxOnboardingUpload caps a single onboarding file at 10 MB (raw bytes, after
+// base64 decode). Files are stored inline in MySQL, so this bounds row size and
+// keeps the JSON request affordable.
+const maxOnboardingUpload = 10 * 1024 * 1024
+
+func (h *Handler) uploadOnboardingDocument(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req models.OnboardingDocument
+	if err := Decode(r, &req); err != nil {
+		Error(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+	if req.ChecklistID == "" || req.FileName == "" || req.FileData == "" {
+		Error(w, http.StatusBadRequest, "checklist_id, file_name and file_data required")
+		return
+	}
+	// file_data arrives as base64 (optionally a data: URL prefix from the browser).
+	b64 := req.FileData
+	if i := strings.Index(b64, "base64,"); i != -1 {
+		b64 = b64[i+len("base64,"):]
+	}
+	data, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		Error(w, http.StatusBadRequest, "file_data must be base64")
+		return
+	}
+	if len(data) == 0 {
+		Error(w, http.StatusBadRequest, "empty file")
+		return
+	}
+	if len(data) > maxOnboardingUpload {
+		Error(w, http.StatusRequestEntityTooLarge, "file exceeds 10 MB limit")
+		return
+	}
+
+	req.ID = uuid.New().String()
+	req.CompanyID = session.CompanyID
+	if req.MimeType == "" {
+		req.MimeType = "application/octet-stream"
+	}
+	uid := session.UserID
+	req.UploadedBy = &uid
+	if session.Username != "" {
+		name := session.Username
+		req.UploadedByName = &name
+	}
+	if req.ItemID != nil && *req.ItemID == "" {
+		req.ItemID = nil
+	}
+
+	if err := h.onbRepo.AddDocument(r.Context(), &req, data); err != nil {
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	req.FileData = "" // don't echo the blob back
+	req.FileSize = len(data)
+	JSON(w, http.StatusCreated, req)
+}
+
+func (h *Handler) getOnboardingDocuments(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ChecklistID string `json:"checklist_id"`
+	}
+	if err := Decode(r, &req); err != nil || req.ChecklistID == "" {
+		Error(w, http.StatusBadRequest, "checklist_id required")
+		return
+	}
+	docs, err := h.onbRepo.GetDocuments(r.Context(), session.CompanyID, req.ChecklistID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	if docs == nil {
+		docs = []models.OnboardingDocument{}
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{"documents": docs})
+}
+
+func (h *Handler) downloadOnboardingDocument(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := Decode(r, &req); err != nil || req.ID == "" {
+		Error(w, http.StatusBadRequest, "id required")
+		return
+	}
+	doc, data, err := h.onbRepo.GetDocument(r.Context(), session.CompanyID, req.ID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			Error(w, http.StatusNotFound, "not found")
+			return
+		}
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	doc.FileData = base64.StdEncoding.EncodeToString(data)
+	JSON(w, http.StatusOK, doc)
+}
+
+func (h *Handler) deleteOnboardingDocument(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := Decode(r, &req); err != nil || req.ID == "" {
+		Error(w, http.StatusBadRequest, "id required")
+		return
+	}
+	if err := h.onbRepo.DeleteDocument(r.Context(), session.CompanyID, req.ID); err != nil {
+		Error(w, http.StatusInternalServerError, "failed")
+		return
+	}
+	JSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+// ==================== CRM ====================
+
+func (h *Handler) getCRMOverview(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	ov, err := h.crmRepo.GetOverview(r.Context(), session.CompanyID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, ov)
+}
+
+// ---- Leads ----
+
+func (h *Handler) getCRMLeads(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		Status string `json:"status"`
+	}
+	_ = Decode(r, &req)
+	leads, err := h.crmRepo.GetLeads(r.Context(), session.CompanyID, req.Status)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	if leads == nil {
+		leads = []models.CRMLead{}
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{"leads": leads})
+}
+
+func (h *Handler) createCRMLead(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req models.CRMLead
+	if err := Decode(r, &req); err != nil || req.Name == "" {
+		Error(w, http.StatusBadRequest, "name required")
+		return
+	}
+	req.ID = uuid.New().String()
+	req.CompanyID = session.CompanyID
+	if req.Source == "" {
+		req.Source = "Other"
+	}
+	if req.Status == "" {
+		req.Status = "New"
+	}
+	if req.OwnerID == nil {
+		uid := session.UserID
+		req.OwnerID = &uid
+	}
+	if err := h.crmRepo.CreateLead(r.Context(), &req); err != nil {
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	JSON(w, http.StatusCreated, req)
+}
+
+func (h *Handler) updateCRMLead(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req models.CRMLead
+	if err := Decode(r, &req); err != nil || req.ID == "" {
+		Error(w, http.StatusBadRequest, "id required")
+		return
+	}
+	req.CompanyID = session.CompanyID
+	if err := h.crmRepo.UpdateLead(r.Context(), &req); err != nil {
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, map[string]string{"message": "updated"})
+}
+
+func (h *Handler) deleteCRMLead(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := Decode(r, &req); err != nil || req.ID == "" {
+		Error(w, http.StatusBadRequest, "id required")
+		return
+	}
+	if err := h.crmRepo.DeleteLead(r.Context(), req.ID, session.CompanyID); err != nil {
+		Error(w, http.StatusInternalServerError, "failed")
+		return
+	}
+	JSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+// convertCRMLead turns a lead into an ar_customers account + a crm_opportunity,
+// then marks the lead converted. amount/close are optional deal seeds.
+func (h *Handler) convertCRMLead(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ID                string  `json:"id"`
+		OpportunityName   string  `json:"opportunity_name"`
+		Amount            float64 `json:"amount"`
+		ExpectedCloseDate string  `json:"expected_close_date"`
+	}
+	if err := Decode(r, &req); err != nil || req.ID == "" {
+		Error(w, http.StatusBadRequest, "id required")
+		return
+	}
+	// Load the lead to seed the customer/opportunity.
+	leads, err := h.crmRepo.GetLeads(r.Context(), session.CompanyID, "")
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	var lead *models.CRMLead
+	for i := range leads {
+		if leads[i].ID == req.ID {
+			lead = &leads[i]
+			break
+		}
+	}
+	if lead == nil {
+		Error(w, http.StatusNotFound, "lead not found")
+		return
+	}
+	if lead.IsConverted {
+		Error(w, http.StatusBadRequest, "lead already converted")
+		return
+	}
+
+	// 1. Create the customer (account). Prefer the org name, fall back to person.
+	custName := lead.CompanyName
+	if custName == "" {
+		custName = lead.Name
+	}
+	cust := &models.Customer{
+		ID:            uuid.New().String(),
+		CompanyID:     session.CompanyID,
+		Name:          custName,
+		ContactPerson: lead.Name,
+		Email:         lead.Email,
+		Phone:         lead.Phone,
+		PaymentTerms:  30,
+	}
+	if err := h.arRepo.CreateCustomer(cust); err != nil {
+		Error(w, http.StatusInternalServerError, "failed to create customer: "+err.Error())
+		return
+	}
+
+	// 2. Create the opportunity.
+	oppName := req.OpportunityName
+	if oppName == "" {
+		oppName = custName + " opportunity"
+	}
+	opp := &models.CRMOpportunity{
+		ID:          uuid.New().String(),
+		CompanyID:   session.CompanyID,
+		Name:        oppName,
+		CustomerID:  cust.ID,
+		Stage:       "Qualification",
+		Amount:      req.Amount,
+		Probability: 25,
+		Source:      lead.Source,
+		OwnerID:     lead.OwnerID,
+	}
+	if req.ExpectedCloseDate != "" {
+		opp.ExpectedCloseDate = &req.ExpectedCloseDate
+	}
+	if err := h.crmRepo.CreateOpportunity(r.Context(), opp); err != nil {
+		Error(w, http.StatusInternalServerError, "failed to create opportunity: "+err.Error())
+		return
+	}
+
+	// 3. Mark the lead converted.
+	if err := h.crmRepo.MarkLeadConverted(r.Context(), req.ID, session.CompanyID, cust.ID, opp.ID); err != nil {
+		Error(w, http.StatusInternalServerError, "failed to mark converted: "+err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{"customer_id": cust.ID, "opportunity": opp})
+}
+
+// ---- Opportunities ----
+
+func (h *Handler) getCRMOpportunities(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		Stage string `json:"stage"`
+	}
+	_ = Decode(r, &req)
+	opps, err := h.crmRepo.GetOpportunities(r.Context(), session.CompanyID, req.Stage)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	if opps == nil {
+		opps = []models.CRMOpportunity{}
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{"opportunities": opps})
+}
+
+func (h *Handler) createCRMOpportunity(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req models.CRMOpportunity
+	if err := Decode(r, &req); err != nil || req.Name == "" || req.CustomerID == "" {
+		Error(w, http.StatusBadRequest, "name and customer_id required")
+		return
+	}
+	req.ID = uuid.New().String()
+	req.CompanyID = session.CompanyID
+	if req.Stage == "" {
+		req.Stage = "Prospecting"
+	}
+	if req.Probability == 0 {
+		req.Probability = 10
+	}
+	if req.OwnerID == nil {
+		uid := session.UserID
+		req.OwnerID = &uid
+	}
+	if err := h.crmRepo.CreateOpportunity(r.Context(), &req); err != nil {
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	saved, _ := h.crmRepo.GetOpportunity(r.Context(), req.ID, session.CompanyID)
+	JSON(w, http.StatusCreated, saved)
+}
+
+func (h *Handler) updateCRMOpportunity(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req models.CRMOpportunity
+	if err := Decode(r, &req); err != nil || req.ID == "" {
+		Error(w, http.StatusBadRequest, "id required")
+		return
+	}
+	req.CompanyID = session.CompanyID
+	if err := h.crmRepo.UpdateOpportunity(r.Context(), &req); err != nil {
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, map[string]string{"message": "updated"})
+}
+
+func (h *Handler) setCRMOpportunityStage(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ID         string `json:"id"`
+		Stage      string `json:"stage"`
+		LostReason string `json:"lost_reason"`
+	}
+	if err := Decode(r, &req); err != nil || req.ID == "" || req.Stage == "" {
+		Error(w, http.StatusBadRequest, "id and stage required")
+		return
+	}
+	if err := h.crmRepo.SetStage(r.Context(), req.ID, session.CompanyID, req.Stage, req.LostReason); err != nil {
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	JSON(w, http.StatusOK, map[string]string{"message": "stage updated"})
+}
+
+func (h *Handler) deleteCRMOpportunity(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := Decode(r, &req); err != nil || req.ID == "" {
+		Error(w, http.StatusBadRequest, "id required")
+		return
+	}
+	if err := h.crmRepo.DeleteOpportunity(r.Context(), req.ID, session.CompanyID); err != nil {
+		Error(w, http.StatusInternalServerError, "failed")
+		return
+	}
+	JSON(w, http.StatusOK, map[string]string{"message": "deleted"})
+}
+
+// createQuoteFromOpportunity spawns a Draft Sales quote (header only) for the
+// opportunity's customer and links it back via quote_id — the Order-to-Cash
+// handoff. Line items are added afterward in the Sales module.
+func (h *Handler) createQuoteFromOpportunity(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := Decode(r, &req); err != nil || req.ID == "" {
+		Error(w, http.StatusBadRequest, "id required")
+		return
+	}
+	opp, err := h.crmRepo.GetOpportunity(r.Context(), req.ID, session.CompanyID)
+	if err != nil {
+		Error(w, http.StatusNotFound, "opportunity not found")
+		return
+	}
+	if opp.QuoteID != nil && *opp.QuoteID != "" {
+		Error(w, http.StatusBadRequest, "opportunity already has a quote")
+		return
+	}
+	q := &models.SOQuote{
+		ID:         uuid.New().String(),
+		CompanyID:  session.CompanyID,
+		CustomerID: opp.CustomerID,
+		Notes:      "Created from CRM opportunity: " + opp.Name,
+	}
+	num, err := h.soRepo.CreateQuote(q, session.UserID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed to create quote: "+err.Error())
+		return
+	}
+	if err := h.crmRepo.SetQuoteID(r.Context(), opp.ID, session.CompanyID, q.ID); err != nil {
+		Error(w, http.StatusInternalServerError, "quote created but link failed: "+err.Error())
+		return
+	}
+	JSON(w, http.StatusCreated, map[string]interface{}{"quote_id": q.ID, "quote_number": num})
+}
+
+// ---- Activities ----
+
+func (h *Handler) getCRMActivities(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		RelatedType string `json:"related_type"`
+		RelatedID   string `json:"related_id"`
+	}
+	if err := Decode(r, &req); err != nil || req.RelatedType == "" || req.RelatedID == "" {
+		Error(w, http.StatusBadRequest, "related_type and related_id required")
+		return
+	}
+	acts, err := h.crmRepo.GetActivities(r.Context(), session.CompanyID, req.RelatedType, req.RelatedID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	if acts == nil {
+		acts = []models.CRMActivity{}
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{"activities": acts})
+}
+
+func (h *Handler) getCRMOverdueTasks(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	acts, err := h.crmRepo.GetOverdueTasks(r.Context(), session.CompanyID)
+	if err != nil {
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	if acts == nil {
+		acts = []models.CRMActivity{}
+	}
+	JSON(w, http.StatusOK, map[string]interface{}{"activities": acts})
+}
+
+func (h *Handler) createCRMActivity(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req models.CRMActivity
+	if err := Decode(r, &req); err != nil || req.RelatedType == "" || req.RelatedID == "" || req.Subject == "" {
+		Error(w, http.StatusBadRequest, "related_type, related_id and subject required")
+		return
+	}
+	req.ID = uuid.New().String()
+	req.CompanyID = session.CompanyID
+	if req.Type == "" {
+		req.Type = "Note"
+	}
+	if req.OwnerID == nil {
+		uid := session.UserID
+		req.OwnerID = &uid
+	}
+	if err := h.crmRepo.CreateActivity(r.Context(), &req); err != nil {
+		Error(w, http.StatusInternalServerError, "failed: "+err.Error())
+		return
+	}
+	JSON(w, http.StatusCreated, req)
+}
+
+func (h *Handler) completeCRMActivity(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ID        string `json:"id"`
+		Completed bool   `json:"completed"`
+	}
+	if err := Decode(r, &req); err != nil || req.ID == "" {
+		Error(w, http.StatusBadRequest, "id required")
+		return
+	}
+	if err := h.crmRepo.SetActivityCompleted(r.Context(), req.ID, session.CompanyID, req.Completed); err != nil {
+		Error(w, http.StatusInternalServerError, "failed")
+		return
+	}
+	JSON(w, http.StatusOK, map[string]string{"message": "updated"})
+}
+
+func (h *Handler) deleteCRMActivity(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := Decode(r, &req); err != nil || req.ID == "" {
+		Error(w, http.StatusBadRequest, "id required")
+		return
+	}
+	if err := h.crmRepo.DeleteActivity(r.Context(), req.ID, session.CompanyID); err != nil {
 		Error(w, http.StatusInternalServerError, "failed")
 		return
 	}

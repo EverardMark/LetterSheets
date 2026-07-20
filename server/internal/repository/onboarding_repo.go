@@ -222,3 +222,82 @@ func (r *OnboardingRepo) DeleteItem(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, "CALL sp_delete_onboarding_item(?)", id)
 	return err
 }
+
+// ==================== DOCUMENTS ====================
+//
+// Plain SQL (not stored procedures): file blobs live in onboarding_documents,
+// added in migration 018. ls_user has DML but not CREATE ROUTINE, so these
+// mirror the recurring-entries repo's approach.
+
+// AddDocument inserts an uploaded file. d.FileData holds the raw bytes.
+func (r *OnboardingRepo) AddDocument(ctx context.Context, d *models.OnboardingDocument, data []byte) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO onboarding_documents
+			(id, company_id, checklist_id, item_id, file_name, mime_type, file_size, file_data, uploaded_by, uploaded_by_name)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		d.ID, d.CompanyID, d.ChecklistID, d.ItemID, d.FileName, d.MimeType, len(data), data, d.UploadedBy, d.UploadedByName)
+	return err
+}
+
+// GetDocuments lists a checklist's documents (metadata only — no blob), newest
+// first. Scoped by company_id so one tenant can't read another's attachments.
+func (r *OnboardingRepo) GetDocuments(ctx context.Context, companyID, checklistID string) ([]models.OnboardingDocument, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, company_id, checklist_id, item_id, file_name, mime_type, file_size,
+		       uploaded_by, uploaded_by_name, created_at
+		FROM onboarding_documents
+		WHERE company_id = ? AND checklist_id = ? AND is_deleted = 0
+		ORDER BY created_at DESC`, companyID, checklistID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var docs []models.OnboardingDocument
+	for rows.Next() {
+		var d models.OnboardingDocument
+		var itemID, uploadedBy, uploadedByName sql.NullString
+		if err := rows.Scan(&d.ID, &d.CompanyID, &d.ChecklistID, &itemID, &d.FileName,
+			&d.MimeType, &d.FileSize, &uploadedBy, &uploadedByName, &d.CreatedAt); err != nil {
+			return nil, err
+		}
+		if itemID.Valid {
+			d.ItemID = &itemID.String
+		}
+		if uploadedBy.Valid {
+			d.UploadedBy = &uploadedBy.String
+		}
+		if uploadedByName.Valid {
+			d.UploadedByName = &uploadedByName.String
+		}
+		docs = append(docs, d)
+	}
+	return docs, rows.Err()
+}
+
+// GetDocument returns a single document including its raw bytes, for download.
+// Scoped by company_id. Returns sql.ErrNoRows if not found for this tenant.
+func (r *OnboardingRepo) GetDocument(ctx context.Context, companyID, id string) (*models.OnboardingDocument, []byte, error) {
+	var d models.OnboardingDocument
+	var itemID sql.NullString
+	var data []byte
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, company_id, checklist_id, item_id, file_name, mime_type, file_size, file_data
+		FROM onboarding_documents
+		WHERE company_id = ? AND id = ? AND is_deleted = 0`, companyID, id).
+		Scan(&d.ID, &d.CompanyID, &d.ChecklistID, &itemID, &d.FileName, &d.MimeType, &d.FileSize, &data)
+	if err != nil {
+		return nil, nil, err
+	}
+	if itemID.Valid {
+		d.ItemID = &itemID.String
+	}
+	return &d, data, nil
+}
+
+// DeleteDocument soft-deletes a document, scoped by company_id.
+func (r *OnboardingRepo) DeleteDocument(ctx context.Context, companyID, id string) error {
+	_, err := r.db.ExecContext(ctx,
+		"UPDATE onboarding_documents SET is_deleted = 1 WHERE company_id = ? AND id = ?", companyID, id)
+	return err
+}

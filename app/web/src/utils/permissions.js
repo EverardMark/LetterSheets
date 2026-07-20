@@ -34,6 +34,7 @@ export const MODULE_REGISTRY = {
     fixed_assets:{ label: "Fixed Assets", icon: "building",   functions: ["view", "create", "edit", "delete"] },
     sales:       { label: "Sales",        icon: "cart",        functions: ["view", "create", "edit", "delete"] },
     procurement: { label: "Procurement",  icon: "cart",        functions: ["view", "create", "edit", "delete"] },
+    crm:         { label: "CRM",          icon: "target",      functions: ["view", "create", "edit", "delete"] },
 };
 
 // Self-service modules (everyone gets these for their own data)
@@ -83,6 +84,10 @@ export const PERMISSION_PRESETS = {
     },
     "Sales Manager": {
         sales: ["view", "create", "edit", "delete"],
+        crm: ["view", "create", "edit", "delete"],
+    },
+    "CRM Manager": {
+        crm: ["view", "create", "edit", "delete"],
     },
 };
 
@@ -104,6 +109,7 @@ const MODULE_TO_PATH = {
     fixed_assets: "/fixed-assets",
     sales: "/sales",
     procurement: "/procurement",
+    crm: "/crm",
 };
 
 export class Permissions {

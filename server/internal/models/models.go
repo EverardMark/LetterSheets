@@ -165,6 +165,110 @@ type OnboardingItem struct {
 	Notes       *string `json:"notes,omitempty"`
 }
 
+// OnboardingDocument is a file attached to an onboarding checklist (optionally
+// to a specific item). FileData carries the raw bytes only on upload/download —
+// list responses omit it (json:"-" on the base64 field) so metadata stays light.
+type OnboardingDocument struct {
+	ID             string  `json:"id"`
+	CompanyID      string  `json:"company_id"`
+	ChecklistID    string  `json:"checklist_id"`
+	ItemID         *string `json:"item_id,omitempty"`
+	FileName       string  `json:"file_name"`
+	MimeType       string  `json:"mime_type"`
+	FileSize       int     `json:"file_size"`
+	UploadedBy     *string `json:"uploaded_by,omitempty"`
+	UploadedByName *string `json:"uploaded_by_name,omitempty"`
+	CreatedAt      string  `json:"created_at"`
+	// FileData is the base64-encoded file content. Populated only on upload
+	// (inbound) and download (outbound); never on list responses.
+	FileData string `json:"file_data,omitempty"`
+}
+
+// ==================== CRM ====================
+
+// CRMLead is an unqualified inbound contact at the top of the funnel.
+type CRMLead struct {
+	ID                     string  `json:"id"`
+	CompanyID              string  `json:"company_id"`
+	Name                   string  `json:"name"`
+	CompanyName            string  `json:"company_name,omitempty"`
+	Title                  string  `json:"title,omitempty"`
+	Email                  string  `json:"email,omitempty"`
+	Phone                  string  `json:"phone,omitempty"`
+	Source                 string  `json:"source"`
+	Status                 string  `json:"status"`
+	Rating                 string  `json:"rating,omitempty"`
+	OwnerID                *string `json:"owner_id,omitempty"`
+	Notes                  string  `json:"notes,omitempty"`
+	IsConverted            bool    `json:"is_converted"`
+	ConvertedCustomerID    *string `json:"converted_customer_id,omitempty"`
+	ConvertedOpportunityID *string `json:"converted_opportunity_id,omitempty"`
+	ConvertedAt            *string `json:"converted_at,omitempty"`
+	CreatedAt              string  `json:"created_at,omitempty"`
+	UpdatedAt              string  `json:"updated_at,omitempty"`
+}
+
+// CRMOpportunity is a deal in the pipeline, tied to an ar_customers account.
+type CRMOpportunity struct {
+	ID                string  `json:"id"`
+	CompanyID         string  `json:"company_id"`
+	Name              string  `json:"name"`
+	CustomerID        string  `json:"customer_id"`
+	Stage             string  `json:"stage"`
+	Amount            float64 `json:"amount"`
+	Probability       int     `json:"probability"`
+	ExpectedCloseDate *string `json:"expected_close_date,omitempty"`
+	Source            string  `json:"source,omitempty"`
+	OwnerID           *string `json:"owner_id,omitempty"`
+	LostReason        string  `json:"lost_reason,omitempty"`
+	QuoteID           *string `json:"quote_id,omitempty"`
+	ClosedAt          *string `json:"closed_at,omitempty"`
+	Notes             string  `json:"notes,omitempty"`
+	CreatedAt         string  `json:"created_at,omitempty"`
+	UpdatedAt         string  `json:"updated_at,omitempty"`
+	// Joined
+	CustomerName string `json:"customer_name,omitempty"`
+}
+
+// CRMActivity is a call/email/meeting/task/note logged against a lead or opportunity.
+type CRMActivity struct {
+	ID          string  `json:"id"`
+	CompanyID   string  `json:"company_id"`
+	RelatedType string  `json:"related_type"`
+	RelatedID   string  `json:"related_id"`
+	Type        string  `json:"type"`
+	Subject     string  `json:"subject"`
+	Notes       string  `json:"notes,omitempty"`
+	DueDate     *string `json:"due_date,omitempty"`
+	Completed   bool    `json:"completed"`
+	CompletedAt *string `json:"completed_at,omitempty"`
+	OwnerID     *string `json:"owner_id,omitempty"`
+	CreatedAt   string  `json:"created_at,omitempty"`
+	UpdatedAt   string  `json:"updated_at,omitempty"`
+}
+
+// CRMStageStat is one stage's rollup for the pipeline overview.
+type CRMStageStat struct {
+	Stage         string  `json:"stage"`
+	Count         int     `json:"count"`
+	Amount        float64 `json:"amount"`
+	WeightedValue float64 `json:"weighted_value"`
+}
+
+// CRMOverview is the CRM dashboard rollup.
+type CRMOverview struct {
+	OpenCount      int            `json:"open_count"`
+	OpenValue      float64        `json:"open_value"`
+	WeightedValue  float64        `json:"weighted_value"`
+	WonCount       int            `json:"won_count"`
+	WonValue       float64        `json:"won_value"`
+	LostCount      int            `json:"lost_count"`
+	WinRate        float64        `json:"win_rate"`
+	NewLeads       int            `json:"new_leads"`
+	OverdueTasks   int            `json:"overdue_tasks"`
+	ByStage        []CRMStageStat `json:"by_stage"`
+}
+
 // PayrollSettings represents company payroll configuration
 type PayrollSettings struct {
 	ID               string  `json:"id" db:"id"`

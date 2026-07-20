@@ -23,7 +23,8 @@
     .wrap{width:min(1180px,92vw);margin:0 auto}
     .mono{font-family:'JetBrains Mono',monospace}
     h1,h2,h3{font-family:'Space Grotesk',sans-serif;font-weight:600;line-height:1.05;letter-spacing:-0.03em;color:var(--text)}
-    .ey{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.06em;color:var(--accent)}
+    .ey{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent)}
+    .ey::before{content:"";display:inline-block;width:16px;height:1px;background:currentColor;vertical-align:middle;margin-right:10px;opacity:.65}
     .grad{background:linear-gradient(100deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent}
     .btn{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:14.5px;padding:12px 20px;border-radius:11px;border:1px solid transparent;cursor:pointer;transition:transform .16s,background .16s,border-color .16s}
     .btn-accent{background:var(--accent);color:var(--accent-ink);box-shadow:0 8px 30px -10px var(--glow)}
@@ -116,15 +117,15 @@
   <header>
     <div class="wrap"><nav>
       <a class="brand" href="index.html"><span class="logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M6 3.5h8.5L19 8v12.5H6z" fill="#fff" opacity=".35"/><path d="M8.5 11h7M8.5 14h5" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/></svg></span>LetterSheets</a>
-      <div class="nav-mid"><a href="modules.html">Modules</a><a href="security.html" class="active">Security</a><a href="resources.html">Resources</a><a href="pricing.html">Pricing</a></div>
+      <div class="nav-mid"><a href="modules.html">Modules</a><a href="security.html" class="active">Security</a><a href="resources.html">Resources</a><a href="pricing.html">Pricing</a><a href="download.html">Download</a></div>
       <div class="nav-right"><a class="signin" href="#" data-app>Sign in</a><a class="btn btn-accent" href="#" data-app>Get started</a><button class="burger" aria-label="Open menu" aria-expanded="false"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
-      <div class="mobile-menu"><a href="modules.html">Modules</a><a href="security.html">Security</a><a href="resources.html">Resources</a><a href="pricing.html">Pricing</a><a href="#" data-app>Sign in</a><a href="#" data-app>Get started</a></div>
+      <div class="mobile-menu"><a href="modules.html">Modules</a><a href="security.html">Security</a><a href="resources.html">Resources</a><a href="pricing.html">Pricing</a><a href="download.html">Download</a><a href="#" data-app>Sign in</a><a href="#" data-app>Get started</a></div>
     </nav></div>
   </header>
 
   <div class="phead">
     <div class="wrap">
-      <span class="ey">// security first</span>
+      <span class="ey">security first</span>
       <h1>Your data stays private, <span class="grad">even from us.</span></h1>
       <p>Most ERPs protect data in transit and trust the server with the rest. LetterSheets encrypts your most sensitive records in your browser and keeps the keys with you.</p>
       <div class="stats">
@@ -214,7 +215,7 @@
 
   <script>
     document.getElementById('yr').textContent = new Date().getFullYear();
-    var appUrl = new URLSearchParams(location.search).get('app') || '/';
+    var appUrl = new URLSearchParams(location.search).get('app') || 'https://3.113.22.255/';
     document.querySelectorAll('[data-app]').forEach(function(a){ a.setAttribute('href', appUrl); });
     var burger = document.querySelector('.burger'), mmenu = document.querySelector('.mobile-menu');
     if (burger && mmenu){

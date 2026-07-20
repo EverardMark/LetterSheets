@@ -59,6 +59,7 @@ func main() {
 		repository.NewReturnsRepo(db),
 		repository.NewLeaveCreditRepo(db),
 		repository.NewRecurringRepo(db),
+		repository.NewCRMRepo(db),
 		cfg,
 	)
 

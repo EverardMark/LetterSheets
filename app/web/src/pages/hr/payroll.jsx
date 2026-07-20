@@ -392,6 +392,7 @@ export default function PayrollTab({ employees = [] }) {
     if (view === "run" && activeRun) return (
         <RunDetail
             run={activeRun} items={items} settings={settings}
+            company={company}
             computing={computing}
             hideAmounts={hideAmounts}
             onToggleAmounts={() => setHideAmounts(v => !v)}
@@ -457,6 +458,12 @@ function fmtPeriod(a, b) {
     return `${fmt(d1)} – ${fmt(d2)}, ${d2.getFullYear()}`;
 }
 
+function fmtDate(d) {
+    if (!d) return "—";
+    const dt = new Date((d || "").substring(0, 10) + "T00:00:00");
+    return isNaN(dt) ? d : dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
 /* ================================================================
    NEW RUN BUTTON (with period picker)
 ================================================================ */
@@ -504,11 +511,12 @@ function NewRunButton({ settings, onCreate }) {
 /* ================================================================
    RUN DETAIL
 ================================================================ */
-function RunDetail({ run, items, settings, computing, hideAmounts, onToggleAmounts, onCompute, onApprove, onDelete, onBack }) {
+function RunDetail({ run, items, settings, company, computing, hideAmounts, onToggleAmounts, onCompute, onApprove, onDelete, onBack }) {
     const isDraft = run.status === "Draft";
     const sc = run.status === "Approved" ? "#22c55e" : run.status === "Paid" ? "#0ea5e9" : "#f59e0b";
     const m = (v) => money(v, hideAmounts);
     const [showHist, setShowHist] = useState(false);
+    const [payslipItem, setPayslipItem] = useState(null);
 
     return (<>
         <div className="pr-run-head">
@@ -572,6 +580,7 @@ function RunDetail({ run, items, settings, computing, hideAmounts, onToggleAmoun
                         <th style={{textAlign:"right"}}>Tax</th>
                         <th style={{textAlign:"right"}}>Total Ded</th>
                         <th style={{textAlign:"right"}}>Net Pay</th>
+                        <th style={{textAlign:"center",width:44}}></th>
                     </tr>
                     </thead>
                     <tbody>
@@ -600,6 +609,11 @@ function RunDetail({ run, items, settings, computing, hideAmounts, onToggleAmoun
                             <td className="pr-r pr-ded">{m(it.withholding_tax)}</td>
                             <td className="pr-r pr-ded pr-bold">{m(it.total_deductions)}</td>
                             <td className="pr-r pr-net">{m(it.net_pay)}</td>
+                            <td style={{textAlign:"center"}}>
+                                <button className="pr-slip-btn" title="View / print payslip" onClick={() => setPayslipItem(it)}>
+                                    <I name="file-text" size={15}/>
+                                </button>
+                            </td>
                         </tr>
                     ))}
                     <tr className="pr-total-row">
@@ -613,14 +627,148 @@ function RunDetail({ run, items, settings, computing, hideAmounts, onToggleAmoun
                         <td className="pr-r pr-ded">{m(items.reduce((s,i)=>s+i.withholding_tax,0))}</td>
                         <td className="pr-r pr-ded pr-bold">{m(items.reduce((s,i)=>s+i.total_deductions,0))}</td>
                         <td className="pr-r pr-net pr-bold">{m(items.reduce((s,i)=>s+i.net_pay,0))}</td>
+                        <td></td>
                     </tr>
                     </tbody>
                 </table>
             </div>
         )}
+        {payslipItem && <PayslipModal item={payslipItem} run={run} company={company} onClose={() => setPayslipItem(null)} />}
         <style>{prCSS}</style>
     </>);
 }
+
+/* ================================================================
+   PAYSLIP — printable per-employee pay statement
+   Rendered from the already-computed payroll item; "Print" hands off
+   to the browser's print dialog (Save as PDF) via a scoped print CSS
+   that hides everything except .payslip-print.
+================================================================ */
+function PayslipModal({ item, run, company, onClose }) {
+    const p = (v) => peso(v);
+    const companyName = company?.name || company?.company_name || "Company";
+    const empName = `${item.first_name || ""} ${item.last_name || ""}`.trim() || "Employee";
+
+    const earnings = [
+        ["Basic Pay", item.basic_pay],
+        ["Overtime", item.ot_pay],
+        ["Holiday Pay", item.holiday_pay],
+        ["Night Differential", item.night_diff],
+        ["Allowances", item.allowances],
+        ["Other Earnings", item.other_earnings],
+    ].filter(([, v]) => Number(v || 0) !== 0);
+
+    const deductions = [
+        ["SSS", item.sss_ee],
+        ["PhilHealth", item.philhealth_ee],
+        ["Pag-IBIG", item.pagibig_ee],
+        ["Withholding Tax", item.withholding_tax],
+        ["Benefit Deductions", item.benefit_deductions],
+        ["Loan Deductions", item.loan_deductions],
+        ["Other Deductions", item.other_deductions],
+    ].filter(([, v]) => Number(v || 0) !== 0);
+
+    return (
+        <div className="ps-bg" onClick={onClose}>
+            <div className="ps-modal" onClick={e => e.stopPropagation()}>
+                <div className="ps-toolbar">
+                    <span className="ps-toolbar-t">Payslip</span>
+                    <div style={{ display: "flex", gap: 8 }}>
+                        <button className="ps-btn-print" onClick={() => window.print()}><I name="download" size={13}/> Print / Save PDF</button>
+                        <button className="ps-btn-close" onClick={onClose}><I name="x-circle" size={16}/></button>
+                    </div>
+                </div>
+
+                <div className="payslip-print">
+                    <div className="ps-head">
+                        <div>
+                            <div className="ps-co">{companyName}</div>
+                            <div className="ps-doc">PAYSLIP</div>
+                        </div>
+                        <div className="ps-period">
+                            <div>Pay Period</div>
+                            <strong>{fmtPeriod(run.period_start, run.period_end)}</strong>
+                            {run.pay_date && <div className="ps-paydate">Pay Date: {fmtDate(run.pay_date)}</div>}
+                        </div>
+                    </div>
+
+                    <div className="ps-emp">
+                        <div><span className="ps-lbl">Employee</span><strong>{empName}</strong></div>
+                        {item.department && <div><span className="ps-lbl">Department</span>{item.department}</div>}
+                        {item.days_worked != null && <div><span className="ps-lbl">Days Worked</span>{Number(item.days_worked)}</div>}
+                        <div><span className="ps-lbl">Run Status</span>{run.status}</div>
+                    </div>
+
+                    <div className="ps-cols">
+                        <div className="ps-col">
+                            <div className="ps-col-h ps-earn">Earnings</div>
+                            {earnings.length ? earnings.map(([l, v]) => (
+                                <div key={l} className="ps-row"><span>{l}</span><span>{p(v)}</span></div>
+                            )) : <div className="ps-row ps-muted"><span>—</span><span></span></div>}
+                            <div className="ps-row ps-sub"><span>Gross Pay</span><span>{p(item.gross_pay)}</span></div>
+                        </div>
+                        <div className="ps-col">
+                            <div className="ps-col-h ps-ded-h">Deductions</div>
+                            {deductions.length ? deductions.map(([l, v]) => (
+                                <div key={l} className="ps-row"><span>{l}</span><span>{p(v)}</span></div>
+                            )) : <div className="ps-row ps-muted"><span>—</span><span></span></div>}
+                            <div className="ps-row ps-sub"><span>Total Deductions</span><span>{p(item.total_deductions)}</span></div>
+                        </div>
+                    </div>
+
+                    <div className="ps-net">
+                        <span>NET PAY</span>
+                        <span>{p(item.net_pay)}</span>
+                    </div>
+
+                    <div className="ps-foot">
+                        This is a system-generated payslip and does not require a signature.
+                    </div>
+                </div>
+            </div>
+            <style>{psCSS}</style>
+        </div>
+    );
+}
+
+const psCSS = `
+.ps-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:700;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+.ps-modal{background:#fff;border-radius:14px;width:100%;max-width:640px;box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden}
+.ps-toolbar{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #eef0f2;background:#fafbfc}
+.ps-toolbar-t{font-size:14px;font-weight:700;color:#333}
+.ps-btn-print{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:none;border-radius:8px;background:#0ea5e9;color:#fff;font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer}
+.ps-btn-print:hover{background:#0284c7}
+.ps-btn-close{width:34px;height:34px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;color:#888;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.payslip-print{padding:28px 30px;color:#1f2937;font-family:'DM Sans',sans-serif}
+.ps-head{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:16px;border-bottom:2px solid #111827;margin-bottom:18px}
+.ps-co{font-size:20px;font-weight:800;color:#111827}
+.ps-doc{font-size:12px;letter-spacing:3px;color:#6b7280;margin-top:2px;font-weight:600}
+.ps-period{text-align:right;font-size:12px;color:#6b7280}
+.ps-period strong{display:block;font-size:14px;color:#111827;margin-top:2px}
+.ps-paydate{margin-top:4px}
+.ps-emp{display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;margin-bottom:20px}
+.ps-emp>div{font-size:13px;color:#374151}
+.ps-emp strong{color:#111827}
+.ps-lbl{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#9ca3af;margin-bottom:1px}
+.ps-cols{display:flex;gap:24px}
+.ps-col{flex:1}
+.ps-col-h{font-size:12px;font-weight:700;padding:6px 0;border-bottom:1px solid #e5e7eb;margin-bottom:6px}
+.ps-earn{color:#059669}
+.ps-ded-h{color:#dc2626}
+.ps-row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;color:#374151}
+.ps-row.ps-sub{border-top:1px solid #e5e7eb;margin-top:4px;padding-top:8px;font-weight:700;color:#111827}
+.ps-row.ps-muted{color:#9ca3af}
+.ps-net{display:flex;justify-content:space-between;align-items:center;margin-top:22px;padding:16px 18px;background:#0ea5e912;border:1px solid #0ea5e930;border-radius:10px;font-size:16px;font-weight:800;color:#0369a1}
+.ps-foot{margin-top:20px;font-size:11px;color:#9ca3af;text-align:center;font-style:italic}
+@media print{
+  body *{visibility:hidden !important}
+  .payslip-print,.payslip-print *{visibility:visible !important}
+  .ps-bg{position:static;background:none;padding:0;overflow:visible}
+  .ps-modal{box-shadow:none;max-width:none;border-radius:0}
+  .ps-toolbar{display:none !important}
+  .payslip-print{position:absolute;left:0;top:0;width:100%;padding:0}
+}
+`;
 
 /* ================================================================
    SETTINGS VIEW
@@ -735,6 +883,8 @@ const prCSS = `
   .pr-btn-compute{padding:9px 20px;border:none;border-radius:8px;background:linear-gradient(135deg,#6366f1,#8b5cf6);font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;color:#fff;cursor:pointer;transition:all .15s}
   .pr-btn-compute:hover{opacity:.9}
   .pr-btn-compute:disabled{opacity:.5;cursor:not-allowed}
+  .pr-slip-btn{width:30px;height:30px;border:1px solid #e5e7eb;border-radius:7px;background:#fff;color:#0ea5e9;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;transition:all .12s}
+  .pr-slip-btn:hover{background:#0ea5e9;color:#fff;border-color:#0ea5e9}
 
   .pr-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}
   .pr-sum-card{background:#fff;border:1px solid #eee;border-radius:10px;padding:14px 16px}

@@ -24,7 +24,8 @@
     .wrap{width:min(1200px,92vw);margin:0 auto}
     .mono{font-family:'JetBrains Mono',monospace}
     h1,h2,h3{font-family:'Space Grotesk',sans-serif;font-weight:600;line-height:1.03;letter-spacing:-0.03em;color:var(--text)}
-    .ey{font-family:'JetBrains Mono',monospace;font-size:12px;letter-spacing:.06em;color:var(--accent);text-transform:none}
+    .ey{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent)}
+    .ey::before{content:"";display:inline-block;width:16px;height:1px;background:currentColor;vertical-align:middle;margin-right:10px;opacity:.65}
     .grad{background:linear-gradient(100deg,var(--accent),var(--accent-2));-webkit-background-clip:text;background-clip:text;color:transparent}
 
     .btn{display:inline-flex;align-items:center;gap:8px;font-family:'Inter',sans-serif;font-weight:600;font-size:14.5px;padding:12px 20px;border-radius:11px;border:1px solid transparent;cursor:pointer;transition:transform .16s,background .16s,border-color .16s}
@@ -188,8 +189,7 @@
           <a href="modules.html">Modules</a>
           <a href="security.html">Security</a>
           <a href="resources.html">Resources</a>
-          <a href="pricing.html">Pricing</a>
-        </div>
+          <a href="pricing.html">Pricing</a><a href="download.html">Download</a></div>
         <div class="nav-right">
           <a class="signin" href="#" data-app>Sign in</a>
           <a class="btn btn-accent" href="#" data-app>Get started</a>
@@ -200,6 +200,7 @@
           <a href="security.html">Security</a>
           <a href="resources.html">Resources</a>
           <a href="pricing.html">Pricing</a>
+          <a href="download.html">Download</a>
           <a href="#" data-app>Sign in</a>
           <a href="#" data-app>Get started</a>
         </div>
@@ -259,7 +260,7 @@
   <section id="modules">
     <div class="wrap">
       <div class="sec-head">
-        <span class="ey">// one platform</span>
+        <span class="ey">one platform</span>
         <h2>Seven modules, one balance.</h2>
         <p>Each module posts into the same double-entry core, so operations and financials never drift apart.</p>
       </div>
@@ -312,7 +313,7 @@
     <div class="wrap sec-grid">
       <div>
         <div class="sec-head" style="margin-bottom:24px">
-          <span class="ey">// security first</span>
+          <span class="ey">security first</span>
           <h2>Private by architecture, not by policy.</h2>
           <p>Sensitive fields are encrypted in your browser before they ever reach the server — which only ever stores ciphertext it can't read.</p>
         </div>
@@ -386,7 +387,7 @@
 
   <script>
     document.getElementById('yr').textContent = new Date().getFullYear();
-    var appUrl = new URLSearchParams(location.search).get('app') || '/';
+    var appUrl = new URLSearchParams(location.search).get('app') || 'https://3.113.22.255/';
     document.querySelectorAll('[data-app]').forEach(function(a){ a.setAttribute('href', appUrl); });
 
     var nf = document.getElementById('newsForm');

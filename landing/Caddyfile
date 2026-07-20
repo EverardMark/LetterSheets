@@ -1,0 +1,23 @@
+# LetterSheets landing — static site served by Caddy with automatic HTTPS.
+#
+# Requires:
+#   - DNS A (and AAAA if IPv6) record for {$LANDING_DOMAIN} -> this EC2 instance
+#   - Security group allows inbound 80 and 443 (and 22 for SSH)
+#
+# Caddy obtains + renews a Let's Encrypt certificate automatically.
+
+{$LANDING_DOMAIN} {
+	encode zstd gzip
+	root * /srv/landing
+	# Clean URLs: /modules serves modules.html, unknown paths fall back to the home page.
+	try_files {path} {path}.html /index.html
+	file_server
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}

@@ -9,6 +9,7 @@ import Inventory from "./pages/inventory/Dashboard";
 import FixedAssets from "./pages/fixedassets/Dashboard";
 import Sales from "./pages/sales/Dashboard";
 import Procurement from "./pages/procurement/Dashboard";
+import CRM from "./pages/crm/Dashboard";
 import Settings from "./pages/settings/settings.jsx";
 
 export default function App() {
@@ -85,6 +86,12 @@ export default function App() {
                     <Route path="/sales/price-lists" element={<Sales />} />
                     <Route path="/sales/credit-memos" element={<Sales />} />
                     <Route path="/sales/settings" element={<Sales />} />
+
+                    {/* CRM */}
+                    <Route path="/crm" element={<CRM />} />
+                    <Route path="/crm/leads" element={<CRM />} />
+                    <Route path="/crm/pipeline" element={<CRM />} />
+                    <Route path="/crm/activities" element={<CRM />} />
 
                     {/* Procurement */}
                     <Route path="/procurement" element={<Procurement />} />

@@ -13,6 +13,8 @@ import {
     faHandHoldingDollar, faRightLeft, faBoltLightning, faSliders,
     faChevronLeft, faTriangleExclamation, faBookOpen, faSpinner, faPlus,
     faFloppyDisk, faPenToSquare, faTrashCan, faPlay, faPause, faCircleXmark,
+    faPaperclip, faUpload, faDownload, faImage, faFileLines,
+    faXmark, faPhone, faFlag, faBullseye,
 } from "@fortawesome/pro-light-svg-icons";
 import UpdateButton from "../pages/components/updatebutton";
 import { Permissions, SELF_SERVICE_MODULES } from "../utils/permissions";
@@ -90,6 +92,15 @@ export const modules = [
             { id: "fa-maintenance",  label: "Maintenance",  path: "/fixed-assets/maintenance",  icon: "scroll" },
             { id: "fa-transfers",    label: "Transfers",    path: "/fixed-assets/transfers",    icon: "truck" },
             { id: "fa-settings",     label: "Settings",     path: "/fixed-assets/settings",     icon: "gear",  group: "CONFIG" },
+        ],
+    },
+    {
+        id: "crm", label: "CRM", icon: "target",
+        children: [
+            { id: "crm-overview",   label: "Overview",     path: "/crm",            icon: "grid" },
+            { id: "crm-leads",      label: "Leads",        path: "/crm/leads",      icon: "userplus" },
+            { id: "crm-pipeline",   label: "Pipeline",     path: "/crm/pipeline",   icon: "chart" },
+            { id: "crm-activities", label: "Follow-ups",   path: "/crm/activities", icon: "clock" },
         ],
     },
     {
@@ -191,6 +202,12 @@ function buildNavModules(perms) {
         if (fa) result.push(fa);
     }
 
+    // CRM
+    if (visible.includes("crm")) {
+        const crm = modules.find(m => m.id === "crm");
+        if (crm) result.push(crm);
+    }
+
     // Sales
     if (visible.includes("sales")) {
         const so = modules.find(m => m.id === "sales");
@@ -266,6 +283,15 @@ const faMap = {
     play: faPlay,
     pause: faPause,
     "x-circle": faCircleXmark,
+    paperclip: faPaperclip,
+    upload: faUpload,
+    download: faDownload,
+    image: faImage,
+    "file-text": faFileLines,
+    x: faXmark,
+    phone: faPhone,
+    flag: faFlag,
+    target: faBullseye,
 };
 
 export const I = ({ name, size = 16 }) => {
