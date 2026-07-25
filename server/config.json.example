@@ -8,6 +8,7 @@
     "allowed_origins": ["http://localhost:5173"],
     "tls_cert_file": "",
     "tls_key_file": "",
+    "tls_port": 0,
     "trust_proxy_headers": false
   },
   "database": {
@@ -19,5 +20,19 @@
     "max_open": 25,
     "max_idle": 5,
     "max_life_minutes": 5
+  },
+  "smtp": {
+    "_comment": "Outbound email is OFF until enabled is true. While off, queued messages stay Pending and are visible in Settings > Email queue; nothing is sent.",
+    "enabled": false,
+    "host": "smtp.example.com",
+    "port": 587,
+    "username": "REPLACE_WITH_SMTP_USER",
+    "password": "REPLACE_WITH_SMTP_PASSWORD",
+    "from_email": "no-reply@example.com",
+    "from_name": "LetterSheets ERP",
+    "implicit_tls": false,
+    "skip_verify": false,
+    "worker_seconds": 60,
+    "batch_size": 20
   }
 }

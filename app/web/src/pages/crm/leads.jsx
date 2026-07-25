@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import { api, fmtDate, initials, Empty, LEAD_STATUS_COLOR, LEAD_SOURCES } from "./shared";
+import { Term, SimpleHint } from "../components/simplemode";
 
 const STATUSES = ["New", "Contacted", "Qualified", "Unqualified"];
 const RATINGS = ["", "Hot", "Warm", "Cold"];
@@ -22,6 +23,7 @@ export default function LeadsView() {
     useEffect(() => { load(); }, [load]);
 
     return (<>
+        <SimpleHint icon="bulb">People who might buy from you but aren't customers yet.</SimpleHint>
         <div className="crm-bar">
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                 <span className="crm-bar-count">{leads.length} leads</span>
@@ -34,7 +36,7 @@ export default function LeadsView() {
         </div>
 
         {loading ? null : leads.length === 0 ? (
-            <Empty icon="userplus" title="No leads yet" desc="Capture an inbound contact to start the funnel." action="New Lead" onAction={() => setEditing({})} />
+            <Empty icon="userplus" title="No leads yet" desc={<Term simple="Add someone who's interested to start tracking them." advanced="Capture an inbound contact to start the funnel." />} action="New Lead" onAction={() => setEditing({})} />
         ) : (
             <div className="crm-tblwrap">
                 <table className="crm-tbl">
@@ -177,7 +179,7 @@ function ConvertModal({ lead, onClose, onDone }) {
             <div className="crm-modal-h">
                 <div>
                     <div className="crm-modal-t">Convert Lead</div>
-                    <div className="crm-modal-sub">Creates a customer account + an opportunity</div>
+                    <div className="crm-modal-sub"><Term simple="Creates a customer and a deal" advanced="Creates a customer account + an opportunity" /></div>
                 </div>
                 <button className="crm-x" onClick={onClose}><I name="x" size={16} /></button>
             </div>
@@ -187,7 +189,7 @@ function ConvertModal({ lead, onClose, onDone }) {
                     <div className="crm-nm">{lead.name}</div>
                     <div className="crm-sub">{lead.company_name || "—"}{lead.email ? ` · ${lead.email}` : ""}</div>
                 </div>
-                <div className="crm-fld"><label className="crm-lbl">Opportunity name</label><input className="crm-inp" value={f.opportunity_name} onChange={e => set("opportunity_name", e.target.value)} /></div>
+                <div className="crm-fld"><label className="crm-lbl"><Term simple="Deal name" advanced="Opportunity name" /></label><input className="crm-inp" value={f.opportunity_name} onChange={e => set("opportunity_name", e.target.value)} /></div>
                 <div className="crm-row2">
                     <div className="crm-fld"><label className="crm-lbl">Deal amount (₱)</label><input className="crm-inp" type="number" value={f.amount} onChange={e => set("amount", e.target.value)} placeholder="0.00" /></div>
                     <div className="crm-fld"><label className="crm-lbl">Expected close</label><input className="crm-inp" type="date" value={f.expected_close_date} onChange={e => set("expected_close_date", e.target.value)} /></div>

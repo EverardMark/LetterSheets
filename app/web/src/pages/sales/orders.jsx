@@ -2,11 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import { api, Empty, peso, num, d10, today, ORDER_BADGE } from "./shared";
+import { Term, SimpleHint } from "../components/simplemode";
+import { useIsSimple } from "../../utils/uimode";
 import LineGrid from "./LineGrid";
 
 const custName = (c) => c.name || `${c.first_name || ""} ${c.last_name || ""}`.trim();
 
 export default function Orders() {
+    const simple = useIsSimple();
     const [rows, setRows] = useState([]);
     const [customers, setCustomers] = useState([]);
     const [products, setProducts] = useState([]);
@@ -29,6 +32,7 @@ export default function Orders() {
 
     return (<>
         {msg && <div className={`so-flash ${msg.err ? "so-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">Orders your customers have placed. Track them from order to delivery to paid.</SimpleHint>
         <div className="so-bar">
             <div className="so-bar-l">
                 <select className="so-sel" value={status} onChange={e => setStatus(e.target.value)}>
@@ -41,7 +45,7 @@ export default function Orders() {
         {customers.length === 0 && <div className="so-flash so-flash-err">Add a customer first (Accounting → Receivables).</div>}
 
         {rows.length === 0 ? (
-            <Empty icon="cart" title={status ? "No matching orders" : "No orders"} desc={status ? "Try a different status." : "Create a sales order, confirm it to reserve stock, then ship and invoice."} action={status || customers.length === 0 ? null : "New order"} onAction={() => setModal({ id: null })} />
+            <Empty icon="cart" title={status ? "No matching orders" : "No orders"} desc={status ? "Try a different status." : (simple ? "Create an order, confirm it to set aside stock, then send the goods and invoice." : "Create a sales order, confirm it to reserve stock, then ship and invoice.")} action={status || customers.length === 0 ? null : "New order"} onAction={() => setModal({ id: null })} />
         ) : (
             <div className="so-tblwrap so-tbl-click">
                 <table className="so-tbl">
@@ -155,8 +159,8 @@ function OrderModal({ id, customers, products, warehouses, onClose, flash }) {
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {!isNew && (o.status === "Draft" || o.status === "Cancelled") && <button className="so-btn-danger" onClick={del}>Delete</button>}
                     {o.status === "Draft" && !isNew && <button className="so-btn-p" onClick={() => act("confirm_so_order", {}, "Confirmed — stock reserved")}>Confirm</button>}
-                    {["Confirmed", "PartiallyFulfilled"].includes(o.status) && <><button className="so-btn-s" onClick={() => setShip(true)}><I name="truck" size={12} /> Create Shipment</button><button className="so-btn-s" onClick={() => act("cancel_so_order", {}, "Cancelled")}>Cancel</button></>}
-                    {["PartiallyFulfilled", "Fulfilled"].includes(o.status) && <button className="so-btn-p" onClick={invoice}><I name="peso" size={12} /> Generate Invoice</button>}
+                    {["Confirmed", "PartiallyFulfilled"].includes(o.status) && <><button className="so-btn-s" onClick={() => setShip(true)}><I name="truck" size={12} /> <Term simple="Send goods" advanced="Create Shipment" /></button><button className="so-btn-s" onClick={() => act("cancel_so_order", {}, "Cancelled")}>Cancel</button></>}
+                    {["PartiallyFulfilled", "Fulfilled"].includes(o.status) && <button className="so-btn-p" onClick={invoice}><I name="peso" size={12} /> <Term simple="Create Invoice" advanced="Generate Invoice" /></button>}
                     {o.status === "Invoiced" && <button className="so-btn-s" onClick={() => act("close_so_order", {}, "Closed")}>Close</button>}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
@@ -183,7 +187,7 @@ function ShipForm({ order, onClose, onDone, flash }) {
         } catch (e) { flash(e.message, true); }
     };
     return (
-        <Modal title={`Ship SO-${String(order.order_number).padStart(4, "0")}`} subtitle="Fulfill order lines (partial allowed)" onClose={onClose}>
+        <Modal title={<><Term simple="Send" advanced="Ship" /> {`SO-${String(order.order_number).padStart(4, "0")}`}</>} subtitle={<Term simple="Send some or all of the order — partial is fine" advanced="Fulfill order lines (partial allowed)" />} onClose={onClose}>
             <div className="so-modal-scroll">
                 <div className="so-f" style={{ marginBottom: 12 }}>
                     <div className="so-field"><label className="so-label">Ship Date</label><input className="so-input" type="date" value={hdr.ship_date} onChange={e => setHdr(h => ({ ...h, ship_date: e.target.value }))} /></div>
@@ -205,7 +209,7 @@ function ShipForm({ order, onClose, onDone, flash }) {
                     </table>
                 </div>
             </div>
-            <div className="so-modal-foot"><button className="so-btn-s" onClick={onClose}>Cancel</button><button className="so-btn-p" onClick={submit}>Ship</button></div>
+            <div className="so-modal-foot"><button className="so-btn-s" onClick={onClose}>Cancel</button><button className="so-btn-p" onClick={submit}><Term simple="Send goods" advanced="Ship" /></button></div>
         </Modal>
     );
 }

@@ -3,6 +3,7 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faEye, faEyeSlash } from "@fortawesome/pro-light-svg-icons";
 import { I } from "../../layouts/ERPLayout";
 import HistoryTab, { canViewHistory } from "../components/HistoryTab";
+import { Term, SimpleHint } from "../components/simplemode";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 
@@ -418,6 +419,8 @@ export default function PayrollTab({ employees = [] }) {
             </div>
         </div>
 
+        <SimpleHint icon="bulb">Work out everyone's pay for a period, then finalize it.</SimpleHint>
+
         {visibleRuns.length === 0 ? (
             <div className="pr-empty">
                 <div className="pr-empty-ic"><I name="dollar-sign" size={32}/></div>
@@ -815,8 +818,8 @@ function SettingsView({ settings, onSave, onBack }) {
             </div>
 
             <div className="pr-set-section">
-                <h4 className="bp-sec-title">Statutory Deductions</h4>
-                <p style={{fontSize:12,color:"#888",marginBottom:14}}>Toggle which PH statutory contributions to auto-compute. Uses 2024 contribution tables.</p>
+                <h4 className="bp-sec-title"><Term simple="Government Deductions" advanced="Statutory Deductions" /></h4>
+                <p style={{fontSize:12,color:"#888",marginBottom:14}}><Term simple="Choose which government contributions to auto-compute — SSS, PhilHealth, Pag-IBIG and tax. Uses 2024 tables." advanced="Toggle which PH statutory contributions to auto-compute. Uses 2024 contribution tables." /></p>
                 <div className="pr-toggles">
                     {[
                         { key: "enable_sss", label: "SSS", desc: "Social Security System" },

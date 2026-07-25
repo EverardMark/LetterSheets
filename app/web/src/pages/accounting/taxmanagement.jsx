@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
+import { SimpleHint } from "../components/simplemode";
 import "./acc-layout.css";
 
 const API = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
@@ -64,6 +65,8 @@ export default function TaxManagement() {
 
     function renderSummary() {
         return (<div className="acc-wrap">
+            <SimpleHint icon="bulb">Your tax accounts and what's moved through them — handy at filing time.</SimpleHint>
+
             {/* Date filters */}
             <div className="acc-bar">
                 <div className="acc-bar-left">

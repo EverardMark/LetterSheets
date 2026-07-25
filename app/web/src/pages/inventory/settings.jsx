@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
+import { AdvancedOnly, SimpleHint } from "../components/simplemode";
 import { api } from "./shared";
 
 // Which account types make sense for each mapping slot.
@@ -46,6 +47,9 @@ export default function Settings() {
     return (<>
         {msg && <div className={`iv-flash ${msg.err ? "iv-flash-err" : ""}`}>{msg.text}</div>}
 
+        <SimpleHint icon="bulb">Inventory works fine on its own. These optional settings let your bookkeeper connect stock changes to your accounts — switch to Advanced to set them up.</SimpleHint>
+
+        <AdvancedOnly>
         <div className="iv-card" style={{ maxWidth: 680 }}>
             <div className="iv-card-h"><h3 className="iv-card-t">Accounting Integration</h3></div>
             <p style={{ fontSize: 13, color: "#888", marginBottom: 18, lineHeight: 1.6 }}>
@@ -85,5 +89,6 @@ export default function Settings() {
                 <button className="iv-btn-p" disabled={saving} onClick={save}><I name="check" size={13} /> {saving ? "Saving…" : "Save Settings"}</button>
             </div>
         </div>
+        </AdvancedOnly>
     </>);
 }

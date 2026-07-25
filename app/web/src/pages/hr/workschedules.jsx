@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import HistoryTab, { canViewHistory } from "../components/HistoryTab";
+import { SimpleHint } from "../components/simplemode";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 
@@ -130,6 +131,7 @@ export default function WorkSchedulesTab({ departments = [], positions = [] }) {
 
     return (<>
         <div className="ws-wrap">
+            <SimpleHint icon="bulb">Set who works which days and hours.</SimpleHint>
             <div className="ws-bar">
                 <div className="ws-bar-left">
                     <div className="ws-search-wrap">

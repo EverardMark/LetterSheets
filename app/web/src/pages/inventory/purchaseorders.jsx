@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
+import { Term, SimpleHint, AdvancedOnly } from "../components/simplemode";
 import { api, Empty, peso, num, d10, PO_BADGE } from "./shared";
 
 export default function PurchaseOrders() {
@@ -37,6 +38,7 @@ export default function PurchaseOrders() {
 
     return (<>
         {msg && <div className={`iv-flash ${msg.err ? "iv-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">Orders you send to suppliers to restock — record the goods when they arrive.</SimpleHint>
         <div className="iv-bar">
             <div className="iv-bar-l">
                 <select className="iv-sel" value={status} onChange={e => setStatus(e.target.value)}>
@@ -47,14 +49,14 @@ export default function PurchaseOrders() {
             <button className="iv-btn-p" disabled={warehouses.length === 0} onClick={() => setCreateOpen(true)}><I name="cart" size={13} /> New Purchase Order</button>
         </div>
 
-        {warehouses.length === 0 && <div className="iv-flash iv-flash-err">Add a warehouse first — a PO receives goods into a warehouse.</div>}
+        {warehouses.length === 0 && <div className="iv-flash iv-flash-err"><Term simple="Add a storage location first — orders are received into one." advanced="Add a warehouse first — a PO receives goods into a warehouse."/></div>}
 
         {rows.length === 0 ? (
             <Empty icon="cart" title={status ? "No matching orders" : "No purchase orders"} desc={status ? "Try a different status filter." : "Create a purchase order to restock from a supplier."} action={status || warehouses.length === 0 ? null : "New purchase order"} onAction={() => setCreateOpen(true)} />
         ) : (
             <div className="iv-tblwrap iv-tbl-click">
                 <table className="iv-tbl">
-                    <thead><tr><th>PO #</th><th>Supplier</th><th>Warehouse</th><th className="iv-tbl-r">Items</th><th className="iv-tbl-r">Total</th><th>Ordered</th><th>Status</th></tr></thead>
+                    <thead><tr><th>PO #</th><th>Supplier</th><th><Term simple="Storage Location" advanced="Warehouse"/></th><th className="iv-tbl-r">Items</th><th className="iv-tbl-r">Total</th><th>Ordered</th><th>Status</th></tr></thead>
                     <tbody>
                         {rows.map(po => (
                             <tr key={po.id} onClick={() => setDetailId(po.id)}>
@@ -94,7 +96,7 @@ function CreatePOModal({ suppliers, warehouses, onClose, onSave }) {
                         </select>
                     </div>
                     <div className="iv-field">
-                        <label className="iv-label">Deliver to warehouse <span className="iv-req" /></label>
+                        <label className="iv-label"><Term simple="Deliver to location" advanced="Deliver to warehouse"/> <span className="iv-req" /></label>
                         <select className="iv-fsel" value={form.warehouse_id || ""} onChange={e => set("warehouse_id", e.target.value)}>
                             <option value="">— Select —</option>
                             {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
@@ -170,7 +172,7 @@ function PODetailModal({ poId, products, onClose, flash }) {
                     <span className={`iv-badge ${PO_BADGE[po.status] || "iv-b-gray"}`}>{po.status}</span>
                     {po.order_date && <span className="iv-sku">Ordered {d10(po.order_date)}</span>}
                     {po.expected_date && <span className="iv-sku">· Expected {d10(po.expected_date)}</span>}
-                    {po.journal_entry_id && <span className="iv-badge iv-b-blue">Posted to GL</span>}
+                    {po.journal_entry_id && <AdvancedOnly><span className="iv-badge iv-b-blue">Posted to GL</span></AdvancedOnly>}
                 </div>
 
                 <div className="iv-tblwrap" style={{ marginBottom: 12 }}>

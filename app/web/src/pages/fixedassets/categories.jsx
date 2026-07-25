@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import { api, Empty, METHODS } from "./shared";
+import { Term, AdvancedOnly, SimpleHint } from "../components/simplemode";
 
 export default function Categories() {
     const [rows, setRows] = useState([]);
@@ -38,17 +39,18 @@ export default function Categories() {
 
     return (<>
         {msg && <div className={`fa-flash ${msg.err ? "fa-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">Group similar assets together — like Vehicles or Computers — so they share the same value-loss settings.</SimpleHint>
         <div className="fa-bar">
             <div className="fa-bar-l"><span style={{ fontSize: 13, color: "#888" }}>{rows.length} categor{rows.length !== 1 ? "ies" : "y"}</span></div>
             <button className="fa-btn-p" onClick={() => setModal({ cat: { default_method: "straight_line", is_active: true } })}><I name="tags" size={13} /> Add Category</button>
         </div>
 
         {rows.length === 0 ? (
-            <Empty icon="tags" title="No categories" desc="Categories carry default depreciation settings and GL accounts for their assets." action="Add category" onAction={() => setModal({ cat: { default_method: "straight_line", is_active: true } })} />
+            <Empty icon="tags" title="No categories" desc={<Term simple="Groups let similar assets share the same value-loss settings." advanced="Categories carry default depreciation settings and GL accounts for their assets." />} action="Add category" onAction={() => setModal({ cat: { default_method: "straight_line", is_active: true } })} />
         ) : (
             <div className="fa-tblwrap fa-tbl-click">
                 <table className="fa-tbl">
-                    <thead><tr><th>Category</th><th>Default Method</th><th className="fa-tbl-r">Life (mo)</th><th className="fa-tbl-r">Salvage %</th><th className="fa-tbl-r">Assets</th></tr></thead>
+                    <thead><tr><th>Category</th><th><Term simple="Value-loss method" advanced="Default Method" /></th><th className="fa-tbl-r"><Term simple="Lasts (mo)" advanced="Life (mo)" /></th><th className="fa-tbl-r"><Term simple="Leftover %" advanced="Salvage %" /></th><th className="fa-tbl-r">Assets</th></tr></thead>
                     <tbody>
                         {rows.map(c => (
                             <tr key={c.id} onClick={() => setModal({ cat: c })}>
@@ -86,7 +88,7 @@ function CatModal({ data, accounts, onClose, onSave, onDelete }) {
     );
 
     return (
-        <Modal title={isEdit ? "Edit Category" : "Add Category"} subtitle="Default depreciation profile + GL mapping" onClose={onClose}>
+        <Modal title={isEdit ? "Edit Category" : "Add Category"} subtitle={<Term simple="Default value-loss settings for this group" advanced="Default depreciation profile + GL mapping" />} onClose={onClose}>
             <div className="fa-modal-scroll">
                 <div className="fa-f">
                     <div className="fa-field fa-f-full">
@@ -98,23 +100,25 @@ function CatModal({ data, accounts, onClose, onSave, onDelete }) {
                         <input className="fa-input" value={form.description || ""} onChange={e => set("description", e.target.value)} />
                     </div>
                     <div className="fa-field">
-                        <label className="fa-label">Default Method</label>
+                        <label className="fa-label"><Term simple="Value-loss method" advanced="Default Method" /></label>
                         <select className="fa-fsel" value={form.default_method || "straight_line"} onChange={e => set("default_method", e.target.value)}>
                             {METHODS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                         </select>
                     </div>
                     <div className="fa-field">
-                        <label className="fa-label">Default Life (months)</label>
+                        <label className="fa-label"><Term simple="How long it lasts (months)" advanced="Default Life (months)" /></label>
                         <input className="fa-input" type="number" min="0" value={form.default_life_months ?? ""} onChange={e => set("default_life_months", e.target.value)} placeholder="e.g. 60" />
                     </div>
                     <div className="fa-field">
-                        <label className="fa-label">Default Salvage %</label>
+                        <label className="fa-label"><Term simple="Leftover value %" advanced="Default Salvage %" /></label>
                         <input className="fa-input" type="number" min="0" max="100" step="0.01" value={form.default_salvage_pct ?? ""} onChange={e => set("default_salvage_pct", e.target.value)} placeholder="e.g. 10" />
                     </div>
-                    <div className="fa-field" />
-                    <AcctSelect k="asset_account_id" label="Asset Account" opts={assetAccts} />
-                    <AcctSelect k="accum_dep_account_id" label="Accum. Depreciation" opts={assetAccts} />
-                    <AcctSelect k="dep_expense_account_id" label="Depreciation Expense" opts={expenseAccts} />
+                    <AdvancedOnly>
+                        <div className="fa-field" />
+                        <AcctSelect k="asset_account_id" label="Asset Account" opts={assetAccts} />
+                        <AcctSelect k="accum_dep_account_id" label="Accum. Depreciation" opts={assetAccts} />
+                        <AcctSelect k="dep_expense_account_id" label="Depreciation Expense" opts={expenseAccts} />
+                    </AdvancedOnly>
                     {isEdit && (
                         <div className="fa-field">
                             <label className="fa-label">Status</label>
@@ -125,7 +129,9 @@ function CatModal({ data, accounts, onClose, onSave, onDelete }) {
                         </div>
                     )}
                 </div>
-                <div className="fa-hint" style={{ marginTop: 10 }}>Assets inherit these accounts unless overridden per-asset; company Settings provide the final fallback.</div>
+                <AdvancedOnly>
+                    <div className="fa-hint" style={{ marginTop: 10 }}>Assets inherit these accounts unless overridden per-asset; company Settings provide the final fallback.</div>
+                </AdvancedOnly>
             </div>
             <div className="fa-modal-foot">
                 {isEdit && <button className="fa-btn-danger" onClick={() => onDelete(form.id)}>Delete</button>}

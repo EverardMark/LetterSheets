@@ -12,6 +12,7 @@ import PayrollTabComponent from "./Payroll";
 import OnboardingTabComponent from "./Onboarding";
 import LoanTabComponent from "./Loan";
 import WorkSchedulesTab from "./WorkSchedules";
+import { SimpleHint } from "../components/simplemode";
 
 /* ================================================================
    HELPERS
@@ -293,6 +294,7 @@ function Overview({ nav, employees, departments }) {
     const activeChecklists = checklists.filter(c => c.status !== "Completed");
 
     return (<>
+        <SimpleHint icon="bulb">Your team at a glance — who's in, who's on leave, and what needs attention.</SimpleHint>
         <div className="h-stats">
             {[
                 { label:"Total Employees", value: employees.length.toString(), icon:"users",    color:"#2d9e8b" },

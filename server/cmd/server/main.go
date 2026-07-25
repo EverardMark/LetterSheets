@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -60,6 +61,9 @@ func main() {
 		repository.NewLeaveCreditRepo(db),
 		repository.NewRecurringRepo(db),
 		repository.NewCRMRepo(db),
+		repository.NewPeriodRepo(db),
+		repository.NewNotificationRepo(db),
+		repository.NewExpenseRepo(db),
 		cfg,
 	)
 
@@ -69,6 +73,16 @@ func main() {
 	if !cfg.Server.DisableRecurringScheduler {
 		go handler.StartRecurringScheduler()
 		log.Println("Recurring scheduler: enabled")
+	}
+
+	// Background worker: drain the email outbox. Started only when SMTP is
+	// configured AND explicitly enabled — with mail off, queued messages simply
+	// stay Pending and visible in the app, and nothing leaves the building.
+	if cfg.SMTP.Ready() {
+		go handler.StartEmailWorker()
+		log.Printf("Email worker: enabled (relay %s:%d, from %s)", cfg.SMTP.Host, cfg.SMTP.Port, cfg.SMTP.FromEmail)
+	} else {
+		log.Println("Email worker: disabled (set smtp.enabled + smtp.host + smtp.from_email to turn on outbound mail)")
 	}
 
 	http.HandleFunc("/api/execute", cors(handler.Execute, cfg.Server.AllowedOrigins))
@@ -87,7 +101,27 @@ func main() {
 	log.Printf("Endpoint: POST %s/api/execute?action=<action>", addr)
 	log.Printf("Update feed: GET %s/updates/ (dir: %q)", addr, updatesDir)
 
-	if cfg.Server.TLSCertFile != "" && cfg.Server.TLSKeyFile != "" {
+	tlsEnabled := cfg.Server.TLSCertFile != "" && cfg.Server.TLSKeyFile != ""
+
+	// Migration mode: tls_port serves HTTPS while plain HTTP stays on port for
+	// clients built before the HTTPS cutover. Once all clients target HTTPS,
+	// set port to the TLS port and clear tls_port to drop the plaintext listener.
+	if tlsEnabled && cfg.Server.TLSPort != 0 && cfg.Server.TLSPort != cfg.Server.Port {
+		tlsAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.TLSPort)
+		go func() {
+			log.Printf("Server starting with TLS on %s", tlsAddr)
+			if err := http.ListenAndServeTLS(tlsAddr, cfg.Server.TLSCertFile, cfg.Server.TLSKeyFile, nil); err != nil {
+				log.Fatal("TLS server failed: ", err)
+			}
+		}()
+		log.Printf("WARNING: legacy plaintext HTTP still on %s for pre-HTTPS clients", addr)
+		if err := http.ListenAndServe(addr, nil); err != nil {
+			log.Fatal("Server failed: ", err)
+		}
+		return
+	}
+
+	if tlsEnabled {
 		log.Printf("Server starting with TLS on %s", addr)
 		if err := http.ListenAndServeTLS(addr, cfg.Server.TLSCertFile, cfg.Server.TLSKeyFile, nil); err != nil {
 			log.Fatal("Server failed: ", err)

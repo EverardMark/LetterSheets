@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 
@@ -464,7 +465,61 @@ func (r *AccountingRepo) UpdateJournalTotals(entryID, companyID string) error {
 	return nil
 }
 
+// ==================== FISCAL PERIOD GUARD (migration 020) ====================
+//
+// Every GL posting in this application — manual journals, payroll, AP/AR
+// payments, inventory, fixed assets, sales, procurement, returns, recurring,
+// expense claims — reaches the ledger through PostJournalEntry or one of the
+// Void* methods below. That makes these three functions the single choke point
+// where a closed accounting period can be enforced, so the guard lives here
+// rather than being repeated at ~12 call sites (where the next module to be
+// added would inevitably forget it).
+//
+// The guard is FAIL-OPEN: a company that has never generated a fiscal calendar
+// has no period rows, entryPeriodOpen finds nothing, and posting behaves exactly
+// as it did before migration 020.
+
+// entryPeriodOpen reports an error when the entry's date falls in a period that
+// is no longer accepting postings. A missing entry is not this function's
+// problem — it returns nil and lets the stored procedure raise the real error.
+func (r *AccountingRepo) entryPeriodOpen(entryID, companyID string) error {
+	var entryDate string
+	err := r.db.QueryRow(
+		`SELECT entry_date FROM acc_journal_entries WHERE id=? AND company_id=? AND is_deleted=0`,
+		entryID, companyID).Scan(&entryDate)
+	if err != nil {
+		return nil
+	}
+	return r.dateInOpenPeriod(companyID, dateOnly(entryDate))
+}
+
+// dateInOpenPeriod is the reusable half of the guard, for callers that already
+// know the date they intend to post.
+func (r *AccountingRepo) dateInOpenPeriod(companyID, date string) error {
+	open, reason, err := PeriodOpenForDate(context.Background(), r.db, companyID, date)
+	if err != nil {
+		// A broken calendar lookup must not become an outage that blocks every
+		// posting in the system; log-worthy, but fail open.
+		return nil
+	}
+	if !open {
+		return fmt.Errorf("%s — reopen it to post to this date", reason)
+	}
+	return nil
+}
+
 func (r *AccountingRepo) PostJournalEntry(entryID, companyID, userID string) error {
+	if err := r.entryPeriodOpen(entryID, companyID); err != nil {
+		return err
+	}
+	return r.PostJournalEntryUnchecked(entryID, companyID, userID)
+}
+
+// PostJournalEntryUnchecked posts without consulting the fiscal calendar. It
+// exists for exactly one caller: the year-end close, which must write its
+// closing entry INTO the last day of the year it is in the act of closing.
+// Everything else must use PostJournalEntry.
+func (r *AccountingRepo) PostJournalEntryUnchecked(entryID, companyID, userID string) error {
 	rows, err := r.db.Query("CALL sp_post_journal_entry(?,?,?)", entryID, companyID, userID)
 	if err != nil {
 		return fmt.Errorf("post journal: %w", err)
@@ -474,6 +529,15 @@ func (r *AccountingRepo) PostJournalEntry(entryID, companyID, userID string) err
 }
 
 func (r *AccountingRepo) VoidJournalEntry(entryID, companyID, userID, reason string) error {
+	if err := r.entryPeriodOpen(entryID, companyID); err != nil {
+		return err
+	}
+	return r.VoidJournalEntryUnchecked(entryID, companyID, userID, reason)
+}
+
+// VoidJournalEntryUnchecked voids without the period guard — used by the reopen
+// path, which must reverse the closing entry sitting inside the closed year.
+func (r *AccountingRepo) VoidJournalEntryUnchecked(entryID, companyID, userID, reason string) error {
 	rows, err := r.db.Query("CALL sp_void_journal_entry(?,?,?,?)", entryID, companyID, userID, reason)
 	if err != nil {
 		return fmt.Errorf("void journal: %w", err)
@@ -485,6 +549,17 @@ func (r *AccountingRepo) VoidJournalEntry(entryID, companyID, userID, reason str
 // VoidJournalBySource voids the posted journal tagged with (sourceType, sourceID) —
 // used to reverse a payment's cash journal when the payment is deleted.
 func (r *AccountingRepo) VoidJournalBySource(companyID, sourceType, sourceID, userID, reason string) error {
+	// Same guard, resolved through the source tag rather than an entry id.
+	var entryDate string
+	if err := r.db.QueryRow(`
+		SELECT entry_date FROM acc_journal_entries
+		WHERE company_id=? AND source_type=? AND source_id=? AND status='Posted' AND is_deleted=0
+		ORDER BY entry_date DESC LIMIT 1`,
+		companyID, sourceType, sourceID).Scan(&entryDate); err == nil {
+		if err := r.dateInOpenPeriod(companyID, dateOnly(entryDate)); err != nil {
+			return err
+		}
+	}
 	rows, err := r.db.Query("CALL sp_void_journal_by_source(?,?,?,?,?)", companyID, sourceType, sourceID, userID, reason)
 	if err != nil {
 		return fmt.Errorf("void journal by source: %w", err)
@@ -607,6 +682,33 @@ func (r *AccountingRepo) GetJournalLines(entryID, companyID string) ([]models.Jo
 		lines = append(lines, jl)
 	}
 	return lines, nil
+}
+
+// DiscardDraftJournal HARD-deletes a draft journal entry, lines and all
+// (acc_journal_lines cascades on delete).
+//
+// This is not the same operation as DeleteJournalEntry, which soft-deletes.
+// It exists for one caller: postOrDiscard, cleaning up an entry the SYSTEM
+// generated and the ledger then refused. A soft delete is wrong there, because
+// sp_next_entry_number computes MAX(entry_number)+1 over non-deleted rows while
+// uk_je_number constrains ALL rows — so a soft-deleted entry keeps its number
+// reserved forever and the very next create fails with a duplicate-key error.
+// A hard delete frees the number and leaves no trace of an entry that never
+// existed as far as the books are concerned.
+//
+// The status='Draft' predicate makes it structurally incapable of removing
+// anything that was ever posted.
+func (r *AccountingRepo) DiscardDraftJournal(id, companyID string) error {
+	res, err := r.db.Exec(
+		`DELETE FROM acc_journal_entries WHERE id=? AND company_id=? AND status='Draft'`,
+		id, companyID)
+	if err != nil {
+		return fmt.Errorf("discard draft journal: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("draft journal %s not found (or not a draft)", id)
+	}
+	return nil
 }
 
 func (r *AccountingRepo) DeleteJournalEntry(id, companyID string) error {

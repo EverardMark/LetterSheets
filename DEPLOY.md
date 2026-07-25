@@ -117,8 +117,14 @@ context — tell me and I'll align it.
 
 ## 6. Upgrading an EXISTING database (not a fresh deploy)
 
-`deploy/schema.sql` already contains every fix. If instead you have a live database
-from before this work, apply the migrations in order (they hold the same fixes):
+`deploy/schema.sql` contains the fixes from migrations 003–005. It has NOT been
+regenerated since, so it is missing every table added from migration 010 onward
+(inventory, fixed assets, sales, procurement, returns, leave credits, recurring
+entries, onboarding documents, CRM, and 020–022 below). **A fresh deploy from
+`schema.sql` alone will be missing those modules** — apply the migrations after
+it, or regenerate `schema.sql` from a fully-migrated database with `mysqldump`.
+
+If you have a live database from before this work, apply the migrations in order:
 
 ```bash
 mysql -u <user> -p lettersheets < server/migrations/003_fix_tenant_scoping.sql
@@ -128,6 +134,33 @@ mysql -u <user> -p lettersheets < server/migrations/005_correctness_fixes.sql
 
 **Deploy the server and these migrations together** — the Go code now passes
 `company_id` into procedures whose signatures changed.
+
+### Migrations 020–022 (fiscal periods, notifications, expense claims)
+
+These are pure DDL (`CREATE TABLE` only, no stored procedures), but `ls_user`
+has DML rights and not `CREATE`, so they must be applied **as root**:
+
+```bash
+mysql -u root -p lettersheets < server/migrations/020_fiscal_periods.sql
+mysql -u root -p lettersheets < server/migrations/021_notifications.sql
+mysql -u root -p lettersheets < server/migrations/022_expense_claims.sql
+```
+
+Notes on rollout order and behaviour:
+
+- **020 is safe to apply before or after the binary.** The period guard lives in
+  Go (`AccountingRepo.PostJournalEntry`) and fails open: with no fiscal year
+  generated, every date still posts exactly as it did before. Nothing is
+  restricted until someone creates a fiscal year in Accounting → Periods & Close.
+- **021 turns nothing on by itself.** Outbound email stays off until the `smtp`
+  block in `config.json` sets `enabled: true` plus `host` and `from_email` (see
+  `config.json.example`, or the `LS_SMTP_*` environment variables). Until then
+  queued messages accumulate as `Pending` and are visible in Settings → Email;
+  the worker does not start and nothing is sent.
+- **022 needs configuration before use.** Expense claims cannot be approved until
+  Expenses → Settings names an employee-reimbursements-payable account, and
+  cannot be filed until Expenses → Categories exist and are mapped to expense
+  accounts. Both refuse with a plain-English error rather than guessing.
 
 ## 7. Optional: managed MySQL (RDS)
 
@@ -149,5 +182,14 @@ For production durability, use **RDS MySQL 8.x** instead of the `db` service:
   `LS_MAX_LOGIN_ATTEMPTS`, `LS_LOCKOUT_MINUTES`, `LS_ALLOWED_ORIGINS`,
   `LS_TRUST_PROXY_HEADERS`, and `LS_TLS_CERT_FILE`/`LS_TLS_KEY_FILE` (only if you
   terminate TLS in the Go server instead of Caddy).
+- **Direct TLS with a purchased cert (no Caddy):** point `tls_cert_file` at the
+  full chain (leaf cert + CA bundle concatenated, e.g. GoDaddy's `<hash>.crt` +
+  `gd_bundle-g2-g1.crt`) and `tls_key_file` at the private key. During the
+  client migration window also set `tls_port` (e.g. 443): HTTPS serves there
+  while plain HTTP stays on `port` for already-installed clients. Once every
+  client targets the HTTPS URL, set `port` to the TLS port and clear `tls_port`
+  to stop serving plaintext. Binding 443 as a non-root user needs
+  `sudo setcap 'cap_net_bind_service=+ep' /path/to/lettersheets` (re-apply after
+  every binary redeploy).
 - The API uses **bearer-token** auth (not cookies), so CORS is not a security
   boundary here; `LS_ALLOWED_ORIGINS` can stay empty for the desktop client.

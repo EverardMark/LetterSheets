@@ -1,0 +1,89 @@
+/* ================================================================
+   EXPENSES module styles — follows the CRM/Sales visual language
+   (white cards on #f3f5f4, 12px radius, #2d9e8b accent).
+================================================================ */
+
+.ex-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.ex-st { background: #fff; border: 1px solid #eee; border-radius: 12px; padding: 14px 16px; }
+.ex-st-ic { width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; margin-bottom: 10px; }
+.ex-st-v { font-size: 21px; font-weight: 700; color: #1f2937; }
+.ex-st-l { font-size: 11px; color: #999; margin-top: 3px; }
+
+.ex-card { background: #fff; border: 1px solid #eee; border-radius: 12px; padding: 16px; margin-bottom: 14px; }
+.ex-card-h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 12px; flex-wrap: wrap; }
+.ex-card-t { font-size: 14px; font-weight: 700; color: #333; }
+.ex-card-lk { font-size: 12px; color: #2d9e8b; cursor: pointer; }
+.ex-card-lk:hover { text-decoration: underline; }
+
+.ex-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
+.ex-title { font-size: 20px; font-weight: 700; color: #222; }
+.ex-sub { font-size: 12px; color: #999; margin-top: 3px; }
+
+.ex-bar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.ex-bar-count { font-size: 12px; color: #999; margin-right: auto; }
+.ex-tab { font-family: inherit; font-size: 12px; font-weight: 600; padding: 5px 11px; border-radius: 20px; border: 1px solid #eee; background: #fff; color: #888; cursor: pointer; }
+.ex-tab-on { background: #edf8f5; border-color: #2d9e8b; color: #2d9e8b; }
+
+.ex-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ex-tbl th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #aaa; font-weight: 600; padding: 0 8px 8px; border-bottom: 1px solid #f0f0f0; }
+.ex-tbl td { padding: 10px 8px; border-bottom: 1px solid #f7f7f7; color: #555; vertical-align: middle; }
+.ex-tbl tr.ex-click { cursor: pointer; }
+.ex-tbl tr.ex-click:hover td { background: #fafafa; }
+.ex-r { text-align: right; }
+.ex-b { font-weight: 600; color: #333; }
+.ex-m { color: #999; }
+.ex-num { font-variant-numeric: tabular-nums; }
+
+.ex-pill { display: inline-block; padding: 2px 9px; border-radius: 20px; font-size: 10px; font-weight: 700; letter-spacing: .03em; white-space: nowrap; }
+
+.ex-empty { text-align: center; padding: 34px 20px; }
+.ex-empty-ic { width: 58px; height: 58px; border-radius: 50%; background: #f3f5f4; color: #ccc; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px; }
+.ex-empty-t { font-size: 15px; font-weight: 700; color: #444; }
+.ex-empty-d { font-size: 12px; color: #999; max-width: 420px; margin: 6px auto 0; line-height: 1.6; }
+
+.ex-btn, .ex-btn-p, .ex-btn-d, .ex-btn-w {
+    font-family: inherit; font-size: 12px; font-weight: 600; padding: 7px 13px; border-radius: 8px;
+    cursor: pointer; border: 1px solid #eee; background: #fff; color: #666;
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.ex-btn:hover { border-color: #ddd; }
+.ex-btn-p { background: #2d9e8b; border-color: #2d9e8b; color: #fff; }
+.ex-btn-p:hover { background: #268a79; }
+.ex-btn-d { background: #fff; border-color: #fecaca; color: #dc2626; }
+.ex-btn-w { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+.ex-btn:disabled, .ex-btn-p:disabled, .ex-btn-d:disabled, .ex-btn-w:disabled { opacity: .55; cursor: default; }
+.ex-btn-sm { padding: 4px 9px; font-size: 11px; }
+
+.ex-err { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; font-size: 12px; padding: 9px 12px; border-radius: 9px; margin-bottom: 14px; display: flex; align-items: center; gap: 7px; }
+.ex-ok { background: #f0fdf4; border: 1px solid #bbf7d0; color: #15803d; font-size: 12px; padding: 9px 12px; border-radius: 9px; margin-bottom: 14px; }
+.ex-info { background: #f8fafc; border: 1px solid #e2e8f0; color: #64748b; font-size: 11.5px; padding: 9px 12px; border-radius: 9px; line-height: 1.6; }
+
+.ex-ov { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; z-index: 900; padding: 20px; }
+.ex-mod { background: #fff; border-radius: 14px; width: 100%; max-width: 780px; max-height: 88vh; overflow: auto; padding: 20px; }
+.ex-mod-sm { max-width: 460px; }
+.ex-mod-t { font-size: 16px; font-weight: 700; color: #222; }
+.ex-mod-s { font-size: 12px; color: #999; margin: 3px 0 16px; line-height: 1.6; }
+
+.ex-fld { margin-bottom: 12px; }
+.ex-lbl { display: block; font-size: 11px; font-weight: 600; color: #777; margin-bottom: 5px; }
+.ex-in { width: 100%; font-family: inherit; font-size: 13px; padding: 8px 10px; border: 1px solid #eee; border-radius: 8px; color: #333; background: #fff; }
+.ex-in:focus { outline: none; border-color: #2d9e8b; }
+.ex-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ex-acts { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; flex-wrap: wrap; }
+
+/* Line grid inside the claim editor */
+.ex-lines { border: 1px solid #f0f0f0; border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
+.ex-lines table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.ex-lines th { background: #fafafa; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #aaa; font-weight: 600; padding: 8px; }
+.ex-lines td { padding: 5px 6px; border-top: 1px solid #f4f4f4; }
+.ex-lines .ex-in { padding: 6px 8px; font-size: 12px; }
+.ex-lines-tot { display: flex; justify-content: flex-end; gap: 22px; font-size: 12.5px; padding: 4px 4px 0; }
+.ex-lines-tot b { color: #333; }
+
+.ex-rcpt { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid #f0f0f0; border-radius: 8px; margin-bottom: 6px; font-size: 12px; }
+.ex-rcpt-n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ex-rcpt-s { color: #bbb; font-size: 11px; }
+
+.ex-detail-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 12.5px; margin-bottom: 16px; }
+.ex-detail-grid span { color: #999; }
+.ex-detail-grid b { color: #333; font-weight: 600; }

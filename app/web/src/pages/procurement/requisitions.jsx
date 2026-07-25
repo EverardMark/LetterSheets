@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import { api, Empty, peso, num, d10, today, REQ_BADGE, vendorName } from "./shared";
+import { Term, SimpleHint } from "../components/simplemode";
+import { useIsSimple } from "../../utils/uimode";
 
 export default function Requisitions() {
     const nav = useNavigate();
@@ -26,6 +28,7 @@ export default function Requisitions() {
 
     return (<>
         {msg && <div className={`pr-flash ${msg.err ? "pr-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">Staff ask to buy something here. Approve it to turn it into a purchase order.</SimpleHint>
         <div className="pr-bar">
             <div className="pr-bar-l">
                 <select className="pr-sel" value={status} onChange={e => setStatus(e.target.value)}>
@@ -33,15 +36,15 @@ export default function Requisitions() {
                     {["Draft", "Submitted", "Approved", "Converted", "Rejected"].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
             </div>
-            <button className="pr-btn-p" onClick={() => setModal({ id: null })}><I name="file" size={13} /> New Requisition</button>
+            <button className="pr-btn-p" onClick={() => setModal({ id: null })}><I name="file" size={13} /> <Term simple="New Purchase Request" advanced="New Requisition" /></button>
         </div>
 
         {rows.length === 0 ? (
-            <Empty icon="file" title={status ? "No matching requisitions" : "No requisitions"} desc={status ? "Try a different status." : "Raise an internal purchase request, get it approved, then convert to a PO."} action={status ? null : "New requisition"} onAction={() => setModal({ id: null })} />
+            <Empty icon="file" title={status ? <Term simple="No matching purchase requests" advanced="No matching requisitions" /> : <Term simple="No purchase requests" advanced="No requisitions" />} desc={status ? "Try a different status." : <Term simple="Ask to buy something, get it approved, then turn it into a purchase order." advanced="Raise an internal purchase request, get it approved, then convert to a PO." />} action={status ? null : <Term simple="New purchase request" advanced="New requisition" />} onAction={() => setModal({ id: null })} />
         ) : (
             <div className="pr-tblwrap pr-tbl-click">
                 <table className="pr-tbl">
-                    <thead><tr><th>Requisition</th><th>Title</th><th>Needed By</th><th className="pr-tbl-r">Est. Total</th><th>Status</th></tr></thead>
+                    <thead><tr><th><Term simple="Request" advanced="Requisition" /></th><th>Title</th><th>Needed By</th><th className="pr-tbl-r">Est. Total</th><th>Status</th></tr></thead>
                     <tbody>
                         {rows.map(q => (
                             <tr key={q.id} onClick={() => setModal({ id: q.id })}>
@@ -77,8 +80,9 @@ function ReqModal({ id, products, vendors, nav, onClose, flash }) {
         } catch (e) { flash(e.message, true); }
     }, [id, isNew, flash]);
     useEffect(() => { load(); }, [load]);
+    const simple = useIsSimple();
 
-    if (!q) return <Modal title="Requisition" onClose={onClose}><div style={{ padding: 20, color: "#999" }}>Loading…</div></Modal>;
+    if (!q) return <Modal title={<Term simple="Purchase Request" advanced="Requisition" />} onClose={onClose}><div style={{ padding: 20, color: "#999" }}>Loading…</div></Modal>;
 
     const editable = isNew || q.status === "Draft";
     const set = (k, v) => setF(p => ({ ...p, [k]: v }));
@@ -106,7 +110,7 @@ function ReqModal({ id, products, vendors, nav, onClose, flash }) {
     };
 
     return (
-        <Modal title={isNew ? "New Requisition" : `PR-${String(q.requisition_number).padStart(4, "0")}`} subtitle={isNew ? "Purchase request" : q.status} onClose={onClose}>
+        <Modal title={isNew ? <Term simple="New Purchase Request" advanced="New Requisition" /> : `PR-${String(q.requisition_number).padStart(4, "0")}`} subtitle={isNew ? "Purchase request" : q.status} onClose={onClose}>
             <div className="pr-modal-scroll">
                 <div className="pr-f" style={{ marginBottom: 14 }}>
                     <div className="pr-field"><label className="pr-label">Title</label><input className="pr-input" disabled={!editable} value={f.title || ""} onChange={e => set("title", e.target.value)} /></div>
@@ -157,9 +161,9 @@ function ReqModal({ id, products, vendors, nav, onClose, flash }) {
 
                 {q.status === "Approved" && (
                     <div className="pr-f" style={{ marginTop: 14 }}>
-                        <div className="pr-field pr-f-full"><label className="pr-label">Convert to PO — Vendor <span className="pr-req" /></label>
+                        <div className="pr-field pr-f-full"><label className="pr-label"><Term simple="Turn into Purchase Order — Supplier" advanced="Convert to PO — Vendor" /> <span className="pr-req" /></label>
                             <select className="pr-fsel" value={vendorId} onChange={e => setVendorId(e.target.value)}>
-                                <option value="">— Select vendor —</option>
+                                <option value="">{simple ? "— Select supplier —" : "— Select vendor —"}</option>
                                 {vendors.map(v => <option key={v.id} value={v.id}>{vendorName(v)}</option>)}
                             </select>
                         </div>
@@ -171,7 +175,7 @@ function ReqModal({ id, products, vendors, nav, onClose, flash }) {
                     {!isNew && ["Draft", "Submitted", "Rejected"].includes(q.status) && <button className="pr-btn-danger" onClick={del}>Delete</button>}
                     {q.status === "Draft" && !isNew && <button className="pr-btn-s" onClick={() => act("submit_pur_requisition", {}, "Submitted for approval")}>Submit</button>}
                     {q.status === "Submitted" && <><button className="pr-btn-s" onClick={() => act("approve_pur_requisition", {}, "Approved")}>Approve</button><button className="pr-btn-s" onClick={() => act("reject_pur_requisition", { reason: "Rejected" }, "Rejected")}>Reject</button></>}
-                    {q.status === "Approved" && <button className="pr-btn-p" onClick={convert}><I name="cart" size={12} /> Convert to PO</button>}
+                    {q.status === "Approved" && <button className="pr-btn-p" onClick={convert}><I name="cart" size={12} /> <Term simple="Turn into Purchase Order" advanced="Convert to PO" /></button>}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                     <button className="pr-btn-s" onClick={onClose}>Close</button>

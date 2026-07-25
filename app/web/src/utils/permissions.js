@@ -28,17 +28,25 @@ export const MODULE_REGISTRY = {
     loans:       { label: "Loans",       icon: "banknote",    functions: ["view", "create", "approve", "reject", "delete", "payments"] },
     compliance:  { label: "Compliance",  icon: "shield",      functions: ["view", "create", "edit", "delete"] },
     onboarding:  { label: "Onboarding",  icon: "userplus",    functions: ["view", "create", "edit", "delete"] },
-    accounting:  { label: "Accounting",  icon: "calculator",  functions: ["view", "create", "edit", "delete"] },
+    // "close" gates the fiscal calendar: closing a period revokes everyone else's
+    // ability to post into it, and closing a year writes a journal entry.
+    accounting:  { label: "Accounting",  icon: "calculator",  functions: ["view", "create", "edit", "delete", "close"] },
     ticketing:   { label: "Ticketing",   icon: "ticket",      functions: ["view", "create", "edit", "delete"] },
     inventory:   { label: "Inventory",   icon: "box",         functions: ["view", "create", "edit", "delete"] },
     fixed_assets:{ label: "Fixed Assets", icon: "building",   functions: ["view", "create", "edit", "delete"] },
     sales:       { label: "Sales",        icon: "cart",        functions: ["view", "create", "edit", "delete"] },
     procurement: { label: "Procurement",  icon: "cart",        functions: ["view", "create", "edit", "delete"] },
     crm:         { label: "CRM",          icon: "target",      functions: ["view", "create", "edit", "delete"] },
+    // Filing your OWN expense claim needs none of these — it is self-service,
+    // like leave and loans. These rights are for acting on other people's claims.
+    expenses:    { label: "Expenses",     icon: "receipt",     functions: ["view", "create", "edit", "delete", "approve", "pay"] },
 };
 
-// Self-service modules (everyone gets these for their own data)
-export const SELF_SERVICE_MODULES = ["attendance", "leave", "payroll", "benefits", "loans"];
+// Self-service modules (everyone gets these for their own data).
+// "expenses" is here because filing a reimbursement claim is something every
+// employee does for themselves — the module rights gate acting on OTHER people's
+// claims, not having one of your own.
+export const SELF_SERVICE_MODULES = ["attendance", "leave", "payroll", "benefits", "loans", "expenses"];
 
 // Preset permission templates
 export const PERMISSION_PRESETS = {
@@ -72,6 +80,15 @@ export const PERMISSION_PRESETS = {
     "Accountant": {
         accounting: ["view", "create", "edit", "delete"],
         payroll: ["view"],
+        expenses: ["view", "edit", "pay"],
+    },
+    "Financial Controller": {
+        accounting: ["view", "create", "edit", "delete", "close"],
+        payroll: ["view", "approve"],
+        expenses: ["view", "create", "edit", "delete", "approve", "pay"],
+    },
+    "Expense Approver": {
+        expenses: ["view", "approve"],
     },
     "Support Agent": {
         ticketing: ["view", "create", "edit", "delete"],
@@ -110,6 +127,7 @@ const MODULE_TO_PATH = {
     sales: "/sales",
     procurement: "/procurement",
     crm: "/crm",
+    expenses: "/expenses",
 };
 
 export class Permissions {
@@ -195,6 +213,7 @@ export function fnLabel(fn) {
         view: "View", create: "Create", edit: "Edit", delete: "Delete",
         approve: "Approve", reject: "Reject", account: "Manage Account",
         settings: "Settings", payments: "Record Payments",
+        close: "Close Periods", pay: "Pay Out",
     };
     return labels[fn] || fn;
 }
@@ -205,6 +224,7 @@ export function fnColor(fn) {
         view: "#0ea5e9", create: "#22c55e", edit: "#f59e0b", delete: "#ef4444",
         approve: "#22c55e", reject: "#ef4444", account: "#8b5cf6",
         settings: "#6366f1", payments: "#14b8a6",
+        close: "#a855f7", pay: "#14b8a6",
     };
     return colors[fn] || "#999";
 }

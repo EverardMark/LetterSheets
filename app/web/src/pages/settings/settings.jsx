@@ -54,15 +54,125 @@ export default function Settings() {
                 <button className={`st-tab ${tab === "profile" ? "on" : ""}`} onClick={() => setTab("profile")}><I name="user" size={14} /> Profile</button>
                 <button className={`st-tab ${tab === "security" ? "on" : ""}`} onClick={() => setTab("security")}><I name="lock" size={14} /> Security</button>
                 {isAdmin && <button className={`st-tab ${tab === "company" ? "on" : ""}`} onClick={() => setTab("company")}><I name="building" size={14} /> Company</button>}
+                {isAdmin && <button className={`st-tab ${tab === "email" ? "on" : ""}`} onClick={() => setTab("email")}><I name="message-circle" size={14} /> Email</button>}
             </div>
 
             <div className="st-body">
                 {tab === "profile" && <ProfileTab user={user} company={company} onSaved={(u) => { setUser(u); showFlash("Profile updated"); }} />}
                 {tab === "security" && <SecurityTab user={user} onFlash={showFlash} />}
                 {tab === "company" && isAdmin && <CompanyTab onFlash={showFlash} />}
+                {tab === "email" && isAdmin && <EmailTab onFlash={showFlash} />}
             </div>
 
             <style>{stCSS}</style>
+        </div>
+    );
+}
+
+/* ─────────── EMAIL QUEUE ───────────
+   Outbound mail is store-and-forward: the app writes messages to a queue and a
+   background worker delivers them. This tab is where an operator sees whether
+   the worker is even switched on, and what is stuck if it is.
+*/
+function EmailTab({ onFlash }) {
+    const [status, setStatus] = useState(null);
+    const [emails, setEmails] = useState([]);
+    const [filter, setFilter] = useState("all");
+    const [busy, setBusy] = useState("");
+    const [err, setErr] = useState("");
+
+    const load = useCallback(async () => {
+        try {
+            const [st, box] = await Promise.all([
+                api("get_email_status", {}),
+                api("get_email_outbox", { status: filter === "all" ? "" : filter, limit: 100 }),
+            ]);
+            setStatus(st);
+            setEmails(box.emails || []);
+            setErr("");
+        } catch (e) { setErr(e.message); }
+    }, [filter]);
+    useEffect(() => { load(); }, [load]);
+
+    const act = async (action, id, label) => {
+        setBusy(id);
+        try { await api(action, { id }); onFlash(label); load(); }
+        catch (e) { setErr(e.message); }
+        setBusy("");
+    };
+
+    const test = async () => {
+        setBusy("test");
+        try { const d = await api("send_test_email", {}); onFlash("Test message queued to " + d.to); load(); }
+        catch (e) { setErr(e.message); }
+        setBusy("");
+    };
+
+    const counts = status?.counts || {};
+    const enabled = !!status?.enabled;
+
+    return (
+        <div className="st-card">
+            <h3 className="st-card-t">Email delivery</h3>
+
+            {err && <div className="st-err">{err}</div>}
+
+            <div className={enabled ? "st-mail-note st-mail-note-ok" : "st-mail-note"}>
+                {enabled ? (
+                    <>Outbound email is <b>on</b>, relaying through {status.host} as {status.from}.</>
+                ) : (
+                    <>Outbound email is <b>off</b>. Messages are still queued and listed below, but nothing is sent
+                        until an operator sets <code>smtp.enabled</code>, <code>smtp.host</code> and{" "}
+                        <code>smtp.from_email</code> in the server config and restarts.</>
+                )}
+            </div>
+
+            <div className="st-counts">
+                {["Pending", "Sent", "Failed", "Cancelled"].map(k => (
+                    <button key={k} className={`st-count${filter === k ? " on" : ""}`} onClick={() => setFilter(filter === k ? "all" : k)}>
+                        <b>{counts[k] || 0}</b><span>{k}</span>
+                    </button>
+                ))}
+            </div>
+
+            {enabled && (
+                <button className="st-btn-s" disabled={busy === "test"} onClick={test} style={{ marginBottom: 14 }}>
+                    {busy === "test" ? "Queueing…" : "Send myself a test message"}
+                </button>
+            )}
+
+            {emails.length === 0 ? (
+                <div className="st-muted">Nothing in the queue.</div>
+            ) : (
+                <table className="st-tbl">
+                    <thead><tr><th>To</th><th>Subject</th><th>Status</th><th/></tr></thead>
+                    <tbody>
+                    {emails.map(e => (
+                        <tr key={e.id}>
+                            <td>{e.to_email}</td>
+                            <td>
+                                {e.subject}
+                                {e.last_error && <div className="st-tiny-err">{e.last_error}</div>}
+                            </td>
+                            <td>
+                                {e.status}
+                                {e.attempts > 0 && <span className="st-muted"> · {e.attempts} tr{e.attempts === 1 ? "y" : "ies"}</span>}
+                            </td>
+                            <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                                {(e.status === "Failed" || e.status === "Cancelled") && (
+                                    <button className="st-btn-s st-btn-sm" disabled={busy === e.id}
+                                            onClick={() => act("retry_email", e.id, "Message requeued")}>Retry</button>
+                                )}
+                                {e.status === "Pending" && (
+                                    <button className="st-btn-s st-btn-sm" disabled={busy === e.id}
+                                            onClick={() => act("cancel_email", e.id, "Message cancelled")}>Cancel</button>
+                                )}
+                            </td>
+                        </tr>
+                    ))}
+                    </tbody>
+                </table>
+            )}
         </div>
     );
 }
@@ -273,6 +383,24 @@ const stCSS = `
   .st-tab{display:inline-flex;align-items:center;gap:6px;padding:10px 18px;border:none;background:none;border-bottom:2px solid transparent;font-family:inherit;font-size:13px;font-weight:600;color:#999;cursor:pointer;margin-bottom:-1px}
   .st-tab:hover{color:#555}
   .st-tab.on{color:#2d9e8b;border-bottom-color:#2d9e8b}
+  /* Deliberately NOT .st-note — that class is display:flex further down, which
+     would turn this banner's inline <b>/<code> into flex items and column-break
+     the sentence. */
+  .st-mail-note{display:block;background:#f8fafc;border:1px solid #e2e8f0;color:#64748b;font-size:12px;padding:10px 12px;border-radius:9px;margin-bottom:14px;line-height:1.7}
+  .st-mail-note-ok{background:#f0fdf4;border-color:#bbf7d0;color:#15803d}
+  .st-mail-note code{background:#00000010;padding:1px 5px;border-radius:4px;font-size:11px;white-space:nowrap}
+  .st-err{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-size:12px;padding:9px 12px;border-radius:9px;margin-bottom:12px}
+  .st-counts{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .st-count{font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 16px;border:1px solid #eee;border-radius:9px;background:#fff;cursor:pointer;color:#888}
+  .st-count.on{border-color:#2d9e8b;background:#f6fbfa;color:#2d9e8b}
+  .st-count b{font-size:16px;font-weight:700;color:inherit}
+  .st-count span{font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+  .st-tbl{width:100%;border-collapse:collapse;font-size:12px}
+  .st-tbl th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#aaa;font-weight:600;padding:0 8px 8px;border-bottom:1px solid #f0f0f0}
+  .st-tbl td{padding:9px 8px;border-bottom:1px solid #f7f7f7;color:#555;vertical-align:top}
+  .st-tiny-err{font-size:10.5px;color:#dc2626;margin-top:3px}
+  .st-muted{color:#999;font-size:12px}
+  .st-btn-sm{padding:4px 9px!important;font-size:11px!important}
   .st-body{display:flex;flex-direction:column;gap:16px}
   .st-card{background:#fff;border:1px solid #eef0f2;border-radius:14px;padding:22px 24px}
   .st-card-t{font-size:15px;font-weight:700;color:#1a1a2e;margin-bottom:16px;display:flex;align-items:center;gap:8px}

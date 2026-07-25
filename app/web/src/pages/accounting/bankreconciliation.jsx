@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
+import { Term, SimpleHint } from "../components/simplemode";
+import { useIsSimple } from "../../utils/uimode";
 import "./acc-layout.css";
 
 const API = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
@@ -13,6 +15,7 @@ async function api(action, body = {}) {
 const peso = (n) => "₱" + Number(n || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function BankReconciliation() {
+    const simple = useIsSimple();
     const [bankAccounts, setBankAccounts] = useState([]);
     const [selAcct, setSelAcct] = useState("");
     const [txns, setTxns] = useState([]);
@@ -73,6 +76,8 @@ export default function BankReconciliation() {
     return (<div className="acc-wrap">
         {msg && <div className="br-flash">{msg}</div>}
 
+        <SimpleHint icon="bulb">Tick off each line as you find it on your real bank statement, so your records match the bank.</SimpleHint>
+
         {/* Account selector */}
         <div className="acc-bar">
             <div className="acc-bar-left">
@@ -83,13 +88,13 @@ export default function BankReconciliation() {
                 </select>
                 {selAcct && (
                     <select className="acc-filter" value={filterRecon} onChange={e => setFilterRecon(Number(e.target.value))}>
-                        <option value={-1}>All Transactions</option><option value={0}>Unreconciled</option><option value={1}>Reconciled</option>
+                        <option value={-1}>All Transactions</option><option value={0}>{simple ? "Not matched yet" : "Unreconciled"}</option><option value={1}>{simple ? "Matched" : "Reconciled"}</option>
                     </select>
                 )}
             </div>
             {selAcct && (
                 <div className="acc-bar-right">
-                    <button className="acc-btn-p" onClick={() => { setShowAdd(true); setAddForm({ txn_date: new Date().toISOString().split("T")[0], description: "", reference: "", amount: 0, statement_date: "" }); }}><I name="plus" size={14}/> Add Statement Entry</button>
+                    <button className="acc-btn-p" onClick={() => { setShowAdd(true); setAddForm({ txn_date: new Date().toISOString().split("T")[0], description: "", reference: "", amount: 0, statement_date: "" }); }}><I name="plus" size={14}/> <Term simple="Add Statement Line" advanced="Add Statement Entry"/></button>
                 </div>
             )}
         </div>
@@ -98,7 +103,7 @@ export default function BankReconciliation() {
             <div className="acc-empty">
                 <div className="acc-empty-ic"><I name="credit-card" size={28}/></div>
                 <div className="acc-empty-t">No account selected</div>
-                <div className="acc-empty-d">Select a bank account to begin reconciliation</div>
+                <div className="acc-empty-d"><Term simple="Select a bank account to begin matching" advanced="Select a bank account to begin reconciliation"/></div>
             </div>
         ) : (
             <>
@@ -106,13 +111,13 @@ export default function BankReconciliation() {
                 {reconSum && (
                     <div className="acc-stats">
                         <div className="acc-st" style={{ borderLeft: "4px solid #3b82f6" }}>
-                            <div className="acc-st-l">Book Balance</div><div className="acc-st-v">{peso(reconSum.book_balance)}</div>
+                            <div className="acc-st-l"><Term simple="Our Records" advanced="Book Balance"/></div><div className="acc-st-v">{peso(reconSum.book_balance)}</div>
                         </div>
                         <div className="acc-st" style={{ borderLeft: "4px solid #22c55e" }}>
-                            <div className="acc-st-l">Reconciled</div><div className="acc-st-v">{peso(reconSum.reconciled_total)}</div>
+                            <div className="acc-st-l"><Term simple="Matched" advanced="Reconciled"/></div><div className="acc-st-v">{peso(reconSum.reconciled_total)}</div>
                         </div>
                         <div className="acc-st" style={{ borderLeft: "4px solid #f59e0b" }}>
-                            <div className="acc-st-l">Unreconciled ({reconSum.unreconciled_count})</div><div className="acc-st-v">{peso(reconSum.unreconciled_total)}</div>
+                            <div className="acc-st-l"><Term simple="Not matched yet" advanced="Unreconciled"/> ({reconSum.unreconciled_count})</div><div className="acc-st-v">{peso(reconSum.unreconciled_total)}</div>
                         </div>
                         <div className="acc-st" style={{ borderLeft: `4px solid ${Math.abs(reconSum.book_balance - reconSum.reconciled_total) < 0.01 ? "#22c55e" : "#ef4444"}` }}>
                             <div className="acc-st-l">Difference</div><div className="acc-st-v" style={{ color: Math.abs(reconSum.book_balance - reconSum.reconciled_total) < 0.01 ? "#22c55e" : "#ef4444" }}>{peso(reconSum.book_balance - reconSum.reconciled_total)}</div>
@@ -123,7 +128,7 @@ export default function BankReconciliation() {
                 {/* Add statement entry form */}
                 {showAdd && (
                     <div className="acc-card br-mb12">
-                        <div className="acc-sec-title">Add Bank Statement Entry</div>
+                        <div className="acc-sec-title"><Term simple="Add Bank Statement Line" advanced="Add Bank Statement Entry"/></div>
                         <div className="acc-fields">
                             <div className="acc-field"><label className="acc-label">Date <span className="acc-req"/></label><input type="date" className="acc-input" value={addForm.txn_date} onChange={e => setAddForm(p => ({ ...p, txn_date: e.target.value }))}/></div>
                             <div className="acc-field"><label className="acc-label">Reference</label><input className="acc-input" value={addForm.reference} onChange={e => setAddForm(p => ({ ...p, reference: e.target.value }))}/></div>
@@ -139,7 +144,7 @@ export default function BankReconciliation() {
 
                 {/* Transactions table */}
                 <div className="acc-card br-mb12">
-                    <div className="acc-sec-title">Bank Statement Entries ({txns.length})</div>
+                    <div className="acc-sec-title"><Term simple="Bank Statement Lines" advanced="Bank Statement Entries"/> ({txns.length})</div>
                     {loading ? <div className="acc-empty br-empty-inline">Loading...</div> : txns.length === 0 ? <div className="acc-empty br-empty-inline">No transactions</div> : (
                         <div className="acc-tbl-wrap">
                         <table className="acc-tbl"><thead><tr>
@@ -156,9 +161,9 @@ export default function BankReconciliation() {
                                 </td>
                                 <td>
                                     {t.is_reconciled ? (
-                                        <span className="acc-badge acc-b-done">✓ Reconciled</span>
+                                        <span className="acc-badge acc-b-done">✓ <Term simple="Matched" advanced="Reconciled"/></span>
                                     ) : (
-                                        <span className="acc-badge acc-b-pending">Pending</span>
+                                        <span className="acc-badge acc-b-pending"><Term simple="Not matched yet" advanced="Pending"/></span>
                                     )}
                                 </td>
                                 <td className="br-actions">
@@ -182,10 +187,10 @@ export default function BankReconciliation() {
                 {matchMode && (
                     <div className="acc-card br-match-card">
                         <div className="acc-sec-title br-match-title">
-                            <I name="link" size={14}/> Match with Journal Entry
-                            <span className="br-match-hint">Select a journal entry to match with the selected bank transaction</span>
+                            <I name="link" size={14}/> <Term simple="Match with a Transaction" advanced="Match with Journal Entry"/>
+                            <span className="br-match-hint"><Term simple="Pick the recorded transaction that matches the selected bank line" advanced="Select a journal entry to match with the selected bank transaction"/></span>
                         </div>
-                        {unmatched.length === 0 ? <div className="br-nomatch">No unmatched journal entries for this account</div> : (
+                        {unmatched.length === 0 ? <div className="br-nomatch"><Term simple="No unmatched transactions for this account" advanced="No unmatched journal entries for this account"/></div> : (
                             <div className="acc-tbl-wrap">
                             <table className="acc-tbl"><thead><tr>
                                 <th>JE #</th><th>Date</th><th>Memo</th><th>Description</th>

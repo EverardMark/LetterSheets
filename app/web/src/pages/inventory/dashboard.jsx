@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { I } from "../../layouts/ERPLayout";
+import { Term, SimpleHint } from "../components/simplemode";
 import "./inv.css";
 import { api, peso, num, d10, MOVE_META, Empty } from "./shared";
 import Products from "./Products";
@@ -51,6 +52,7 @@ function InventoryOverview({ nav }) {
     ];
 
     return (<>
+        <SimpleHint icon="bulb">A snapshot of what you have in stock and what's running low.</SimpleHint>
         <div className="iv-stats">
             {cards.map((c, i) => (
                 <div key={i} className="iv-st">
@@ -65,13 +67,13 @@ function InventoryOverview({ nav }) {
             {/* Reorder alerts */}
             <div className="iv-card" style={{ marginBottom: 0 }}>
                 <div className="iv-card-h">
-                    <h3 className="iv-card-t">Reorder Alerts</h3>
+                    <h3 className="iv-card-t"><Term simple="Low-stock alerts" advanced="Reorder Alerts"/></h3>
                     <span className="iv-card-lk" onClick={() => nav("/inventory/products")}>All products →</span>
                 </div>
                 {low.length > 0 ? (
                     <div className="iv-tblwrap" style={{ border: "none" }}>
                         <table className="iv-tbl">
-                            <thead><tr><th>Product</th><th className="iv-tbl-r">In stock</th><th className="iv-tbl-r">Reorder</th></tr></thead>
+                            <thead><tr><th>Product</th><th className="iv-tbl-r">In stock</th><th className="iv-tbl-r"><Term simple="Low-stock at" advanced="Reorder"/></th></tr></thead>
                             <tbody>
                                 {low.slice(0, 6).map((p) => (
                                     <tr key={p.id}>
@@ -83,13 +85,13 @@ function InventoryOverview({ nav }) {
                             </tbody>
                         </table>
                     </div>
-                ) : <Empty icon="check" title="Stock levels healthy" desc="No products are below their reorder point." />}
+                ) : <Empty icon="check" title="Stock levels healthy" desc={<Term simple="Nothing needs restocking right now." advanced="No products are below their reorder point."/>} />}
             </div>
 
             {/* Recent movements */}
             <div className="iv-card" style={{ marginBottom: 0 }}>
                 <div className="iv-card-h">
-                    <h3 className="iv-card-t">Recent Movements</h3>
+                    <h3 className="iv-card-t"><Term simple={"Recent Stock In & Out"} advanced="Recent Movements"/></h3>
                     <span className="iv-card-lk" onClick={() => nav("/inventory/movements")}>View all →</span>
                 </div>
                 {moves.length > 0 ? (
@@ -110,20 +112,20 @@ function InventoryOverview({ nav }) {
                             </tbody>
                         </table>
                     </div>
-                ) : <Empty icon="scroll" title="No movements yet" desc="Stock-ins, stock-outs and adjustments show here." />}
+                ) : <Empty icon="scroll" title={<Term simple="Nothing in or out yet" advanced="No movements yet"/>} desc="Stock-ins, stock-outs and adjustments show here." />}
             </div>
         </div>
 
         {/* Warehouses */}
         <div className="iv-card" style={{ marginTop: 16 }}>
             <div className="iv-card-h">
-                <h3 className="iv-card-t">Warehouses</h3>
+                <h3 className="iv-card-t"><Term simple="Storage Locations" advanced="Warehouses"/></h3>
                 <span className="iv-card-lk" onClick={() => nav("/inventory/warehouses")}>Manage →</span>
             </div>
             {warehouses.length > 0 ? (
                 <div className="iv-tblwrap" style={{ border: "none" }}>
                     <table className="iv-tbl">
-                        <thead><tr><th>Warehouse</th><th>Location</th><th className="iv-tbl-r">Units</th><th className="iv-tbl-r">Value</th></tr></thead>
+                        <thead><tr><th><Term simple="Storage Location" advanced="Warehouse"/></th><th>Location</th><th className="iv-tbl-r">Units</th><th className="iv-tbl-r">Value</th></tr></thead>
                         <tbody>
                             {warehouses.map((w) => (
                                 <tr key={w.id}>
@@ -136,7 +138,7 @@ function InventoryOverview({ nav }) {
                         </tbody>
                     </table>
                 </div>
-            ) : <Empty icon="building" title="No warehouses" desc="Add a warehouse to start tracking stock by location." action="Add warehouse" onAction={() => nav("/inventory/warehouses")} />}
+            ) : <Empty icon="building" title={<Term simple="No storage locations" advanced="No warehouses"/>} desc={<Term simple="Add a place to keep stock and start tracking it." advanced="Add a warehouse to start tracking stock by location."/>} action={<Term simple="Add storage location" advanced="Add warehouse"/>} onAction={() => nav("/inventory/warehouses")} />}
         </div>
     </>);
 }
@@ -156,7 +158,7 @@ export default function InventoryDashboard() {
                     <div className="iv-head-ic"><I name="box" size={24} /></div>
                     <div>
                         <h1 className="iv-title">Inventory</h1>
-                        <p className="iv-sub">Products, stock levels, warehouses and procurement</p>
+                        <p className="iv-sub"><Term simple="What you have in stock, where it's stored, and what to reorder" advanced="Products, stock levels, warehouses and procurement"/></p>
                     </div>
                 </div>
             </div>

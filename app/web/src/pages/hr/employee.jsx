@@ -8,6 +8,7 @@ import {
     faLock, faCircleQuestion, faRotate, faKey, faClockRotateLeft,
 } from "@fortawesome/pro-light-svg-icons";
 import HistoryTab, { canViewHistory } from "../components/HistoryTab";
+import { SimpleHint } from "../components/simplemode";
 
 /* Icon mapping for dynamic lookups */
 const FA = {
@@ -402,6 +403,7 @@ export function Employees({ employees, onAdd, onView }) {
 
     return (
         <div className="el-wrap">
+            <SimpleHint icon="bulb">Everyone who works here and their details.</SimpleHint>
             <div className="el-bar">
                 <div className="el-search-wrap">
                     {searching

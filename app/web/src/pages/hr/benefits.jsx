@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import HistoryTab, { canViewHistory } from "../components/HistoryTab";
+import { Term, SimpleHint } from "../components/simplemode";
 
 /* ================================================================
    API HELPER
@@ -183,6 +184,8 @@ export default function BenefitsTab({ benefits, setBenefits, employees = [] }) {
             {!isEmployee && <button className="bf-btn-p" onClick={openAdd}><I name="plus" size={14}/> Add Benefit</button>}
         </div>
 
+        <SimpleHint icon="bulb">Extra pay or perks you give staff — allowances, HMO, and the like.</SimpleHint>
+
         {benefits.length > 0 ? (
             <div className="bf-grid">
                 {benefits.map((b, i) => {
@@ -231,7 +234,7 @@ export default function BenefitsTab({ benefits, setBenefits, employees = [] }) {
         ) : (
             <div className="bf-empty">
                 <div className="bf-empty-ic"><I name="heart" size={32}/></div>
-                <h3 className="bf-empty-t">No benefits configured</h3>
+                <h3 className="bf-empty-t"><Term simple="No benefits yet" advanced="No benefits configured" /></h3>
                 <p className="bf-empty-d">Set up health insurance, allowances, and other employee benefits.</p>
             </div>
         )}
@@ -519,7 +522,7 @@ function BenefitPanel({ open, mode, benefit, idx, employees, onClose, onSave, on
                             {form.type === "leave" && (
                                 <div className="ap-section">
                                     <h4 className="ap-sec-title">Leave Credit Plan <span className="ap-req"/></h4>
-                                    <p style={{fontSize:12,color:"#bbb",margin:"-6px 0 12px"}}>Employees enrolled in this benefit accrue leave credits of the chosen type.</p>
+                                    <p style={{fontSize:12,color:"#bbb",margin:"-6px 0 12px"}}><Term simple="Staff on this benefit build up leave credits of the chosen type over time." advanced="Employees enrolled in this benefit accrue leave credits of the chosen type." /></p>
                                     <div className="ap-fields">
                                         <div className="ap-field">
                                             <label className="ap-label">Leave Type <span className="ap-req"/></label>
@@ -533,7 +536,7 @@ function BenefitPanel({ open, mode, benefit, idx, employees, onClose, onSave, on
                                             <input className="ap-input" type="number" step="0.5" min="0" value={form.annual_days ?? ""} onChange={e=>set("annual_days",e.target.value)} placeholder="e.g. 15"/>
                                         </div>
                                         <div className="ap-field">
-                                            <label className="ap-label">Accrual</label>
+                                            <label className="ap-label"><Term simple="How credits build up" advanced="Accrual" /></label>
                                             <select className="ap-input" value={form.accrual_type||"monthly"} onChange={e=>set("accrual_type",e.target.value)}>
                                                 <option value="monthly">Monthly (days ÷ 12 each month)</option>
                                                 <option value="yearly">Yearly (full grant each year)</option>
@@ -629,7 +632,7 @@ function LeaveCreditsPanel({ benefitId, credit, busy, msg, isEmployee, onPost, o
             <div className="lc-plan">
                 <div className="lc-plan-item"><span className="lc-plan-l">Leave Type</span><span className="lc-plan-v">{plan.leave_type}</span></div>
                 <div className="lc-plan-item"><span className="lc-plan-l">Days / Year</span><span className="lc-plan-v">{plan.annual_days}</span></div>
-                <div className="lc-plan-item"><span className="lc-plan-l">Accrual</span><span className="lc-plan-v" style={{textTransform:"capitalize"}}>{plan.accrual_type}</span></div>
+                <div className="lc-plan-item"><span className="lc-plan-l"><Term simple="How credits build up" advanced="Accrual" /></span><span className="lc-plan-v" style={{textTransform:"capitalize"}}>{plan.accrual_type}</span></div>
                 <div className="lc-plan-item"><span className="lc-plan-l">Carry-over Cap</span><span className="lc-plan-v">{plan.carryover_cap ?? "None"}</span></div>
             </div>
 

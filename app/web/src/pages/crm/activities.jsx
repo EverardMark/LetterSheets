@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import { api, fmtDate, Empty, ACTIVITY_ICON } from "./shared";
+import { SimpleHint } from "../components/simplemode";
 
 export default function ActivitiesView() {
     const [tasks, setTasks] = useState([]);
@@ -19,6 +20,7 @@ export default function ActivitiesView() {
     };
 
     return (<>
+        <SimpleHint icon="bulb">Follow-ups you still owe — the overdue ones show up here.</SimpleHint>
         <div className="crm-bar">
             <span className="crm-bar-count">{tasks.length} overdue follow-up{tasks.length === 1 ? "" : "s"}</span>
         </div>

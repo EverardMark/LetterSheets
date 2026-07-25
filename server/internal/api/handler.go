@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"lettersheets/internal/config"
+	"lettersheets/internal/mailer"
 	"lettersheets/internal/models"
 	"lettersheets/internal/repository"
 
@@ -56,6 +57,13 @@ type Handler struct {
 	lcRepo         *repository.LeaveCreditRepo
 	recurRepo      *repository.RecurringRepo
 	crmRepo        *repository.CRMRepo
+	periodRepo     *repository.PeriodRepo
+	notifRepo      *repository.NotificationRepo
+	expRepo        *repository.ExpenseRepo
+	mail           *mailer.Mailer
+	// closeMu serializes year-end close/reopen so two clicks can't post two
+	// closing entries for the same year (single-server deployment).
+	closeMu sync.Mutex
 	// recurMu serializes recurring-entry generation so the background scheduler
 	// and a user-triggered "Generate now" can't race and double-post the same
 	// occurrence within this process (single-server deployment).
@@ -107,6 +115,9 @@ func NewHandler(
 	lcRepo *repository.LeaveCreditRepo,
 	recurRepo *repository.RecurringRepo,
 	crmRepo *repository.CRMRepo,
+	periodRepo *repository.PeriodRepo,
+	notifRepo *repository.NotificationRepo,
+	expRepo *repository.ExpenseRepo,
 	cfg *config.AppConfig,
 ) *Handler {
 	trustProxyHeaders = cfg.Server.TrustProxyHeaders
@@ -144,7 +155,20 @@ func NewHandler(
 		lcRepo:         lcRepo,
 		recurRepo:      recurRepo,
 		crmRepo:        crmRepo,
-		cfg:            cfg,
+		periodRepo:     periodRepo,
+		notifRepo:      notifRepo,
+		expRepo:        expRepo,
+		mail: mailer.New(mailer.Config{
+			Host:        cfg.SMTP.Host,
+			Port:        cfg.SMTP.Port,
+			Username:    cfg.SMTP.Username,
+			Password:    cfg.SMTP.Password,
+			FromEmail:   cfg.SMTP.FromEmail,
+			FromName:    cfg.SMTP.FromName,
+			ImplicitTLS: cfg.SMTP.ImplicitTLS,
+			SkipVerify:  cfg.SMTP.SkipVerify,
+		}),
+		cfg: cfg,
 	}
 }
 
@@ -1109,6 +1133,100 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 	case "void_debit_memo":
 		h.withAuth(w, r, h.voidDebitMemo)
 
+	// --- Accounting: fiscal periods & year-end close (migration 020) ---
+	case "get_fiscal_years":
+		h.withAuth(w, r, h.getFiscalYears)
+	case "get_fiscal_year":
+		h.withAuth(w, r, h.getFiscalYear)
+	case "generate_fiscal_year":
+		h.withAuth(w, r, h.generateFiscalYear)
+	case "delete_fiscal_year":
+		h.withAuth(w, r, h.deleteFiscalYear)
+	case "get_fiscal_periods":
+		h.withAuth(w, r, h.getFiscalPeriods)
+	case "set_period_status":
+		h.withAuth(w, r, h.setPeriodStatus)
+	case "set_all_period_status":
+		h.withAuth(w, r, h.setAllPeriodStatus)
+	case "check_period_open":
+		h.withAuth(w, r, h.checkPeriodOpen)
+	case "get_close_preview":
+		h.withAuth(w, r, h.getClosePreview)
+	case "close_fiscal_year":
+		h.withAuth(w, r, h.closeFiscalYear)
+	case "reopen_fiscal_year":
+		h.withAuth(w, r, h.reopenFiscalYear)
+
+	// --- Notifications & email outbox (migration 021) ---
+	case "get_notifications":
+		h.withAuth(w, r, h.getNotifications)
+	case "get_notification_count":
+		h.withAuth(w, r, h.getNotificationCount)
+	case "mark_notification_read":
+		h.withAuth(w, r, h.markNotificationRead)
+	case "mark_all_notifications_read":
+		h.withAuth(w, r, h.markAllNotificationsRead)
+	case "delete_notification":
+		h.withAuth(w, r, h.deleteNotification)
+	case "get_email_outbox":
+		h.withAuth(w, r, h.getEmailOutbox)
+	case "get_email_status":
+		h.withAuth(w, r, h.getEmailStatus)
+	case "retry_email":
+		h.withAuth(w, r, h.retryEmail)
+	case "cancel_email":
+		h.withAuth(w, r, h.cancelEmail)
+	case "send_test_email":
+		h.withAuth(w, r, h.sendTestEmail)
+
+	// --- Expense claims (migration 022) ---
+	case "get_exp_stats":
+		h.withAuth(w, r, h.getExpStats)
+	case "get_exp_settings":
+		h.withAuth(w, r, h.getExpSettings)
+	case "save_exp_settings":
+		h.withAuth(w, r, h.saveExpSettings)
+	case "get_exp_categories":
+		h.withAuth(w, r, h.getExpCategories)
+	case "create_exp_category":
+		h.withAuth(w, r, h.createExpCategory)
+	case "update_exp_category":
+		h.withAuth(w, r, h.updateExpCategory)
+	case "delete_exp_category":
+		h.withAuth(w, r, h.deleteExpCategory)
+	case "get_exp_claims":
+		h.withAuth(w, r, h.getExpClaims)
+	case "get_exp_claim":
+		h.withAuth(w, r, h.getExpClaim)
+	case "create_exp_claim":
+		h.withAuth(w, r, h.createExpClaim)
+	case "update_exp_claim":
+		h.withAuth(w, r, h.updateExpClaim)
+	case "delete_exp_claim":
+		h.withAuth(w, r, h.deleteExpClaim)
+	case "submit_exp_claim":
+		h.withAuth(w, r, h.submitExpClaim)
+	case "approve_exp_claim":
+		h.withAuth(w, r, h.approveExpClaim)
+	case "reject_exp_claim":
+		h.withAuth(w, r, h.rejectExpClaim)
+	case "unapprove_exp_claim":
+		h.withAuth(w, r, h.unapproveExpClaim)
+	case "pay_exp_claim":
+		h.withAuth(w, r, h.payExpClaim)
+	case "unpay_exp_claim":
+		h.withAuth(w, r, h.unpayExpClaim)
+	case "cancel_exp_claim":
+		h.withAuth(w, r, h.cancelExpClaim)
+	case "upload_exp_receipt":
+		h.withAuth(w, r, h.uploadExpReceipt)
+	case "get_exp_receipts":
+		h.withAuth(w, r, h.getExpReceipts)
+	case "download_exp_receipt":
+		h.withAuth(w, r, h.downloadExpReceipt)
+	case "delete_exp_receipt":
+		h.withAuth(w, r, h.deleteExpReceipt)
+
 	default:
 		Error(w, http.StatusBadRequest, "unknown action: "+action)
 	}
@@ -1169,6 +1287,35 @@ type perm struct{ module, fn string }
 // (e.g. work schedules, which the UI groups under attendance), it is mapped to
 // the closest existing module/function.
 var actionPerm = map[string]perm{
+	// --- Accounting: fiscal periods & year-end close ---
+	// "close" is a distinct right from edit: closing a period revokes everyone
+	// else's ability to post to it, and closing a year writes to the ledger.
+	"generate_fiscal_year":  {"accounting", "create"},
+	"delete_fiscal_year":    {"accounting", "delete"},
+	"set_period_status":     {"accounting", "close"},
+	"set_all_period_status": {"accounting", "close"},
+	"close_fiscal_year":     {"accounting", "close"},
+	"reopen_fiscal_year":    {"accounting", "close"},
+
+	// --- Email outbox (reads are open to any session; these act) ---
+	"retry_email":     {"accounting", "edit"},
+	"cancel_email":    {"accounting", "edit"},
+	"send_test_email": {"accounting", "edit"},
+
+	// --- Expense claims ---
+	// Filing and editing your OWN claim is self-service and deliberately absent
+	// here — those handlers scope themselves to the caller's employee record.
+	// Everything that touches someone else's money or the ledger is gated.
+	"approve_exp_claim":   {"expenses", "approve"},
+	"reject_exp_claim":    {"expenses", "approve"},
+	"unapprove_exp_claim": {"expenses", "approve"},
+	"pay_exp_claim":       {"expenses", "pay"},
+	"unpay_exp_claim":     {"expenses", "pay"},
+	"create_exp_category": {"expenses", "edit"},
+	"update_exp_category": {"expenses", "edit"},
+	"delete_exp_category": {"expenses", "delete"},
+	"save_exp_settings":   {"expenses", "edit"},
+
 	// --- Employees / org structure ---
 	"create_employee":   {"employees", "create"},
 	"update_employee":   {"employees", "edit"},
@@ -1256,14 +1403,14 @@ var actionPerm = map[string]perm{
 	// Simple mode records and posts in one step, so it needs post-level rights.
 	"create_simple_transaction": {"accounting", "edit"},
 	"update_journal_entry":      {"accounting", "edit"},
-	"delete_journal_entry": {"accounting", "delete"},
-	"post_journal_entry":   {"accounting", "edit"},
-	"void_journal_entry":   {"accounting", "edit"},
+	"delete_journal_entry":      {"accounting", "delete"},
+	"post_journal_entry":        {"accounting", "edit"},
+	"void_journal_entry":        {"accounting", "edit"},
 
 	// --- Accounting: recurring entries ---
-	"create_recurring_entry": {"accounting", "create"},
-	"update_recurring_entry": {"accounting", "edit"},
-	"delete_recurring_entry": {"accounting", "delete"},
+	"create_recurring_entry":  {"accounting", "create"},
+	"update_recurring_entry":  {"accounting", "edit"},
+	"delete_recurring_entry":  {"accounting", "delete"},
 	"toggle_recurring_active": {"accounting", "edit"},
 	// Generating recurring entries can post to the GL, so require post-level rights.
 	"process_due_recurring": {"accounting", "edit"},
@@ -5215,7 +5362,7 @@ func (h *Handler) createSimpleTransaction(w http.ResponseWriter, r *http.Request
 	// user never has to find and click a separate "Post" button afterwards.
 	posted := false
 	if req.Post == nil || *req.Post {
-		if err := h.acctRepo.PostJournalEntry(entryID, session.CompanyID, session.UserID); err != nil {
+		if err := h.postOrDiscard(entryID, session.CompanyID, session.UserID); err != nil {
 			Error(w, http.StatusInternalServerError, "post entry: "+err.Error())
 			return
 		}
@@ -5310,14 +5457,14 @@ func (h *Handler) getRecurringEntry(w http.ResponseWriter, r *http.Request, sess
 
 func (h *Handler) createRecurringEntry(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
 	var req struct {
-		Name             string            `json:"name"`
-		Memo             string            `json:"memo"`
-		Frequency        string            `json:"frequency"`
-		IntervalCount    int               `json:"interval_count"`
-		StartDate        string            `json:"start_date"`
-		EndDate          string            `json:"end_date"`
-		AutoPost         *bool             `json:"auto_post"`
-		OccurrencesLimit *int              `json:"occurrences_limit"`
+		Name             string             `json:"name"`
+		Memo             string             `json:"memo"`
+		Frequency        string             `json:"frequency"`
+		IntervalCount    int                `json:"interval_count"`
+		StartDate        string             `json:"start_date"`
+		EndDate          string             `json:"end_date"`
+		AutoPost         *bool              `json:"auto_post"`
+		OccurrencesLimit *int               `json:"occurrences_limit"`
 		Lines            []recurringLineReq `json:"lines"`
 	}
 	if err := Decode(r, &req); err != nil {
@@ -5363,16 +5510,16 @@ func (h *Handler) createRecurringEntry(w http.ResponseWriter, r *http.Request, s
 
 func (h *Handler) updateRecurringEntry(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
 	var req struct {
-		ID               string            `json:"id"`
-		Name             string            `json:"name"`
-		Memo             string            `json:"memo"`
-		Frequency        string            `json:"frequency"`
-		IntervalCount    int               `json:"interval_count"`
-		StartDate        string            `json:"start_date"`
-		EndDate          string            `json:"end_date"`
-		AutoPost         *bool             `json:"auto_post"`
-		OccurrencesLimit *int              `json:"occurrences_limit"`
-		IsActive         *bool             `json:"is_active"`
+		ID               string             `json:"id"`
+		Name             string             `json:"name"`
+		Memo             string             `json:"memo"`
+		Frequency        string             `json:"frequency"`
+		IntervalCount    int                `json:"interval_count"`
+		StartDate        string             `json:"start_date"`
+		EndDate          string             `json:"end_date"`
+		AutoPost         *bool              `json:"auto_post"`
+		OccurrencesLimit *int               `json:"occurrences_limit"`
+		IsActive         *bool              `json:"is_active"`
 		Lines            []recurringLineReq `json:"lines"`
 	}
 	if err := Decode(r, &req); err != nil {
@@ -5495,7 +5642,7 @@ func (h *Handler) generateRecurringJE(companyID, userID string, e *models.Recurr
 		return "", err
 	}
 	if e.AutoPost {
-		if err := h.acctRepo.PostJournalEntry(entryID, companyID, userID); err != nil {
+		if err := h.postOrDiscard(entryID, companyID, userID); err != nil {
 			return "", err
 		}
 	}
@@ -6075,7 +6222,7 @@ func (h *Handler) generatePayrollJournal(w http.ResponseWriter, r *http.Request,
 	h.acctRepo.UpdateJournalTotals(entryID, session.CompanyID)
 
 	if req.AutoPost {
-		if err := h.acctRepo.PostJournalEntry(entryID, session.CompanyID, session.UserID); err != nil {
+		if err := h.postOrDiscard(entryID, session.CompanyID, session.UserID); err != nil {
 			Error(w, http.StatusInternalServerError, "auto-post failed: "+err.Error())
 			return
 		}
@@ -6487,7 +6634,7 @@ func (h *Handler) postCashJournal(session *models.UserSession, drAcct, crAcct, m
 	h.acctRepo.AddJournalLine(entryID, session.CompanyID, drAcct, memo, amount, 0, 0)
 	h.acctRepo.AddJournalLine(entryID, session.CompanyID, crAcct, memo, 0, amount, 1)
 	h.acctRepo.UpdateJournalTotals(entryID, session.CompanyID)
-	if err := h.acctRepo.PostJournalEntry(entryID, session.CompanyID, session.UserID); err != nil {
+	if err := h.postOrDiscard(entryID, session.CompanyID, session.UserID); err != nil {
 		log.Printf("%s journal post: %v", sourceType, err)
 		return ""
 	}
@@ -6807,17 +6954,87 @@ func (h *Handler) deleteInvoice(w http.ResponseWriter, r *http.Request, session 
 	}
 	JSON(w, http.StatusOK, map[string]string{"message": "deleted"})
 }
+
+// sendInvoice marks an invoice Sent and, when the customer has an email address
+// on file, queues the notice for delivery (migration 021).
+//
+// The email is a QUEUE write, not a send: it only leaves the building if an
+// operator has explicitly enabled SMTP. The response reports what actually
+// happened so the UI can say "marked as sent, no email address on file" rather
+// than implying a delivery that never occurred.
 func (h *Handler) sendInvoice(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
 	var req struct {
 		ID string `json:"id"`
+		// SkipEmail marks the invoice Sent without queueing anything — for an
+		// invoice being handed over in person or through another channel.
+		SkipEmail bool `json:"skip_email"`
 	}
 	Decode(r, &req)
 	if err := h.arRepo.SendInvoice(req.ID, session.CompanyID); err != nil {
 		Error(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	inv, _ := h.arRepo.GetInvoice(req.ID, session.CompanyID)
-	JSON(w, http.StatusOK, inv)
+	// Read back the invoice to build the notice. A failure here is NOT the same
+	// thing as "the customer has no address", so it is reported rather than
+	// swallowed — otherwise the response claims nothing was queued and gives no
+	// hint that the invoice could not even be read.
+	inv, invErr := h.arRepo.GetInvoice(req.ID, session.CompanyID)
+	if invErr != nil {
+		log.Printf("send_invoice %s: marked sent but could not read it back: %v", req.ID, invErr)
+	}
+
+	queued := false
+	toEmail := ""
+	if inv != nil && !req.SkipEmail {
+		toEmail = h.customerEmail(r.Context(), session.CompanyID, inv.CustomerID)
+		if toEmail != "" {
+			// An invoice number is optional in this schema, so the subject and body
+			// have to read correctly without one rather than leaving a gap where
+			// the number should be — this text goes to a customer.
+			company := h.companyName(r.Context(), session.CompanyID)
+			subject := "Invoice from " + company
+			ref := "this invoice"
+			if n := strings.TrimSpace(inv.InvoiceNumber); n != "" {
+				subject = fmt.Sprintf("Invoice %s from %s", n, company)
+				ref = "invoice " + n
+			}
+			body := fmt.Sprintf(
+				"Dear %s,\n\nPlease find the details of %s below.\n\n"+
+					"Invoice date: %s\nDue date: %s\nAmount due: %s\n\n"+
+					"Thank you for your business.",
+				inv.CustomerName, ref, inv.InvoiceDate, inv.DueDate, formatPeso(inv.BalanceDue))
+			h.queueEmail(r.Context(), session.CompanyID, toEmail, inv.CustomerName, subject, body,
+				"invoice", inv.ID, session.UserID)
+			queued = true
+		}
+	}
+	resp := map[string]interface{}{
+		"invoice": inv, "email_queued": queued, "email_to": toEmail,
+		"email_enabled": h.cfg.SMTP.Ready(),
+	}
+	if invErr != nil {
+		resp["warning"] = "invoice marked as sent, but reading it back failed: " + invErr.Error()
+	}
+	JSON(w, http.StatusOK, resp)
+}
+
+// customerEmail reads a customer's plaintext address. Unlike employees, customer
+// contact details are not end-to-end encrypted, so the server can use them.
+func (h *Handler) customerEmail(ctx context.Context, companyID, customerID string) string {
+	var email string
+	_ = h.db.QueryRowContext(ctx,
+		`SELECT COALESCE(email,'') FROM ar_customers WHERE id=? AND company_id=? AND is_deleted=0`,
+		customerID, companyID).Scan(&email)
+	return email
+}
+
+func (h *Handler) companyName(ctx context.Context, companyID string) string {
+	var name string
+	_ = h.db.QueryRowContext(ctx, `SELECT name FROM companies WHERE id=?`, companyID).Scan(&name)
+	if name == "" {
+		return "us"
+	}
+	return name
 }
 func (h *Handler) voidInvoice(w http.ResponseWriter, r *http.Request, session *models.UserSession) {
 	var req struct {
@@ -7908,7 +8125,7 @@ func (h *Handler) postInvJournal(session *models.UserSession, drAcct, crAcct, me
 		return ""
 	}
 	h.acctRepo.UpdateJournalTotals(entryID, session.CompanyID)
-	if err := h.acctRepo.PostJournalEntry(entryID, session.CompanyID, session.UserID); err != nil {
+	if err := h.postOrDiscard(entryID, session.CompanyID, session.UserID); err != nil {
 		log.Printf("inv journal post: %v", err)
 		return ""
 	}
@@ -8685,7 +8902,7 @@ func (h *Handler) postFAJournal(session *models.UserSession, memo, sourceID stri
 		}
 	}
 	h.acctRepo.UpdateJournalTotals(entryID, session.CompanyID)
-	if err := h.acctRepo.PostJournalEntry(entryID, session.CompanyID, session.UserID); err != nil {
+	if err := h.postOrDiscard(entryID, session.CompanyID, session.UserID); err != nil {
 		log.Printf("fa journal post: %v", err)
 		return ""
 	}
@@ -9451,7 +9668,7 @@ func (h *Handler) postSOJournal(session *models.UserSession, memo, sourceID stri
 		}
 	}
 	h.acctRepo.UpdateJournalTotals(entryID, session.CompanyID)
-	if err := h.acctRepo.PostJournalEntry(entryID, session.CompanyID, session.UserID); err != nil {
+	if err := h.postOrDiscard(entryID, session.CompanyID, session.UserID); err != nil {
 		log.Printf("sales journal post: %v", err)
 		return ""
 	}
@@ -10352,7 +10569,7 @@ func (h *Handler) postPurJournal(session *models.UserSession, memo, sourceID str
 		}
 	}
 	h.acctRepo.UpdateJournalTotals(entryID, session.CompanyID)
-	if err := h.acctRepo.PostJournalEntry(entryID, session.CompanyID, session.UserID); err != nil {
+	if err := h.postOrDiscard(entryID, session.CompanyID, session.UserID); err != nil {
 		log.Printf("procurement journal post: %v", err)
 		return ""
 	}
@@ -11132,7 +11349,7 @@ func (h *Handler) postReturnsJournal(session *models.UserSession, memo, sourceTy
 		}
 	}
 	h.acctRepo.UpdateJournalTotals(entryID, session.CompanyID)
-	if err := h.acctRepo.PostJournalEntry(entryID, session.CompanyID, session.UserID); err != nil {
+	if err := h.postOrDiscard(entryID, session.CompanyID, session.UserID); err != nil {
 		log.Printf("%s journal post: %v", sourceType, err)
 		return ""
 	}

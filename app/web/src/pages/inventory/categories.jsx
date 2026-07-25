@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
+import { SimpleHint } from "../components/simplemode";
 import { api, Empty } from "./shared";
 
 export default function Categories() {
@@ -32,6 +33,7 @@ export default function Categories() {
 
     return (<>
         {msg && <div className={`iv-flash ${msg.err ? "iv-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">Group similar products together — like "Drinks" or "Packaging" — so they're easier to find.</SimpleHint>
         <div className="iv-bar">
             <div className="iv-search"><I name="search" size={14} /><input placeholder="Search categories..." value={search} onChange={e => setSearch(e.target.value)} /></div>
             <button className="iv-btn-p" onClick={() => setModal({ mode: "add", cat: { is_active: true } })}><I name="user" size={13} /> Add Category</button>

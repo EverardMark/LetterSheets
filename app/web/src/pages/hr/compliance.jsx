@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
+import { Term, SimpleHint } from "../components/simplemode";
 
 /* ================================================================
    API HELPER
@@ -244,6 +245,8 @@ export default function ComplianceTab({ agencies, setAgencies, currency = "₱" 
                 </div>
             </div>
 
+            <SimpleHint icon="bulb">Your government agencies (SSS, PhilHealth, Pag-IBIG, BIR) and the contribution tables used in payroll.</SimpleHint>
+
             <div className="c-grid">
                 {agencies.map((a, i) => (
                     <div key={i} className="c-card" style={{ borderTopColor: a.color, cursor:"pointer" }} onClick={() => setPanel({ open: true, mode: "view", idx: i })}>
@@ -361,7 +364,7 @@ export default function ComplianceTab({ agencies, setAgencies, currency = "₱" 
             {panel.open && panel.mode === "add" && (
                 <Modal
                     title="Add Agency"
-                    subtitle="Configure a new compliance agency"
+                    subtitle={<Term simple="Add a government agency you report to" advanced="Configure a new compliance agency" />}
                     onClose={closePanel}
                 >
                     <AgencyEditor
@@ -421,8 +424,8 @@ function Setup({ onSelect }) {
     return (
         <div className="c-setup">
             <div className="c-setup-ic"><I name="shield" size={32}/></div>
-            <h2 className="c-setup-t">Configure Compliance</h2>
-            <p className="c-setup-d">Select your country to load statutory requirements, or start from scratch.</p>
+            <h2 className="c-setup-t"><Term simple="Set Up Government Contributions" advanced="Configure Compliance" /></h2>
+            <p className="c-setup-d"><Term simple="Pick your country to load the usual government agencies, or start from scratch." advanced="Select your country to load statutory requirements, or start from scratch." /></p>
 
             <div className="c-tmpl-grid">
                 {templates.map((tmpl) => (

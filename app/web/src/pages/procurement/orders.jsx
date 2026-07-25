@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import { api, Empty, peso, num, d10, today, PO_BADGE, vendorName } from "./shared";
+import { Term, SimpleHint } from "../components/simplemode";
 import LineGrid from "./LineGrid";
 
 export default function Orders() {
@@ -29,6 +30,7 @@ export default function Orders() {
 
     return (<>
         {msg && <div className={`pr-flash ${msg.err ? "pr-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">A purchase order is your official request to a supplier. Approve it to send it, then record the goods when they arrive.</SimpleHint>
         <div className="pr-bar">
             <div className="pr-bar-l">
                 <select className="pr-sel" value={status} onChange={e => setStatus(e.target.value)}>
@@ -38,14 +40,14 @@ export default function Orders() {
             </div>
             <button className="pr-btn-p" disabled={vendors.length === 0} onClick={() => setModal({ id: null })}><I name="cart" size={13} /> New PO</button>
         </div>
-        {vendors.length === 0 && <div className="pr-flash pr-flash-err">Add a vendor first (Accounting → Payables → Vendors).</div>}
+        {vendors.length === 0 && <div className="pr-flash pr-flash-err"><Term simple="Add a supplier first (Accounting → Payables → Suppliers)." advanced="Add a vendor first (Accounting → Payables → Vendors)." /></div>}
 
         {rows.length === 0 ? (
-            <Empty icon="cart" title={status ? "No matching POs" : "No purchase orders"} desc={status ? "Try a different status." : "Create a PO, approve it to issue to the vendor, receive goods, then bill."} action={status || vendors.length === 0 ? null : "New PO"} onAction={() => setModal({ id: null })} />
+            <Empty icon="cart" title={status ? "No matching POs" : "No purchase orders"} desc={status ? "Try a different status." : <Term simple="Create a purchase order, approve it to send to the supplier, receive the goods, then bill." advanced="Create a PO, approve it to issue to the vendor, receive goods, then bill." />} action={status || vendors.length === 0 ? null : "New PO"} onAction={() => setModal({ id: null })} />
         ) : (
             <div className="pr-tblwrap pr-tbl-click">
                 <table className="pr-tbl">
-                    <thead><tr><th>PO</th><th>Vendor</th><th>Date</th><th className="pr-tbl-r">Total</th><th>Status</th></tr></thead>
+                    <thead><tr><th>PO</th><th><Term simple="Supplier" advanced="Vendor" /></th><th>Date</th><th className="pr-tbl-r">Total</th><th>Status</th></tr></thead>
                     <tbody>
                         {rows.map(o => (
                             <tr key={o.id} onClick={() => setModal({ id: o.id })}>
@@ -115,13 +117,13 @@ function OrderModal({ id, vendors, products, warehouses, accounts, onClose, flas
         <Modal title={isNew ? "New Purchase Order" : `PO-${String(o.po_number).padStart(4, "0")}`} subtitle={isNew ? "Draft PO" : `${o.vendor_name || ""} · ${o.status}`} onClose={onClose}>
             <div className="pr-modal-scroll">
                 <div className="pr-f" style={{ marginBottom: 14 }}>
-                    <div className="pr-field"><label className="pr-label">Vendor <span className="pr-req" /></label>
+                    <div className="pr-field"><label className="pr-label"><Term simple="Supplier" advanced="Vendor" /> <span className="pr-req" /></label>
                         <select className="pr-fsel" value={f.vendor_id || ""} disabled={!editable} onChange={e => set("vendor_id", e.target.value)}>
                             <option value="">— Select —</option>
                             {vendors.map(v => <option key={v.id} value={v.id}>{vendorName(v)}</option>)}
                         </select>
                     </div>
-                    <div className="pr-field"><label className="pr-label">Deliver To (Warehouse)</label>
+                    <div className="pr-field"><label className="pr-label"><Term simple="Deliver To" advanced="Deliver To (Warehouse)" /></label>
                         <select className="pr-fsel" value={f.warehouse_id || ""} disabled={!editable} onChange={e => set("warehouse_id", e.target.value)}>
                             <option value="">— Default —</option>
                             {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
@@ -150,7 +152,7 @@ function OrderModal({ id, vendors, products, warehouses, accounts, onClose, flas
                 )}
 
                 {!editable && o.receipts && o.receipts.length > 0 && (
-                    <div className="pr-hint" style={{ marginTop: 8 }}>{o.receipts.length} goods receipt(s) recorded</div>
+                    <div className="pr-hint" style={{ marginTop: 8 }}>{o.receipts.length} <Term simple="delivery record(s)" advanced="goods receipt(s)" /> recorded</div>
                 )}
             </div>
 
@@ -159,7 +161,7 @@ function OrderModal({ id, vendors, products, warehouses, accounts, onClose, flas
                     {!isNew && (o.status === "Draft" || o.status === "Cancelled") && <button className="pr-btn-danger" onClick={del}>Delete</button>}
                     {o.status === "Draft" && !isNew && <button className="pr-btn-p" onClick={() => act("approve_pur_order", {}, "Approved — PO issued")}>Approve</button>}
                     {o.status === "Draft" && !isNew && <button className="pr-btn-s" onClick={() => act("cancel_pur_order", {}, "Cancelled")}>Cancel</button>}
-                    {["Approved", "PartiallyReceived"].includes(o.status) && <button className="pr-btn-s" onClick={() => setRecv(true)}><I name="truck" size={12} /> Receive Goods</button>}
+                    {["Approved", "PartiallyReceived"].includes(o.status) && <button className="pr-btn-s" onClick={() => setRecv(true)}><I name="truck" size={12} /> <Term simple="Receive Delivery" advanced="Receive Goods" /></button>}
                     {hasBillable && ["PartiallyReceived", "Received"].includes(o.status) && <button className="pr-btn-p" onClick={bill}><I name="peso" size={12} /> Generate Bill</button>}
                     {["Received", "Billed", "PartiallyReceived"].includes(o.status) && <button className="pr-btn-s" onClick={() => act("close_pur_order", {}, "Closed")}>Close</button>}
                 </div>
@@ -187,10 +189,10 @@ function ReceiveForm({ order, onClose, onDone, flash }) {
         } catch (e) { flash(e.message, true); }
     };
     return (
-        <Modal title={`Receive PO-${String(order.po_number).padStart(4, "0")}`} subtitle="Record goods receipt (partial allowed)" onClose={onClose}>
+        <Modal title={`Receive PO-${String(order.po_number).padStart(4, "0")}`} subtitle={<Term simple="Record what arrived (partial allowed)" advanced="Record goods receipt (partial allowed)" />} onClose={onClose}>
             <div className="pr-modal-scroll">
                 <div className="pr-f" style={{ marginBottom: 12 }}>
-                    <div className="pr-field"><label className="pr-label">Receipt Date</label><input className="pr-input" type="date" value={hdr.receipt_date} onChange={e => setHdr(h => ({ ...h, receipt_date: e.target.value }))} /></div>
+                    <div className="pr-field"><label className="pr-label"><Term simple="Date Received" advanced="Receipt Date" /></label><input className="pr-input" type="date" value={hdr.receipt_date} onChange={e => setHdr(h => ({ ...h, receipt_date: e.target.value }))} /></div>
                     <div className="pr-field pr-f-full"><label className="pr-label">Notes</label><input className="pr-input" value={hdr.notes || ""} onChange={e => setHdr(h => ({ ...h, notes: e.target.value }))} /></div>
                 </div>
                 <div className="pr-tblwrap">

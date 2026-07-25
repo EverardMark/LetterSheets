@@ -15,9 +15,46 @@ import {
     faFloppyDisk, faPenToSquare, faTrashCan, faPlay, faPause, faCircleXmark,
     faPaperclip, faUpload, faDownload, faImage, faFileLines,
     faXmark, faPhone, faFlag, faBullseye,
+    faCircleInfo, faLightbulb,
 } from "@fortawesome/pro-light-svg-icons";
 import UpdateButton from "../pages/components/updatebutton";
+import { ModeToggle } from "../pages/components/simplemode";
+import { useIsSimple } from "../utils/uimode";
 import { Permissions, SELF_SERVICE_MODULES } from "../utils/permissions";
+
+/* ================================================================
+   NOTIFICATION HELPERS
+   The layout owns the bell, so the tiny API call it needs lives here rather
+   than pulling in a module-specific shared.jsx.
+================================================================ */
+const NOTIF_API = (import.meta.env.VITE_API_BASE || "") + "/api/execute";
+
+async function notifApi(action, body = {}) {
+    const session = localStorage.getItem("ls_session");
+    const res = await fetch(`${NOTIF_API}?action=${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(session ? { Authorization: `Bearer ${session}` } : {}) },
+        body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok || (json && json.success === false)) throw new Error(json?.error || `API ${action} failed`);
+    return json?.data ?? json;
+}
+
+// relTime renders "3m ago" / "2d ago" for the notification list. MySQL hands
+// back "2026-07-24 09:15:00" (no timezone marker), which Safari refuses to
+// parse — hence the explicit normalization to an ISO-ish string.
+function relTime(ts) {
+    if (!ts) return "";
+    const t = new Date(String(ts).replace(" ", "T"));
+    if (isNaN(t)) return "";
+    const secs = Math.max(0, (Date.now() - t.getTime()) / 1000);
+    if (secs < 60) return "just now";
+    if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
+    if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
+    if (secs < 604800) return `${Math.floor(secs / 86400)}d ago`;
+    return t.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
 /* ================================================================
    MODULE REGISTRY
@@ -42,21 +79,22 @@ export const modules = [
             { id: "hr-payroll",     label: "Payroll",     path: "/hr/payroll",        icon: "peso",     group: "PAYROLL" },
             { id: "hr-benefits",    label: "Benefits",    path: "/hr/benefits",       icon: "heart" },
             { id: "hr-loans",       label: "Loans",       path: "/hr/loans",          icon: "banknote" },
-            { id: "hr-compliance",  label: "Compliance",  path: "/hr/compliance",     icon: "shield",   group: "STATUTORY" },
+            { id: "hr-compliance",  label: "Compliance",  simpleLabel: "Government", path: "/hr/compliance",     icon: "shield",   group: "STATUTORY" },
         ],
     },
     {
         id: "accounting", label: "Accounting", icon: "scroll",
         children: [
             { id: "acc-overview",     label: "Overview",       path: "/accounting",             icon: "grid" },
-            { id: "acc-coa",          label: "Chart of Accts", path: "/accounting/coa",         icon: "file" },
-            { id: "acc-journal",      label: "Journal",        path: "/accounting/journal",     icon: "scroll" },
-            { id: "acc-ledger",       label: "Ledger",         path: "/accounting/ledger",      icon: "chart" },
-            { id: "acc-payables",     label: "Payables",       path: "/accounting/payables",    icon: "banknote" },
-            { id: "acc-receivables",  label: "Receivables",    path: "/accounting/receivables", icon: "peso" },
+            { id: "acc-coa",          label: "Chart of Accts", simpleLabel: "Accounts",          path: "/accounting/coa",         icon: "file" },
+            { id: "acc-journal",      label: "Journal",        simpleLabel: "Transactions",      path: "/accounting/journal",     icon: "scroll" },
+            { id: "acc-ledger",       label: "Ledger",         simpleLabel: "Account History",   path: "/accounting/ledger",      icon: "chart" },
+            { id: "acc-payables",     label: "Payables",       simpleLabel: "Bills to Pay",      path: "/accounting/payables",    icon: "banknote" },
+            { id: "acc-receivables",  label: "Receivables",    simpleLabel: "Money Owed to You", path: "/accounting/receivables", icon: "peso" },
             { id: "acc-tax",          label: "Tax",            path: "/accounting/tax",         icon: "shield" },
-            { id: "acc-bank",         label: "Bank Recon",     path: "/accounting/bank",        icon: "lock" },
+            { id: "acc-bank",         label: "Bank Recon",     simpleLabel: "Bank Matching",     path: "/accounting/bank",        icon: "lock" },
             { id: "acc-reports",      label: "Reports",        path: "/accounting/reports",     icon: "chart" },
+            { id: "acc-periods",      label: "Periods & Close",simpleLabel: "Year Setup",        path: "/accounting/periods",     icon: "lock",  group: "PERIOD CONTROL" },
         ],
     },
     {
@@ -75,7 +113,7 @@ export const modules = [
             { id: "inv-products",   label: "Products",        path: "/inventory/products",   icon: "box" },
             { id: "inv-categories", label: "Categories",      path: "/inventory/categories", icon: "tags" },
             { id: "inv-warehouses", label: "Warehouses",      path: "/inventory/warehouses", icon: "building" },
-            { id: "inv-movements",  label: "Stock Movements", path: "/inventory/movements",  icon: "scroll" },
+            { id: "inv-movements",  label: "Stock Movements", simpleLabel: "Stock In & Out", path: "/inventory/movements",  icon: "scroll" },
             { id: "inv-purchases",  label: "Purchase Orders", path: "/inventory/purchases",  icon: "cart",  group: "PROCUREMENT" },
             { id: "inv-suppliers",  label: "Suppliers",       path: "/inventory/suppliers",  icon: "truck" },
             { id: "inv-settings",   label: "Settings",        path: "/inventory/settings",   icon: "gear",  group: "CONFIG" },
@@ -87,8 +125,8 @@ export const modules = [
             { id: "fa-overview",     label: "Overview",     path: "/fixed-assets",             icon: "grid" },
             { id: "fa-assets",       label: "Assets",       path: "/fixed-assets/assets",       icon: "box" },
             { id: "fa-categories",   label: "Categories",   path: "/fixed-assets/categories",   icon: "tags" },
-            { id: "fa-depreciation", label: "Depreciation", path: "/fixed-assets/depreciation", icon: "chart" },
-            { id: "fa-disposals",    label: "Disposals",    path: "/fixed-assets/disposals",    icon: "minus", group: "LIFECYCLE" },
+            { id: "fa-depreciation", label: "Depreciation", simpleLabel: "Value Loss", path: "/fixed-assets/depreciation", icon: "chart" },
+            { id: "fa-disposals",    label: "Disposals",    simpleLabel: "Sell / Scrap", path: "/fixed-assets/disposals",    icon: "minus", group: "LIFECYCLE" },
             { id: "fa-maintenance",  label: "Maintenance",  path: "/fixed-assets/maintenance",  icon: "scroll" },
             { id: "fa-transfers",    label: "Transfers",    path: "/fixed-assets/transfers",    icon: "truck" },
             { id: "fa-settings",     label: "Settings",     path: "/fixed-assets/settings",     icon: "gear",  group: "CONFIG" },
@@ -99,8 +137,17 @@ export const modules = [
         children: [
             { id: "crm-overview",   label: "Overview",     path: "/crm",            icon: "grid" },
             { id: "crm-leads",      label: "Leads",        path: "/crm/leads",      icon: "userplus" },
-            { id: "crm-pipeline",   label: "Pipeline",     path: "/crm/pipeline",   icon: "chart" },
+            { id: "crm-pipeline",   label: "Pipeline",     simpleLabel: "Deals", path: "/crm/pipeline",   icon: "chart" },
             { id: "crm-activities", label: "Follow-ups",   path: "/crm/activities", icon: "clock" },
+        ],
+    },
+    {
+        id: "expenses", label: "Expenses", icon: "receipt",
+        children: [
+            { id: "exp-overview",   label: "Overview",   path: "/expenses",            icon: "grid" },
+            { id: "exp-claims",     label: "Claims",     path: "/expenses/claims",     icon: "receipt" },
+            { id: "exp-categories", label: "Categories", path: "/expenses/categories", icon: "tags",  group: "CONFIG" },
+            { id: "exp-settings",   label: "Settings",   path: "/expenses/settings",   icon: "gear" },
         ],
     },
     {
@@ -111,7 +158,7 @@ export const modules = [
             { id: "so-orders",     label: "Orders",      path: "/sales/orders",      icon: "cart" },
             { id: "so-deliveries", label: "Deliveries",  path: "/sales/deliveries",  icon: "truck" },
             { id: "so-pricelists", label: "Price Lists", path: "/sales/price-lists", icon: "tags",  group: "PRICING" },
-            { id: "so-creditmemos",label: "Credit Memos",path: "/sales/credit-memos",icon: "scroll",group: "RETURNS" },
+            { id: "so-creditmemos",label: "Credit Memos",simpleLabel: "Refunds & Credits",path: "/sales/credit-memos",icon: "scroll",group: "RETURNS" },
             { id: "so-settings",   label: "Settings",    path: "/sales/settings",    icon: "gear",  group: "CONFIG" },
         ],
     },
@@ -119,10 +166,10 @@ export const modules = [
         id: "procurement", label: "Procurement", icon: "cart",
         children: [
             { id: "pr-overview",     label: "Overview",       path: "/procurement",              icon: "grid" },
-            { id: "pr-requisitions", label: "Requisitions",   path: "/procurement/requisitions", icon: "file" },
+            { id: "pr-requisitions", label: "Requisitions",   simpleLabel: "Purchase Requests", path: "/procurement/requisitions", icon: "file" },
             { id: "pr-orders",       label: "Purchase Orders", path: "/procurement/orders",      icon: "cart" },
-            { id: "pr-receipts",     label: "Goods Receipts", path: "/procurement/receipts",     icon: "truck" },
-            { id: "pr-debitmemos",   label: "Debit Memos",    path: "/procurement/debit-memos",  icon: "scroll", group: "RETURNS" },
+            { id: "pr-receipts",     label: "Goods Receipts", simpleLabel: "Received Items", path: "/procurement/receipts",     icon: "truck" },
+            { id: "pr-debitmemos",   label: "Debit Memos",    simpleLabel: "Supplier Credits", path: "/procurement/debit-memos",  icon: "scroll", group: "RETURNS" },
             { id: "pr-settings",     label: "Settings",       path: "/procurement/settings",     icon: "gear",  group: "CONFIG" },
         ],
     },
@@ -139,6 +186,7 @@ const employeeModules = [
             { id: "hr-payroll",     label: "Payslips",    path: "/hr/payroll",        icon: "peso" },
             { id: "hr-benefits",    label: "Benefits",    path: "/hr/benefits",       icon: "heart" },
             { id: "hr-loans",       label: "Loans",       path: "/hr/loans",          icon: "banknote" },
+            { id: "exp-claims",     label: "Expenses",    path: "/expenses/claims",   icon: "receipt" },
         ],
     },
 ];
@@ -206,6 +254,22 @@ function buildNavModules(perms) {
     if (visible.includes("crm")) {
         const crm = modules.find(m => m.id === "crm");
         if (crm) result.push(crm);
+    }
+
+    // Expenses. Always present — filing a claim is self-service — but the
+    // Categories/Settings pages only appear for users who may configure them.
+    {
+        const exp = modules.find(m => m.id === "expenses");
+        if (exp) {
+            const canConfigure = perms.can("expenses", "edit");
+            const canSeeAll = perms.canAny("expenses");
+            const children = exp.children.filter(c => {
+                if (c.id === "exp-categories" || c.id === "exp-settings") return canConfigure;
+                if (c.id === "exp-overview") return canSeeAll;
+                return true;
+            });
+            result.push({ ...exp, children });
+        }
     }
 
     // Sales
@@ -292,6 +356,8 @@ const faMap = {
     phone: faPhone,
     flag: faFlag,
     target: faBullseye,
+    info: faCircleInfo,
+    bulb: faLightbulb,
 };
 
 export const I = ({ name, size = 16 }) => {
@@ -338,10 +404,20 @@ export default function ERPLayout() {
     const perms = new Permissions(company.permissions, company.role);
     const isEmployee = perms.isSelfServiceOnly();
     const navModules = buildNavModules(perms);
+    // In Simple mode a nav item shows its plain-language `simpleLabel` when it has
+    // one, so "Chart of Accts" reads as "Accounts" for a non-accountant.
+    const simpleUI = useIsSimple();
+    const navLabel = (item) => (simpleUI && item.simpleLabel) ? item.simpleLabel : item.label;
+    // Section-divider labels in the sidebar carry jargon too ("PERIOD CONTROL",
+    // "STATUTORY"); soften the worst ones in Simple mode.
+    const SIMPLE_GROUP = { "PERIOD CONTROL": "YEAR", "STATUTORY": "GOVERNMENT", "PROCUREMENT": "BUYING", "CONFIG": "SETUP", "LIFECYCLE": "STATUS", "RETURNS": "REFUNDS", "PRICING": "PRICES", "PAYROLL": "PAY" };
+    const groupLabel = (g) => (simpleUI && SIMPLE_GROUP[g]) ? SIMPLE_GROUP[g] : g;
     const [collapsed, setCollapsed] = useState(false);
     const [rightOpen, setRightOpen] = useState(true);
     const [mobileMenu, setMobileMenu] = useState(false);
     const [mobileNotif, setMobileNotif] = useState(false);
+    const [notifs, setNotifs] = useState([]);
+    const [unread, setUnread] = useState(0);
 
     // No encryption key → redirect to login
     useEffect(() => {
@@ -356,6 +432,38 @@ export default function ERPLayout() {
             navigate("/");
         }
     }, [hasKey]);
+
+    // Notification inbox. Polled rather than pushed: the API is a single
+    // request/response endpoint with no socket, and a 60s tick on one indexed
+    // query is far cheaper than the infrastructure a push channel would need.
+    useEffect(() => {
+        if (!hasKey) return;
+        let alive = true;
+        const load = async () => {
+            try {
+                const d = await notifApi("get_notifications", { limit: 20 });
+                if (!alive) return;
+                setNotifs(d.notifications || []);
+                setUnread(d.unread || 0);
+            } catch { /* a failed poll must not disturb the page */ }
+        };
+        load();
+        const t = setInterval(load, 60000);
+        return () => { alive = false; clearInterval(t); };
+    }, [hasKey]);
+
+    const markRead = async (n) => {
+        setNotifs(prev => prev.map(x => x.id === n.id ? { ...x, is_read: true } : x));
+        setUnread(u => Math.max(0, u - (n.is_read ? 0 : 1)));
+        try { await notifApi("mark_notification_read", { id: n.id, read: true }); } catch { /* optimistic */ }
+        if (n.link) navigate(n.link);
+    };
+
+    const markAllRead = async () => {
+        setNotifs(prev => prev.map(x => ({ ...x, is_read: true })));
+        setUnread(0);
+        try { await notifApi("mark_all_notifications_read"); } catch { /* optimistic */ }
+    };
 
     if (!hasKey) return null;
 
@@ -393,8 +501,8 @@ export default function ERPLayout() {
 
     // Breadcrumb
     const bcParts = [];
-    if (activeParent) bcParts.push(activeParent.label);
-    bcParts.push(active.label);
+    if (activeParent) bcParts.push(navLabel(activeParent));
+    bcParts.push(navLabel(active));
 
     return (
         <div className="erp">
@@ -415,7 +523,7 @@ export default function ERPLayout() {
                             return (
                                 <Link key={mod.id} to={mod.path} className={`sb-link ${active.id===mod.id?"sb-on":""}`} title={collapsed?mod.label:""}>
                                     <span className="sb-ic"><I name={mod.icon}/></span>
-                                    {!collapsed && <span className="sb-lbl">{mod.label}</span>}
+                                    {!collapsed && <span className="sb-lbl">{navLabel(mod)}</span>}
                                 </Link>
                             );
                         }
@@ -439,7 +547,7 @@ export default function ERPLayout() {
                                     title={collapsed ? mod.label : ""}
                                 >
                                     <span className="sb-ic"><I name={mod.icon}/></span>
-                                    {!collapsed && <span className="sb-lbl">{mod.label}</span>}
+                                    {!collapsed && <span className="sb-lbl">{navLabel(mod)}</span>}
                                     {!collapsed && mod.badge != null && <span className="sb-badge">{mod.badge}</span>}
                                     {!collapsed && <span className={`sb-chev ${isOpen?"sb-chev-open":""}`}><I name="chevDown" size={14}/></span>}
                                 </button>
@@ -449,13 +557,13 @@ export default function ERPLayout() {
                                             const showGroupSep = child.group && (ci === 0 || mod.children[ci-1].group !== child.group) && ci > 0;
                                             return (
                                                 <div key={child.id}>
-                                                    {showGroupSep && <div className="sb-kid-sep"><span>{child.group}</span></div>}
+                                                    {showGroupSep && <div className="sb-kid-sep"><span>{groupLabel(child.group)}</span></div>}
                                                     <Link
                                                         to={child.path}
                                                         className={`sb-link sb-kid ${active.id===child.id?"sb-on":""}`}
                                                     >
                                                         <span className="sb-dot"/>
-                                                        <span className="sb-lbl">{child.label}</span>
+                                                        <span className="sb-lbl">{navLabel(child)}</span>
                                                     </Link>
                                                 </div>
                                             );
@@ -492,13 +600,17 @@ export default function ERPLayout() {
                         </div>
                     </div>
                     <div className="tb-r">
+                        <ModeToggle />
                         <div className="tb-srch"><I name="search" size={15}/><input type="text" placeholder="Search..." className="tb-inp"/></div>
                         <div className="tb-prof" onClick={()=>navigate("/settings")} title="Account & Settings">
                             <div className="tb-av">{(user.username||"U")[0].toUpperCase()}</div>
                             <div className="tb-ui"><span className="tb-nm">{user.username||"User"}</span><span className="tb-rl">{company.role||"employee"}</span></div>
                         </div>
                         <UpdateButton />
-                        <button className="tb-bell" onClick={()=>{setRightOpen(!rightOpen);setMobileNotif(!mobileNotif)}}><I name="bell" size={17}/><span className="tb-dot"/></button>
+                        <button className="tb-bell" onClick={()=>{setRightOpen(!rightOpen);setMobileNotif(!mobileNotif)}} title={unread?`${unread} unread`:"Notifications"}>
+                            <I name="bell" size={17}/>
+                            {unread > 0 && <span className="tb-dot tb-dot-n">{unread > 9 ? "9+" : unread}</span>}
+                        </button>
                     </div>
                 </header>
                 <div className="pg"><Outlet/></div>
@@ -507,12 +619,26 @@ export default function ERPLayout() {
             <aside className={`rp${rightOpen?"":" rp-closed"}${mobileNotif?" rp-open":""}`}>
                 <div className="rp-hdr">
                     <span className="rp-title">Notifications</span>
+                    {unread > 0 && <button className="rp-clear" onClick={markAllRead}>Mark all read</button>}
                 </div>
                 <div className="rp-body">
-                    <div className="rp-empty">
-                        <I name="bell" size={28}/>
-                        <span>No new notifications</span>
-                    </div>
+                    {notifs.length === 0 ? (
+                        <div className="rp-empty">
+                            <I name="bell" size={28}/>
+                            <span>No new notifications</span>
+                        </div>
+                    ) : notifs.map(n => (
+                        <div key={n.id}
+                             className={`rp-item${n.is_read ? "" : " rp-item-un"}`}
+                             onClick={()=>markRead(n)}>
+                            <span className={`rp-sev rp-sev-${n.severity || "info"}`}/>
+                            <div className="rp-txt">
+                                <div className="rp-t">{n.title}</div>
+                                {n.body && <div className="rp-b">{n.body}</div>}
+                                <div className="rp-when">{relTime(n.created_at)}</div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </aside>
 
@@ -572,6 +698,19 @@ export default function ERPLayout() {
         .tb-srch i{font-size:14px;flex-shrink:0}
         .tb-inp{border:none;background:none;font-family:'DM Sans',sans-serif;font-size:13px;color:#555;outline:none;width:130px}
         .tb-inp::placeholder{color:#ccc}
+        .rp-clear{border:none;background:none;font-family:'DM Sans',sans-serif;font-size:11px;color:#2d9e8b;cursor:pointer;padding:0}
+        .rp-clear:hover{text-decoration:underline}
+        .rp-item{display:flex;gap:9px;padding:10px 12px;border-bottom:1px solid #f4f4f4;cursor:pointer;transition:background .15s}
+        .rp-item:hover{background:#fafafa}
+        .rp-item-un{background:#f6fbfa}
+        .rp-item-un:hover{background:#eff8f6}
+        .rp-sev{width:6px;height:6px;border-radius:50%;margin-top:6px;flex-shrink:0;background:#0ea5e9}
+        .rp-sev-success{background:#22c55e}.rp-sev-warning{background:#f59e0b}.rp-sev-error{background:#ef4444}
+        .rp-txt{min-width:0;flex:1}
+        .rp-t{font-size:12px;font-weight:600;color:#333;line-height:1.35}
+        .rp-b{font-size:11px;color:#888;margin-top:2px;line-height:1.4}
+        .rp-when{font-size:10px;color:#bbb;margin-top:4px}
+        .tb-dot-n{top:1px!important;right:1px!important;width:auto!important;min-width:15px;height:15px!important;padding:0 4px;border-radius:8px;font-size:9px;font-weight:700;line-height:12px;text-align:center;color:#fff}
         .tb-bell{position:relative;width:32px;height:32px;border-radius:8px;border:1px solid #eee;background:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#888}
         .tb-dot{position:absolute;top:5px;right:6px;width:7px;height:7px;border-radius:50%;background:#ef4444;border:1.5px solid #fff}
         .tb-prof{display:flex;align-items:center;gap:8px;padding:3px;cursor:pointer;width:fit-content}

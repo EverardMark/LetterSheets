@@ -3,6 +3,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { I } from "../../layouts/ERPLayout";
 import "./sales.css";
 import { api, peso, num, d10, ORDER_BADGE, Empty } from "./shared";
+import { Term, SimpleHint } from "../components/simplemode";
+import { useIsSimple } from "../../utils/uimode";
 import Quotes from "./Quotes";
 import Orders from "./Orders";
 import Deliveries from "./Deliveries";
@@ -24,6 +26,7 @@ function getTab(pathname) {
 }
 
 function SalesOverview({ nav }) {
+    const simple = useIsSimple();
     const [stats, setStats] = useState(null);
     const [orders, setOrders] = useState([]);
     const [backorders, setBackorders] = useState([]);
@@ -38,12 +41,13 @@ function SalesOverview({ nav }) {
 
     const cards = [
         { label: "Open Orders",       value: stats?.open_orders ?? 0,          icon: "cart",   color: "#2d9e8b" },
-        { label: "Revenue This Month",value: peso(stats?.revenue_this_month),  icon: "peso",   color: "#0ea5e9" },
+        { label: simple ? "Income This Month" : "Revenue This Month", value: peso(stats?.revenue_this_month),  icon: "peso",   color: "#0ea5e9" },
         { label: "Draft Quotes",      value: stats?.draft_quotes ?? 0,         icon: "file",   color: "#f59e0b" },
-        { label: "Backorders",        value: stats?.backorders_pending ?? 0,   icon: "truck",  color: "#ef4444" },
+        { label: simple ? "Waiting on Stock" : "Backorders",         value: stats?.backorders_pending ?? 0,   icon: "truck",  color: "#ef4444" },
     ];
 
     return (<>
+        <SimpleHint icon="bulb">How your selling is going — quotes out, orders in, and what's been delivered.</SimpleHint>
         <div className="so-stats">
             {cards.map((c, i) => (
                 <div key={i} className="so-st">
@@ -76,12 +80,12 @@ function SalesOverview({ nav }) {
                             </tbody>
                         </table>
                     </div>
-                ) : <Empty icon="cart" title="No orders yet" desc="Create a sales order to get started." action="New order" onAction={() => nav("/sales/orders")} />}
+                ) : <Empty icon="cart" title="No orders yet" desc={simple ? "Create an order to get started." : "Create a sales order to get started."} action="New order" onAction={() => nav("/sales/orders")} />}
             </div>
 
             <div className="so-card" style={{ marginBottom: 0 }}>
                 <div className="so-card-h">
-                    <h3 className="so-card-t">Backorders</h3>
+                    <h3 className="so-card-t"><Term simple="Waiting on Stock" advanced="Backorders" /></h3>
                     <span className="so-card-lk" style={{ color: "#aaa" }}>{backorders.length} line(s)</span>
                 </div>
                 {backorders.length > 0 ? (
@@ -99,7 +103,7 @@ function SalesOverview({ nav }) {
                             </tbody>
                         </table>
                     </div>
-                ) : <Empty icon="check" title="No backorders" desc="Everything confirmed is in stock or fulfilled." />}
+                ) : <Empty icon="check" title={simple ? "Nothing waiting on stock" : "No backorders"} desc={simple ? "Everything ordered is in stock or already sent." : "Everything confirmed is in stock or fulfilled."} />}
             </div>
         </div>
     </>);
@@ -117,7 +121,7 @@ export default function SalesDashboard() {
                     <div className="so-head-ic"><I name="cart" size={24} /></div>
                     <div>
                         <h1 className="so-title">Sales</h1>
-                        <p className="so-sub">Quotes, orders, fulfillment and invoicing</p>
+                        <p className="so-sub"><Term simple="Quotes, orders, deliveries and invoices" advanced="Quotes, orders, fulfillment and invoicing" /></p>
                     </div>
                 </div>
             </div>

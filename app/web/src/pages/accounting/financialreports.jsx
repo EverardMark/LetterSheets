@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
+import { Term, SimpleHint } from "../components/simplemode";
 import "./acc-layout.css";
 
 const API = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
@@ -47,12 +48,17 @@ export default function FinancialReports() {
     return (<div className="acc-wrap">
         {/* Report type tabs */}
         <div className="acc-tabs fr-tabs">
-            {[["income", "Income Statement", "trending-up"], ["balance", "Balance Sheet", "layers"], ["cashflow", "Cash Flow", "dollar-sign"]].map(([key, label, icon]) => (
+            {[["income", <Term simple="Profit & Loss" advanced="Income Statement" />, "trending-up"], ["balance", <Term simple="What You Own & Owe" advanced="Balance Sheet" />, "layers"], ["cashflow", <Term simple="Cash In & Out" advanced="Cash Flow" />, "dollar-sign"]].map(([key, label, icon]) => (
                 <button key={key} onClick={() => setReport(key)} className={`acc-tab ${report === key ? "acc-tab-on" : ""}`}>
                     <I name={icon} size={14}/> {label}
                 </button>
             ))}
         </div>
+
+        <SimpleHint icon="bulb">
+            Pick a report to see how your business is doing. Profit &amp; Loss shows if you made money;
+            What You Own &amp; Owe is a snapshot of your finances.
+        </SimpleHint>
 
         {/* Date controls */}
         <div className="acc-bar fr-controls">
@@ -90,7 +96,7 @@ function IncomeStatementView({ rows, dateFrom, dateTo }) {
     const netIncome = totalRevenue - totalExpense;
 
     return (<div className="acc-card fr-report acc-fill">
-        <div className="fr-report-title">Income Statement</div>
+        <div className="fr-report-title"><Term simple="Profit & Loss" advanced="Income Statement" /></div>
         <div className="fr-report-sub">For the period {dateFrom} to {dateTo}</div>
 
         {rows.length === 0 ? <div className="acc-empty"><div className="acc-empty-ic"><I name="inbox" size={28}/></div><div className="acc-empty-t">No data</div><div className="acc-empty-d">No posted journal entries for this period</div></div> : (<>
@@ -98,7 +104,7 @@ function IncomeStatementView({ rows, dateFrom, dateTo }) {
                 <div className="fr-section-head">Revenue</div>
                 <table className="fr-tbl"><tbody>
                 {revenue.map(r => (<tr key={r.id}><td className="fr-acct-code">{r.code}</td><td className="fr-acct-name">{r.name}</td><td className="fr-amt acc-cell-mono">{peso(r.net_balance)}</td></tr>))}
-                <tr className="fr-total-row"><td colSpan={2} className="fr-total-label">Total Revenue</td><td className="fr-total-amt acc-cell-mono">{peso(totalRevenue)}</td></tr>
+                <tr className="fr-total-row"><td colSpan={2} className="fr-total-label"><Term simple="Total Income" advanced="Total Revenue" /></td><td className="fr-total-amt acc-cell-mono">{peso(totalRevenue)}</td></tr>
                 </tbody></table>
             </div>
 
@@ -106,12 +112,12 @@ function IncomeStatementView({ rows, dateFrom, dateTo }) {
                 <div className="fr-section-head">Expenses</div>
                 <table className="fr-tbl"><tbody>
                 {expenses.map(r => (<tr key={r.id}><td className="fr-acct-code">{r.code}</td><td className="fr-acct-name">{r.name}</td><td className="fr-amt acc-cell-mono">{peso(r.net_balance)}</td></tr>))}
-                <tr className="fr-total-row"><td colSpan={2} className="fr-total-label">Total Expenses</td><td className="fr-total-amt acc-cell-mono">{peso(totalExpense)}</td></tr>
+                <tr className="fr-total-row"><td colSpan={2} className="fr-total-label"><Term simple="Total Costs" advanced="Total Expenses" /></td><td className="fr-total-amt acc-cell-mono">{peso(totalExpense)}</td></tr>
                 </tbody></table>
             </div>
 
             <div className="fr-grand-row">
-                <div className="fr-grand-label">Net Income</div>
+                <div className="fr-grand-label"><Term simple="Net Profit" advanced="Net Income" /></div>
                 <div className="fr-grand-amt acc-cell-mono" style={{ color: netIncome >= 0 ? "#22c55e" : "#ef4444" }}>{peso(netIncome)}</div>
             </div>
         </>)}
@@ -130,7 +136,7 @@ function BalanceSheetView({ rows, asOf }) {
     const balanced = Math.abs(totalAssets - leTotal) < 0.01;
 
     return (<div className="acc-card fr-report acc-fill">
-        <div className="fr-report-title">Balance Sheet</div>
+        <div className="fr-report-title"><Term simple="What You Own & Owe" advanced="Balance Sheet" /></div>
         <div className="fr-report-sub">As of {asOf}</div>
 
         {rows.length === 0 ? <div className="acc-empty"><div className="acc-empty-ic"><I name="inbox" size={28}/></div><div className="acc-empty-t">No data</div><div className="acc-empty-d">No account balances</div></div> : (<>
@@ -163,7 +169,7 @@ function BalanceSheetView({ rows, asOf }) {
 
             <div className="fr-le-row">
                 <div className="fr-le-line">
-                    <span className="fr-le-label">Total Liabilities + Equity</span>
+                    <span className="fr-le-label"><Term simple="Total We Owe + Owner's Funds" advanced="Total Liabilities + Equity" /></span>
                     <span className="fr-le-amt acc-cell-mono">{peso(leTotal)}</span>
                 </div>
             </div>
@@ -191,7 +197,7 @@ function CashFlowView({ rows, dateFrom, dateTo }) {
     };
 
     return (<div className="acc-card fr-report acc-fill">
-        <div className="fr-report-title">Cash Flow Statement</div>
+        <div className="fr-report-title"><Term simple="Cash In & Out" advanced="Cash Flow Statement" /></div>
         <div className="fr-report-sub">For the period {dateFrom} to {dateTo}</div>
 
         {/* Summary cards */}

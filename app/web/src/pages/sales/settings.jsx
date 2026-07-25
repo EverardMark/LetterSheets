@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import { api } from "./shared";
+import { Term, AdvancedOnly, SimpleHint } from "../components/simplemode";
 
 export default function Settings() {
     const [s, setS] = useState({ auto_post_gl: false, auto_invoice_on_fulfill: false, default_payment_terms: 30, quote_valid_days: 30 });
@@ -52,24 +53,31 @@ export default function Settings() {
         {msg && <div className={`so-flash ${msg.err ? "so-flash-err" : ""}`}>{msg.text}</div>}
         <div className="so-card" style={{ maxWidth: 720 }}>
             <div className="so-card-h"><h3 className="so-card-t">Sales & Invoicing</h3></div>
-            <p style={{ fontSize: 13, color: "#888", marginBottom: 18, lineHeight: 1.6 }}>
-                Invoicing an order posts <b>Dr Accounts Receivable / Cr Revenue / Cr Tax Payable</b> to the GL.
-                COGS (Dr COGS / Cr Inventory) posts separately from the Inventory module at fulfillment.
-            </p>
+            <SimpleHint icon="bulb">Set up how selling works here — where to send goods from, how long quotes stay valid, and how long customers have to pay.</SimpleHint>
+            <AdvancedOnly>
+                <p style={{ fontSize: 13, color: "#888", marginBottom: 18, lineHeight: 1.6 }}>
+                    Invoicing an order posts <b>Dr Accounts Receivable / Cr Revenue / Cr Tax Payable</b> to the GL.
+                    COGS (Dr COGS / Cr Inventory) posts separately from the Inventory module at fulfillment.
+                </p>
+            </AdvancedOnly>
 
-            <label style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", marginBottom: 14 }}>
-                <span className="so-switch"><input type="checkbox" checked={!!s.auto_post_gl} onChange={e => set("auto_post_gl", e.target.checked)} /><span className="so-slider" /></span>
-                <div><div style={{ fontSize: 13.5, fontWeight: 600, color: "#333" }}>Auto-post revenue to the General Ledger</div><div style={{ fontSize: 12, color: "#aaa" }}>Requires Receivable + Revenue accounts below</div></div>
-            </label>
+            <AdvancedOnly>
+                <label style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", marginBottom: 14 }}>
+                    <span className="so-switch"><input type="checkbox" checked={!!s.auto_post_gl} onChange={e => set("auto_post_gl", e.target.checked)} /><span className="so-slider" /></span>
+                    <div><div style={{ fontSize: 13.5, fontWeight: 600, color: "#333" }}>Auto-post revenue to the General Ledger</div><div style={{ fontSize: 12, color: "#aaa" }}>Requires Receivable + Revenue accounts below</div></div>
+                </label>
+            </AdvancedOnly>
             <label style={{ display: "flex", alignItems: "center", gap: 12, cursor: "pointer", marginBottom: 20 }}>
                 <span className="so-switch"><input type="checkbox" checked={!!s.auto_invoice_on_fulfill} onChange={e => set("auto_invoice_on_fulfill", e.target.checked)} /><span className="so-slider" /></span>
-                <div><div style={{ fontSize: 13.5, fontWeight: 600, color: "#333" }}>Auto-invoice on fulfillment</div><div style={{ fontSize: 12, color: "#aaa" }}>Generate an AR invoice automatically after each shipment</div></div>
+                <div><div style={{ fontSize: 13.5, fontWeight: 600, color: "#333" }}><Term simple="Automatically bill the customer when I send goods" advanced="Auto-invoice on fulfillment" /></div><div style={{ fontSize: 12, color: "#aaa" }}><Term simple="Creates the invoice for you after each delivery" advanced="Generate an AR invoice automatically after each shipment" /></div></div>
             </label>
 
             <div className="so-f">
-                <Sel k="ar_account_id" label="Accounts Receivable" types={["Asset"]} hint="Debited by every invoice" />
-                <Sel k="default_revenue_account_id" label="Default Revenue" types={["Revenue"]} hint="Credited (net of tax)" />
-                <Sel k="tax_payable_account_id" label="Output Tax Payable" types={["Liability"]} hint="Credited for VAT/tax" />
+                <AdvancedOnly>
+                    <Sel k="ar_account_id" label="Accounts Receivable" types={["Asset"]} hint="Debited by every invoice" />
+                    <Sel k="default_revenue_account_id" label="Default Revenue" types={["Revenue"]} hint="Credited (net of tax)" />
+                    <Sel k="tax_payable_account_id" label="Output Tax Payable" types={["Liability"]} hint="Credited for VAT/tax" />
+                </AdvancedOnly>
                 <div className="so-field">
                     <label className="so-label">Default Warehouse</label>
                     <select className="so-fsel" value={s.default_warehouse_id || ""} onChange={e => set("default_warehouse_id", e.target.value)}>
@@ -85,11 +93,11 @@ export default function Settings() {
                     </select>
                 </div>
                 <div className="so-field">
-                    <label className="so-label">Payment Terms (days)</label>
+                    <label className="so-label"><Term simple="Days for customers to pay" advanced="Payment Terms (days)" /></label>
                     <input className="so-input" type="number" min="0" value={s.default_payment_terms ?? 30} onChange={e => set("default_payment_terms", e.target.value)} />
                 </div>
                 <div className="so-field">
-                    <label className="so-label">Quote Validity (days)</label>
+                    <label className="so-label"><Term simple="Days a quote stays valid" advanced="Quote Validity (days)" /></label>
                     <input className="so-input" type="number" min="0" value={s.quote_valid_days ?? 30} onChange={e => set("quote_valid_days", e.target.value)} />
                 </div>
             </div>

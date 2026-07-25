@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import HistoryTab, { canViewHistory } from "../components/HistoryTab";
+import { SimpleHint } from "../components/simplemode";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 
@@ -101,6 +102,7 @@ export default function PositionsTab({ positions, setPositions, departments = []
 
     return (<>
         <div className="ps-wrap">
+            <SimpleHint icon="bulb">The job roles people hold — like Software Engineer or HR Manager.</SimpleHint>
 
             <div className="ps-bar">
                 <div className="ps-bar-left">

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { I } from "../../layouts/ERPLayout";
+import { Term, SimpleHint } from "../components/simplemode";
 import AccountingCOA from "./Accounting";
 import JournalEntries from "./JournalEntries";
 import GeneralLedger from "./GeneralLedger";
@@ -9,6 +10,7 @@ import AccountsReceivable from "./AccountsReceivable";
 import TaxManagement from "./TaxManagement";
 import BankReconciliation from "./BankReconciliation";
 import FinancialReports from "./FinancialReports";
+import PeriodsView from "./periods";
 
 /* ================================================================
    HELPERS
@@ -53,6 +55,7 @@ function getTab(pathname) {
         "/accounting/tax":          "tax",
         "/accounting/bank":         "bank",
         "/accounting/reports":      "reports",
+        "/accounting/periods":      "periods",
     };
     return map[pathname] || "overview";
 }
@@ -100,12 +103,14 @@ function AccountingOverview({ nav }) {
     const openBills = bills.filter(b => ["Open", "Partial", "Overdue"].includes(b.status));
 
     return (<>
+        <SimpleHint icon="bulb">A quick snapshot of your business finances — cash on hand, money owed to you, and bills to pay.</SimpleHint>
+
         <div className="a-stats">
             {[
                 { label: "Cash Balance",        value: fmt(cashBalance),               icon: "banknote", color: "#2d9e8b" },
-                { label: "Accounts Receivable", value: fmt(ar.total_receivable),        icon: "peso",     color: "#0ea5e9" },
-                { label: "Accounts Payable",    value: fmt(ap.total_outstanding),       icon: "peso",     color: "#f59e0b" },
-                { label: "Net Income (YTD)",    value: fmt(netIncome),                  icon: "check",    color: netIncome >= 0 ? "#8b5cf6" : "#ef4444" },
+                { label: <Term simple="Money Owed to You" advanced="Accounts Receivable"/>, value: fmt(ar.total_receivable),  icon: "peso", color: "#0ea5e9" },
+                { label: <Term simple="Bills to Pay" advanced="Accounts Payable"/>,         value: fmt(ap.total_outstanding), icon: "peso", color: "#f59e0b" },
+                { label: <Term simple="Net Profit (this year)" advanced="Net Income (YTD)"/>, value: fmt(netIncome), icon: "check", color: netIncome >= 0 ? "#8b5cf6" : "#ef4444" },
             ].map((s, i) => (
                 <div key={i} className="a-st">
                     <div className="a-st-ic" style={{ background: s.color + "14", color: s.color }}><I name={s.icon} /></div>
@@ -119,19 +124,19 @@ function AccountingOverview({ nav }) {
             <div className="a-g-col">
                 {/* Recent Journal Entries */}
                 <div className="a-card">
-                    <div className="a-card-h"><h3 className="a-card-t">Recent Journal Entries</h3><span className="a-card-lk" onClick={() => nav("/accounting/journal")}>View all →</span></div>
+                    <div className="a-card-h"><h3 className="a-card-t"><Term simple="Recent Transactions" advanced="Recent Journal Entries"/></h3><span className="a-card-lk" onClick={() => nav("/accounting/journal")}>View all →</span></div>
                     {entries.length > 0 ? (
                         <div style={{ overflowX: "auto" }}><table className="a-tbl"><thead><tr><th>Entry #</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody>
                         {entries.slice(0, 5).map(e => (
                             <tr key={e.id}><td><span className="a-tbl-nm">{e.entry_number}</span></td><td>{d10(e.entry_date)}</td><td>{fmt(e.total_debit)}</td><td><span className={`a-badge ${e.status === "Posted" ? "a-b-done" : e.status === "Void" ? "a-b-due" : "a-b-pending"}`}>{e.status}</span></td></tr>
                         ))}
                         </tbody></table></div>
-                    ) : <Empty icon="inbox" title="No journal entries" desc="Post your first journal entry to get started." />}
+                    ) : <Empty icon="inbox" title={<Term simple="No transactions yet" advanced="No journal entries"/>} desc={<Term simple="Record your first transaction to get started." advanced="Post your first journal entry to get started."/>} />}
                 </div>
 
                 {/* Accounts by Type */}
                 <div className="a-card">
-                    <div className="a-card-h"><h3 className="a-card-t">Chart of Accounts</h3><span className="a-card-lk" onClick={() => nav("/accounting/coa")}>Manage →</span></div>
+                    <div className="a-card-h"><h3 className="a-card-t"><Term simple="Accounts" advanced="Chart of Accounts"/></h3><span className="a-card-lk" onClick={() => nav("/accounting/coa")}>Manage →</span></div>
                     {accountsByType.length > 0 ? (
                         <div className="a-type-grid">{accountsByType.map((t, i) => (
                             <div key={i} className="a-type" style={{ borderLeftColor: TYPE_COLORS[t.type] }}><div className="a-type-nm">{t.type}</div><div className="a-type-hd">{fmt(t.total)}</div><div className="a-type-ct">{t.count}<span>accounts</span></div></div>
@@ -155,7 +160,7 @@ function AccountingOverview({ nav }) {
             <div className="a-g-col">
                 {/* Outstanding Invoices */}
                 <div className="a-card">
-                    <div className="a-card-h"><h3 className="a-card-t">Outstanding Invoices</h3><span className="a-card-lk" onClick={() => nav("/accounting/receivables")}>View all</span></div>
+                    <div className="a-card-h"><h3 className="a-card-t"><Term simple="Money Owed to You" advanced="Outstanding Invoices"/></h3><span className="a-card-lk" onClick={() => nav("/accounting/receivables")}>View all</span></div>
                     {openInvoices.length > 0
                         ? openInvoices.slice(0, 5).map((iv, i) => (<div key={iv.id || i} className="a-row"><div className="a-row-info"><div className="a-row-nm">{iv.customer_name || "—"}</div><div className="a-row-meta">{iv.invoice_number} · due {d10(iv.due_date)}</div></div><div className="a-row-amt">{fmt(iv.balance_due)}</div></div>))
                         : <Empty icon="peso" title="No outstanding invoices" desc="Unpaid invoices will appear here." />
@@ -164,7 +169,7 @@ function AccountingOverview({ nav }) {
 
                 {/* Outstanding Bills */}
                 <div className="a-card">
-                    <div className="a-card-h"><h3 className="a-card-t">Outstanding Bills</h3><span className="a-card-lk" onClick={() => nav("/accounting/payables")}>View all</span></div>
+                    <div className="a-card-h"><h3 className="a-card-t"><Term simple="Bills to Pay" advanced="Outstanding Bills"/></h3><span className="a-card-lk" onClick={() => nav("/accounting/payables")}>View all</span></div>
                     {openBills.length > 0
                         ? openBills.slice(0, 5).map((b, i) => (<div key={b.id || i} className="a-row"><div className="a-row-info"><div className="a-row-nm">{b.vendor_name || "—"}</div><div className="a-row-meta">{b.bill_number} · due {d10(b.due_date)}</div></div><div className="a-row-amt a-row-amt-due">{fmt(b.balance_due)}</div></div>))
                         : <Empty icon="peso" title="No outstanding bills" desc="Unpaid bills will appear here." />
@@ -255,6 +260,7 @@ export default function AccountingDashboard() {
             {tab === "tax"          && <TaxManagement/>}
             {tab === "bank"         && <BankReconciliation/>}
             {tab === "reports"      && <FinancialReports/>}
+            {tab === "periods"      && <PeriodsView/>}
         </div>
     );
 }

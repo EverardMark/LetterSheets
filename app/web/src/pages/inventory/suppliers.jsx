@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
+import { Term, SimpleHint } from "../components/simplemode";
 import { api, Empty, initials, avColor } from "./shared";
 
 export default function Suppliers() {
@@ -31,6 +32,7 @@ export default function Suppliers() {
 
     return (<>
         {msg && <div className={`iv-flash ${msg.err ? "iv-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">The businesses you buy stock from — keep their contact details here.</SimpleHint>
         <div className="iv-bar">
             <div className="iv-search"><I name="search" size={14} /><input placeholder="Search suppliers..." value={search} onChange={e => setSearch(e.target.value)} /></div>
             <button className="iv-btn-p" onClick={() => setModal({ cat: { is_active: true } })}><I name="truck" size={13} /> Add Supplier</button>
@@ -69,7 +71,7 @@ function SupModal({ data, onClose, onSave, onDelete }) {
     const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
     const isEdit = !!form.id;
     return (
-        <Modal title={isEdit ? "Edit Supplier" : "Add Supplier"} subtitle="Inventory supplier details" onClose={onClose}>
+        <Modal title={isEdit ? "Edit Supplier" : "Add Supplier"} subtitle={<Term simple="Who you buy stock from" advanced="Inventory supplier details"/>} onClose={onClose}>
             <div className="iv-modal-scroll">
                 <div className="iv-f">
                     <div className="iv-field iv-f-full">

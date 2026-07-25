@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
+import { Term, AdvancedOnly, SimpleHint } from "../components/simplemode";
 import "./acc-layout.css";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
@@ -110,11 +111,19 @@ export default function AccountingTab() {
 
     const handleSave = async () => {
         if (!editAccount.code || !editAccount.name || !editAccount.account_type) return;
+        // Derive a normal balance if none was chosen. Simple mode hides this field
+        // (it's pure accountant jargon), so fall back to the standard convention —
+        // Assets and Expenses are Debit-normal, everything else Credit-normal —
+        // rather than letting a blank value reach the server.
+        const payload = { ...editAccount };
+        if (!payload.normal_balance) {
+            payload.normal_balance = ["Asset", "Expense"].includes(payload.account_type) ? "Debit" : "Credit";
+        }
         try {
-            if (editAccount.id) {
-                await api("update_account", editAccount);
+            if (payload.id) {
+                await api("update_account", payload);
             } else {
-                await api("create_account", editAccount);
+                await api("create_account", payload);
             }
             setShowModal(false);
             setEditAccount(null);
@@ -324,9 +333,11 @@ export default function AccountingTab() {
             {acct.account_subtype || acct.account_type}
           </span>
 
+                    <AdvancedOnly>
                     <span className="coa-normal" style={{ color: acct.normal_balance === "Debit" ? "#0ea5e9" : "#8b5cf6" }}>
             {acct.normal_balance === "Debit" ? "Dr" : "Cr"}
           </span>
+                    </AdvancedOnly>
 
                     {!acct.is_system && (
                         <div className="coa-actions">
@@ -373,10 +384,14 @@ export default function AccountingTab() {
                         </button>
                     )}
                     <button className="acc-btn-p" onClick={handleCreate}>
-                        <I name="plus" size={14}/> New Account
+                        <I name="plus" size={14}/> <Term simple="Add Account" advanced="New Account" />
                     </button>
                 </div>
             </div>
+
+            <SimpleHint icon="bulb">
+                This is your list of places money sits or flows — cash, sales, costs. Most people rarely change it.
+            </SimpleHint>
 
             {/* Main Content */}
             <div className="coa-main acc-fill">
@@ -389,15 +404,15 @@ export default function AccountingTab() {
                         <span className="coa-ch-name">Account Name</span>
                         <span className="coa-ch-bal">Balance</span>
                         <span className="coa-ch-type">Type</span>
-                        <span className="coa-ch-norm">N/B</span>
+                        <AdvancedOnly><span className="coa-ch-norm">N/B</span></AdvancedOnly>
                         <span className="coa-ch-act">Actions</span>
                     </div>
 
                     {accounts.length === 0 ? (
                         <div className="acc-empty">
                             <div className="acc-empty-ic"><I name="book-open" size={28}/></div>
-                            <div className="acc-empty-t">No Chart of Accounts</div>
-                            <div className="acc-empty-d">Set up your chart of accounts to start tracking finances.</div>
+                            <div className="acc-empty-t"><Term simple="No accounts yet" advanced="No Chart of Accounts" /></div>
+                            <div className="acc-empty-d"><Term simple="Set up your accounts to start tracking your money." advanced="Set up your chart of accounts to start tracking finances." /></div>
                             <button className="acc-btn-p" onClick={handleSeedDefaults} style={{ marginTop: 12 }}>
                                 <I name="play" size={14}/> Choose a Template
                             </button>
@@ -446,9 +461,11 @@ export default function AccountingTab() {
                 <span className="coa-type-chip" style={{ background: TYPE_COLORS[selected.account_type] + "18", color: TYPE_COLORS[selected.account_type] }}>
                   {selected.account_type}
                 </span>
+                                <AdvancedOnly>
                                 {selected.account_subtype && selected.account_subtype !== "Header" && (
                                     <span className="coa-panel-subtype">{selected.account_subtype}</span>
                                 )}
+                                </AdvancedOnly>
                                 <span className={`coa-panel-status ${selected.is_active ? "coa-active" : "coa-inactive"}`}>
                   {selected.is_active ? "Active" : "Inactive"}
                 </span>
@@ -461,11 +478,13 @@ export default function AccountingTab() {
                                 <div className="coa-panel-balance-val" style={{ color: selected.current_balance === 0 ? "#999" : selected.current_balance > 0 ? "#10b981" : "#ef4444" }}>
                                     {fmtMoney(Math.abs(selected.current_balance))}
                                 </div>
+                                <AdvancedOnly>
                                 <div className="coa-panel-balance-norm">
                                     Normal Balance: <strong style={{ color: selected.normal_balance === "Debit" ? "#0ea5e9" : "#8b5cf6" }}>
                                     {selected.normal_balance}
                                 </strong>
                                 </div>
+                                </AdvancedOnly>
                             </div>
 
                             {/* Details */}
@@ -474,12 +493,14 @@ export default function AccountingTab() {
                                     <span className="coa-detail-label">Currency</span>
                                     <span className="coa-detail-val">{selected.currency || "PHP"}</span>
                                 </div>
+                                <AdvancedOnly>
                                 {selected.parent_name && (
                                     <div className="coa-panel-detail">
                                         <span className="coa-detail-label">Parent Account</span>
                                         <span className="coa-detail-val">{selected.parent_code} {selected.parent_name}</span>
                                     </div>
                                 )}
+                                </AdvancedOnly>
                                 {selected.description && (
                                     <div className="coa-panel-detail">
                                         <span className="coa-detail-label">Description</span>
@@ -512,7 +533,7 @@ export default function AccountingTab() {
                 <div className="coa-modal-overlay" onClick={() => setShowModal(false)}>
                     <div className="coa-modal" onClick={e => e.stopPropagation()}>
                         <div className="coa-modal-header">
-                            <h3>{editAccount.id ? "Edit Account" : "New Account"}</h3>
+                            <h3>{editAccount.id ? "Edit Account" : <Term simple="Add Account" advanced="New Account" />}</h3>
                             <button className="coa-panel-close" onClick={() => setShowModal(false)}><I name="x" size={18}/></button>
                         </div>
                         <div className="coa-modal-body">
@@ -536,6 +557,7 @@ export default function AccountingTab() {
                                         {TYPES.slice(1).map(t => <option key={t} value={t}>{t}</option>)}
                                     </select>
                                 </div>
+                                <AdvancedOnly>
                                 <div className="acc-field">
                                     <label className="acc-label">Subtype</label>
                                     <select className="acc-input" value={editAccount.account_subtype} onChange={e => setEditAccount({ ...editAccount, account_subtype: e.target.value })}>
@@ -560,6 +582,7 @@ export default function AccountingTab() {
                                         ))}
                                     </select>
                                 </div>
+                                </AdvancedOnly>
 
                                 <div className="acc-field">
                                     <label className="acc-label">Currency</label>
@@ -604,7 +627,7 @@ export default function AccountingTab() {
                         {tplView === "list" && (<>
                             <div className="coa-modal-header">
                                 <div>
-                                    <h3>Chart of Accounts Templates</h3>
+                                    <h3><Term simple="Account Templates" advanced="Chart of Accounts Templates" /></h3>
                                     <p className="coa-modal-subhead">Select a template to apply, or edit to customize</p>
                                 </div>
                                 <div className="coa-modal-head-actions">

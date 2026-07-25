@@ -257,16 +257,16 @@ type CRMStageStat struct {
 
 // CRMOverview is the CRM dashboard rollup.
 type CRMOverview struct {
-	OpenCount      int            `json:"open_count"`
-	OpenValue      float64        `json:"open_value"`
-	WeightedValue  float64        `json:"weighted_value"`
-	WonCount       int            `json:"won_count"`
-	WonValue       float64        `json:"won_value"`
-	LostCount      int            `json:"lost_count"`
-	WinRate        float64        `json:"win_rate"`
-	NewLeads       int            `json:"new_leads"`
-	OverdueTasks   int            `json:"overdue_tasks"`
-	ByStage        []CRMStageStat `json:"by_stage"`
+	OpenCount     int            `json:"open_count"`
+	OpenValue     float64        `json:"open_value"`
+	WeightedValue float64        `json:"weighted_value"`
+	WonCount      int            `json:"won_count"`
+	WonValue      float64        `json:"won_value"`
+	LostCount     int            `json:"lost_count"`
+	WinRate       float64        `json:"win_rate"`
+	NewLeads      int            `json:"new_leads"`
+	OverdueTasks  int            `json:"overdue_tasks"`
+	ByStage       []CRMStageStat `json:"by_stage"`
 }
 
 // PayrollSettings represents company payroll configuration
@@ -2365,4 +2365,220 @@ type ReturnStats struct {
 	DraftMemos      int     `json:"draft_memos"`
 	OpenBalance     float64 `json:"open_balance"`
 	AmountThisMonth float64 `json:"amount_this_month"`
+}
+
+// ============================================================================
+// FISCAL PERIODS & YEAR-END CLOSE (migration 020)
+// ============================================================================
+
+// FiscalYear is one financial year plus the record of how it was closed.
+// ClosingJournalID/NetIncome are only set once Status is "Closed".
+type FiscalYear struct {
+	ID                        string         `json:"id"`
+	CompanyID                 string         `json:"company_id"`
+	Name                      string         `json:"name"`
+	StartDate                 string         `json:"start_date"`
+	EndDate                   string         `json:"end_date"`
+	Status                    string         `json:"status"` // Open | Closed
+	ClosingJournalID          string         `json:"closing_journal_id,omitempty"`
+	ClosingEntryNumber        int            `json:"closing_entry_number,omitempty"`
+	RetainedEarningsAccountID string         `json:"retained_earnings_account_id,omitempty"`
+	NetIncome                 *float64       `json:"net_income,omitempty"`
+	ClosedAt                  string         `json:"closed_at,omitempty"`
+	ClosedBy                  string         `json:"closed_by,omitempty"`
+	Notes                     string         `json:"notes,omitempty"`
+	CreatedAt                 string         `json:"created_at,omitempty"`
+	PeriodCount               int            `json:"period_count"`
+	OpenPeriodCount           int            `json:"open_period_count"`
+	Periods                   []FiscalPeriod `json:"periods,omitempty"`
+}
+
+// FiscalPeriod is one month/quarter inside a FiscalYear. Status is the thing the
+// GL guard reads: only "Open" permits a posting dated inside the range.
+type FiscalPeriod struct {
+	ID           string  `json:"id"`
+	CompanyID    string  `json:"company_id"`
+	FiscalYearID string  `json:"fiscal_year_id"`
+	PeriodNo     int     `json:"period_no"`
+	Name         string  `json:"name"`
+	StartDate    string  `json:"start_date"`
+	EndDate      string  `json:"end_date"`
+	Status       string  `json:"status"` // Open | Closed | Locked
+	ClosedAt     string  `json:"closed_at,omitempty"`
+	ClosedBy     string  `json:"closed_by,omitempty"`
+	EntryCount   int     `json:"entry_count"`  // posted journals dated in the period
+	DraftCount   int     `json:"draft_count"`  // drafts that would be stranded by a close
+	PostedDebit  float64 `json:"posted_debit"` // activity summary for the close review screen
+	PostedCredit float64 `json:"posted_credit"`
+}
+
+// AccountActivity is one account's posted movement over a date range — the raw
+// material for both the year-end closing entry and the close preview.
+type AccountActivity struct {
+	AccountID     string  `json:"account_id"`
+	Code          string  `json:"code"`
+	Name          string  `json:"name"`
+	AccountType   string  `json:"account_type"`
+	NormalBalance string  `json:"normal_balance"`
+	Debit         float64 `json:"debit"`
+	Credit        float64 `json:"credit"`
+	Balance       float64 `json:"balance"` // signed in the account's normal direction
+}
+
+// ClosePreview is what the UI shows before anyone commits a year-end close.
+type ClosePreview struct {
+	FiscalYear      *FiscalYear       `json:"fiscal_year"`
+	Revenue         []AccountActivity `json:"revenue"`
+	Expenses        []AccountActivity `json:"expenses"`
+	TotalRevenue    float64           `json:"total_revenue"`
+	TotalExpenses   float64           `json:"total_expenses"`
+	NetIncome       float64           `json:"net_income"`
+	DraftEntries    int               `json:"draft_entries"`
+	Warnings        []string          `json:"warnings"`
+	SuggestedEquity *Account          `json:"suggested_equity_account,omitempty"`
+}
+
+// ============================================================================
+// NOTIFICATIONS & EMAIL OUTBOX (migration 021)
+// ============================================================================
+
+type Notification struct {
+	ID         string `json:"id"`
+	CompanyID  string `json:"company_id"`
+	UserID     string `json:"user_id"`
+	Type       string `json:"type"`
+	Severity   string `json:"severity"`
+	Title      string `json:"title"`
+	Body       string `json:"body,omitempty"`
+	Link       string `json:"link,omitempty"`
+	EntityType string `json:"entity_type,omitempty"`
+	EntityID   string `json:"entity_id,omitempty"`
+	IsRead     bool   `json:"is_read"`
+	ReadAt     string `json:"read_at,omitempty"`
+	CreatedAt  string `json:"created_at,omitempty"`
+}
+
+// OutboxEmail is one queued message. Nothing is sent on the request path: the
+// sender writes Pending and the background worker drains the queue.
+type OutboxEmail struct {
+	ID         string `json:"id"`
+	CompanyID  string `json:"company_id"`
+	ToEmail    string `json:"to_email"`
+	ToName     string `json:"to_name,omitempty"`
+	CCEmail    string `json:"cc_email,omitempty"`
+	Subject    string `json:"subject"`
+	BodyText   string `json:"body_text,omitempty"`
+	BodyHTML   string `json:"body_html,omitempty"`
+	Status     string `json:"status"` // Pending | Sent | Failed | Cancelled
+	Attempts   int    `json:"attempts"`
+	LastError  string `json:"last_error,omitempty"`
+	NextTryAt  string `json:"next_try_at,omitempty"`
+	SentAt     string `json:"sent_at,omitempty"`
+	EntityType string `json:"entity_type,omitempty"`
+	EntityID   string `json:"entity_id,omitempty"`
+	CreatedBy  string `json:"created_by,omitempty"`
+	CreatedAt  string `json:"created_at,omitempty"`
+}
+
+// ============================================================================
+// EXPENSE CLAIMS (migration 022)
+// ============================================================================
+
+type ExpenseCategory struct {
+	ID          string   `json:"id"`
+	CompanyID   string   `json:"company_id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	AccountID   string   `json:"account_id,omitempty"`
+	AccountCode string   `json:"account_code,omitempty"`
+	AccountName string   `json:"account_name,omitempty"`
+	DailyCap    *float64 `json:"daily_cap,omitempty"`
+	IsActive    bool     `json:"is_active"`
+	ClaimCount  int      `json:"claim_count"`
+}
+
+type ExpenseClaim struct {
+	ID               string             `json:"id"`
+	CompanyID        string             `json:"company_id"`
+	ClaimNumber      int                `json:"claim_number"`
+	EmployeeID       string             `json:"employee_id"`
+	EmployeeName     string             `json:"employee_name,omitempty"`
+	Title            string             `json:"title"`
+	Purpose          string             `json:"purpose,omitempty"`
+	ClaimDate        string             `json:"claim_date"`
+	PeriodStart      string             `json:"period_start,omitempty"`
+	PeriodEnd        string             `json:"period_end,omitempty"`
+	Status           string             `json:"status"`
+	Subtotal         float64            `json:"subtotal"`
+	TaxTotal         float64            `json:"tax_total"`
+	TotalAmount      float64            `json:"total_amount"`
+	PaymentMethod    string             `json:"payment_method"`
+	SubmittedAt      string             `json:"submitted_at,omitempty"`
+	ApprovedAt       string             `json:"approved_at,omitempty"`
+	ApprovedBy       string             `json:"approved_by,omitempty"`
+	RejectedAt       string             `json:"rejected_at,omitempty"`
+	RejectReason     string             `json:"reject_reason,omitempty"`
+	PaidAt           string             `json:"paid_at,omitempty"`
+	PaymentReference string             `json:"payment_reference,omitempty"`
+	PaymentAccountID string             `json:"payment_account_id,omitempty"`
+	AccrualJournalID string             `json:"accrual_journal_id,omitempty"`
+	PaymentJournalID string             `json:"payment_journal_id,omitempty"`
+	Notes            string             `json:"notes,omitempty"`
+	LineCount        int                `json:"line_count"`
+	ReceiptCount     int                `json:"receipt_count"`
+	CreatedAt        string             `json:"created_at,omitempty"`
+	UpdatedAt        string             `json:"updated_at,omitempty"`
+	Lines            []ExpenseClaimLine `json:"lines,omitempty"`
+	Receipts         []ExpenseReceipt   `json:"receipts,omitempty"`
+}
+
+type ExpenseClaimLine struct {
+	ID           string  `json:"id"`
+	ClaimID      string  `json:"claim_id"`
+	CompanyID    string  `json:"company_id"`
+	ExpenseDate  string  `json:"expense_date"`
+	CategoryID   string  `json:"category_id,omitempty"`
+	CategoryName string  `json:"category_name,omitempty"`
+	AccountID    string  `json:"account_id"`
+	AccountCode  string  `json:"account_code,omitempty"`
+	AccountName  string  `json:"account_name,omitempty"`
+	Description  string  `json:"description"`
+	Merchant     string  `json:"merchant,omitempty"`
+	ReceiptNo    string  `json:"receipt_no,omitempty"`
+	Amount       float64 `json:"amount"`
+	TaxAmount    float64 `json:"tax_amount"`
+	LineOrder    int     `json:"line_order"`
+}
+
+type ExpenseReceipt struct {
+	ID             string `json:"id"`
+	CompanyID      string `json:"company_id"`
+	ClaimID        string `json:"claim_id"`
+	LineID         string `json:"line_id,omitempty"`
+	FileName       string `json:"file_name"`
+	MimeType       string `json:"mime_type"`
+	FileSize       int    `json:"file_size"`
+	UploadedBy     string `json:"uploaded_by,omitempty"`
+	UploadedByName string `json:"uploaded_by_name,omitempty"`
+	CreatedAt      string `json:"created_at,omitempty"`
+}
+
+type ExpenseSettings struct {
+	CompanyID                string   `json:"company_id"`
+	EmployeePayableAccountID string   `json:"employee_payable_account_id,omitempty"`
+	DefaultCashAccountID     string   `json:"default_cash_account_id,omitempty"`
+	TaxInputAccountID        string   `json:"tax_input_account_id,omitempty"`
+	AutoPostGL               bool     `json:"auto_post_gl"`
+	RequireReceipt           bool     `json:"require_receipt"`
+	RequireApproval          bool     `json:"require_approval"`
+	ApprovalThreshold        *float64 `json:"approval_threshold,omitempty"`
+}
+
+type ExpenseStats struct {
+	TotalClaims     int     `json:"total_claims"`
+	PendingApproval int     `json:"pending_approval"`
+	AwaitingPayment int     `json:"awaiting_payment"`
+	PendingAmount   float64 `json:"pending_amount"`
+	PayableAmount   float64 `json:"payable_amount"`
+	PaidThisMonth   float64 `json:"paid_this_month"`
 }

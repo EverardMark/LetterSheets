@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { I } from "../../layouts/ERPLayout";
+import { Term, SimpleHint } from "../components/simplemode";
 import "./acc-layout.css";
 
 const API = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
@@ -126,12 +127,13 @@ export default function AccountsReceivable() {
                 </div>
                 <div className="acc-bar-right">
                     <button className="acc-btn-s" onClick={() => setView("customers")}><I name="users" size={14}/> Customers</button>
-                    <button className="acc-btn-s" onClick={loadAging}><I name="clock" size={14}/> Aging</button>
+                    <button className="acc-btn-s" onClick={loadAging}><I name="clock" size={14}/> <Term simple="Overdue" advanced="Aging" /></button>
                     <button className="acc-btn-p" onClick={() => openInvForm(null)}><I name="plus" size={14}/> New Invoice</button>
                 </div>
             </div>
+            <SimpleHint icon="bulb">Invoices you've sent customers. Track who still owes you and mark them paid when the money comes in.</SimpleHint>
             {loading ? <div className="acc-empty"><div className="acc-loading"/><div className="acc-empty-t">Loading...</div></div> : filtered.length === 0 ? (
-                <div className="acc-empty"><div className="acc-empty-ic"><I name="inbox" size={28}/></div><div className="acc-empty-t">No invoices</div><div className="acc-empty-d">Create an invoice to start tracking receivables.</div></div>
+                <div className="acc-empty"><div className="acc-empty-ic"><I name="inbox" size={28}/></div><div className="acc-empty-t">No invoices</div><div className="acc-empty-d"><Term simple="Create an invoice to start tracking who owes you." advanced="Create an invoice to start tracking receivables." /></div></div>
             ) : (
                 <div className="acc-tbl-wrap">
                     <table className="acc-tbl"><thead><tr><th>Invoice #</th><th>Customer</th><th>Date</th><th>Due</th><th>Status</th><th className="acc-right">Total</th><th className="acc-right">Balance</th></tr></thead>
@@ -233,10 +235,10 @@ export default function AccountsReceivable() {
                     <div className="ar-inv-fld"><label className="acc-label">Due Date</label><input className="acc-input" type="date" value={f.due_date} onChange={e => set("due_date", e.target.value)}/></div>
                 </div>
                 <div className="acc-field ar-memo"><label className="acc-label">Memo</label><input className="acc-input" value={f.memo} onChange={e => set("memo", e.target.value)}/></div>
-                <div className="acc-sec-title">Line Items</div>
+                <div className="acc-sec-title"><Term simple="Items" advanced="Line Items" /></div>
                 <div className="acc-tbl-wrap">
                     <table className="acc-tbl ar-items-tbl"><thead><tr>
-                        <th className="ar-w-acct">Revenue Account</th><th className="ar-w-desc">Description</th><th className="acc-right ar-w-qty">Qty</th><th className="acc-right ar-w-price">Price</th><th className="acc-right ar-w-tax">Tax %</th><th className="acc-right ar-w-total">Total</th><th className="ar-w-x"></th>
+                        <th className="ar-w-acct"><Term simple="Income account" advanced="Revenue Account"/></th><th className="ar-w-desc">Description</th><th className="acc-right ar-w-qty">Qty</th><th className="acc-right ar-w-price">Price</th><th className="acc-right ar-w-tax">Tax %</th><th className="acc-right ar-w-total">Total</th><th className="ar-w-x"></th>
                     </tr></thead><tbody>
                     {invItems.map((item, i) => (<tr key={i}>
                         <td><select className="acc-input ar-item-inp" value={item.account_id} onChange={e => updateItem(i, "account_id", e.target.value)}><option value="">Select...</option>{accounts.filter(a => a.account_type === "Revenue" || a.account_type === "Asset").map(a => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}</select></td>
@@ -282,7 +284,7 @@ export default function AccountsReceivable() {
             </div>
             {d.memo && <div className="ar-memo-box">{d.memo}</div>}
             <div className="acc-card">
-                <div className="acc-sec-title">Line Items</div>
+                <div className="acc-sec-title"><Term simple="Items" advanced="Line Items" /></div>
                 <div className="acc-tbl-wrap">
                     <table className="acc-tbl"><thead><tr><th>Account</th><th>Description</th><th className="acc-right">Qty</th><th className="acc-right">Price</th><th className="acc-right">Tax</th><th className="acc-right">Total</th></tr></thead>
                         <tbody>
@@ -329,11 +331,11 @@ export default function AccountsReceivable() {
             <div className="acc-bar">
                 <div className="acc-bar-left">
                     <button className="ar-back" onClick={() => setView("invoices")}><I name="arrow-left" size={16}/></button>
-                    <div className="acc-title">AR Aging Report</div>
+                    <div className="acc-title"><Term simple="Overdue" advanced="AR Aging Report" /></div>
                 </div>
             </div>
             {aging.length === 0 ? (
-                <div className="acc-empty"><div className="acc-empty-ic"><I name="inbox" size={28}/></div><div className="acc-empty-t">No outstanding receivables</div><div className="acc-empty-d">All invoices are settled.</div></div>
+                <div className="acc-empty"><div className="acc-empty-ic"><I name="inbox" size={28}/></div><div className="acc-empty-t"><Term simple="Nobody owes you" advanced="No outstanding receivables" /></div><div className="acc-empty-d"><Term simple="Every invoice has been paid." advanced="All invoices are settled." /></div></div>
             ) : (
                 <div className="acc-tbl-wrap">
                     <table className="acc-tbl"><thead><tr><th>Customer</th><th>Invoices</th><th className="acc-right">Current</th><th className="acc-right">1-30</th><th className="acc-right">31-60</th><th className="acc-right">61-90</th><th className="acc-right ar-th-over">90+</th><th className="acc-right">Total</th></tr></thead>

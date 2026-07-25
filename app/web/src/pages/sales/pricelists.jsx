@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import { api, Empty, peso, d10 } from "./shared";
+import { SimpleHint } from "../components/simplemode";
 
 export default function PriceLists() {
     const [rows, setRows] = useState([]);
@@ -34,6 +35,7 @@ export default function PriceLists() {
 
     return (<>
         {msg && <div className={`so-flash ${msg.err ? "so-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">Set special prices for certain customers or bulk buyers here, instead of the standard price.</SimpleHint>
         <div className="so-bar">
             <div className="so-bar-l"><span style={{ fontSize: 13, color: "#888" }}>{rows.length} price list(s)</span></div>
             <button className="so-btn-p" onClick={() => setModal({ pl: { is_active: true } })}><I name="tags" size={13} /> Add Price List</button>

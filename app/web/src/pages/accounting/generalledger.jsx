@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { I } from "../../layouts/ERPLayout";
+import { Term, AdvancedOnly, SimpleHint } from "../components/simplemode";
 import "./acc-layout.css";
 
 const API = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
@@ -168,7 +169,8 @@ export default function GeneralLedger() {
                             {acctDetail.name}
                         </div>
                         <div className="acc-subtitle">
-                            {acctDetail.account_type} &middot; {acctDetail.account_subtype} &middot; Normal: {acctDetail.normal_balance}
+                            {acctDetail.account_type}
+                            <AdvancedOnly> &middot; {acctDetail.account_subtype} &middot; Normal: {acctDetail.normal_balance}</AdvancedOnly>
                             {dateFrom && <span> &middot; {dateFrom} to {dateTo}</span>}
                         </div>
                     </div>
@@ -265,6 +267,10 @@ export default function GeneralLedger() {
     /* ===== TRIAL BALANCE VIEW (DEFAULT) ===== */
     return (
         <div className="acc-wrap">
+            <SimpleHint icon="bulb">
+                Every account and what's flowed through it. The balance check makes sure everything adds up.
+            </SimpleHint>
+
             {/* Type breakdown bar */}
             {typeSummary.length > 0 && (
                 <div className="gl-type-bar">
@@ -305,14 +311,15 @@ export default function GeneralLedger() {
             </div>
 
             {/* Trial Balance Table */}
+            <div className="acc-title" style={{ marginBottom: 10 }}><Term simple="Balance Check" advanced="Trial Balance" /></div>
             <div className="acc-tbl-wrap">
                 {loading ? (
                     <div className="acc-empty"><div className="acc-loading" /></div>
                 ) : grouped.length === 0 ? (
                     <div className="acc-empty">
                         <div className="acc-empty-ic"><I name="inbox" size={28}/></div>
-                        <div className="acc-empty-t">No ledger activity for this period</div>
-                        <div className="acc-empty-d">Post journal entries to see data here</div>
+                        <div className="acc-empty-t"><Term simple="No account activity for this period" advanced="No ledger activity for this period" /></div>
+                        <div className="acc-empty-d"><Term simple="Record some transactions to see data here" advanced="Post journal entries to see data here" /></div>
                     </div>
                 ) : (
                     <table className="acc-tbl">

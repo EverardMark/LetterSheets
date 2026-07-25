@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import HistoryTab, { canViewHistory } from "../components/HistoryTab";
+import { SimpleHint } from "../components/simplemode";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 
@@ -139,6 +140,7 @@ export default function LeaveTab({ employees = [] }) {
     });
 
     return (<>
+        <SimpleHint icon="bulb">Time-off requests — approve or decline them here.</SimpleHint>
         {/* Bar */}
         <div className="lv-bar">
             <div className="lv-bar-left">

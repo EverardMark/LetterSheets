@@ -4,6 +4,7 @@ import {
     api, peso, fmtDate, Empty, OPEN_STAGES, ALL_STAGES, STAGE_COLOR,
     ACTIVITY_TYPES, ACTIVITY_ICON,
 } from "./shared";
+import { Term, SimpleHint } from "../components/simplemode";
 
 export default function PipelineView() {
     const [opps, setOpps] = useState([]);
@@ -27,13 +28,14 @@ export default function PipelineView() {
     const stageSum = (st) => byStage(st).reduce((s, o) => s + Number(o.amount || 0), 0);
 
     return (<>
+        <SimpleHint icon="bulb">Your active deals, grouped by how close they are to closing.</SimpleHint>
         <div className="crm-bar">
             <span className="crm-bar-count">{opps.filter(o => OPEN_STAGES.includes(o.stage)).length} open · {opps.length} total</span>
-            <button className="crm-btn-p" onClick={() => setCreating(true)}><I name="plus" size={14} /> New Opportunity</button>
+            <button className="crm-btn-p" onClick={() => setCreating(true)}><I name="plus" size={14} /> <Term simple="New Deal" advanced="New Opportunity" /></button>
         </div>
 
         {loading ? null : opps.length === 0 ? (
-            <Empty icon="chart" title="No opportunities yet" desc="Add a deal or convert a lead to build your pipeline." action="New Opportunity" onAction={() => setCreating(true)} />
+            <Empty icon="chart" title={<Term simple="No deals yet" advanced="No opportunities yet" />} desc={<Term simple="Add a deal or convert a lead to get started." advanced="Add a deal or convert a lead to build your pipeline." />} action={<Term simple="New Deal" advanced="New Opportunity" />} onAction={() => setCreating(true)} />
         ) : (
             <div className="crm-board">
                 {OPEN_STAGES.map(st => {
@@ -271,13 +273,13 @@ function NewOppModal({ customers, existing, onClose, onSaved }) {
         <div className="crm-modal-bg" onClick={onClose} />
         <div className="crm-modal">
             <div className="crm-modal-h">
-                <div className="crm-modal-t">{isEdit ? "Edit Opportunity" : "New Opportunity"}</div>
+                <div className="crm-modal-t">{isEdit ? <Term simple="Edit Deal" advanced="Edit Opportunity" /> : <Term simple="New Deal" advanced="New Opportunity" />}</div>
                 <button className="crm-x" onClick={onClose}><I name="x" size={16} /></button>
             </div>
             <div className="crm-modal-body">
                 {err && <div className="crm-err">{err}</div>}
                 <div className="crm-fld"><label className="crm-lbl">Deal name *</label><input className="crm-inp" value={f.name} onChange={e => set("name", e.target.value)} autoFocus /></div>
-                <div className="crm-fld"><label className="crm-lbl">Customer account *</label>
+                <div className="crm-fld"><label className="crm-lbl"><Term simple="Customer" advanced="Customer account" /> *</label>
                     <select className="crm-sel" value={f.customer_id} onChange={e => set("customer_id", e.target.value)}>
                         <option value="">Select a customer…</option>
                         {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}

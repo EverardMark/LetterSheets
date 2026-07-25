@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
+import { Term, SimpleHint } from "../components/simplemode";
+import { useIsSimple } from "../../utils/uimode";
 import { api, Empty, num, peso, d10, MOVE_META } from "./shared";
 
 export default function Movements() {
+    const simple = useIsSimple();
     const [rows, setRows] = useState([]);
     const [products, setProducts] = useState([]);
     const [warehouses, setWarehouses] = useState([]);
@@ -51,6 +54,7 @@ export default function Movements() {
 
     return (<>
         {msg && <div className={`iv-flash ${msg.err ? "iv-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">Every time stock comes in or goes out.</SimpleHint>
         <div className="iv-bar">
             <div className="iv-bar-l">
                 <select className="iv-sel" value={fType} onChange={e => setFType(e.target.value)}>
@@ -62,24 +66,24 @@ export default function Movements() {
                     <option value="transfer_out">Transfer Out</option>
                 </select>
                 <select className="iv-sel" value={fWh} onChange={e => setFWh(e.target.value)}>
-                    <option value="">All warehouses</option>
+                    <option value="">{simple ? "All storage locations" : "All warehouses"}</option>
                     {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
                 </select>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
                 <button className="iv-btn-s" disabled={noWh} onClick={() => setModal("transfer")}><I name="truck" size={13} /> Transfer</button>
-                <button className="iv-btn-p" disabled={noWh} onClick={() => setModal("record")}><I name="scroll" size={13} /> Record Movement</button>
+                <button className="iv-btn-p" disabled={noWh} onClick={() => setModal("record")}><I name="scroll" size={13} /> <Term simple="Record Stock In/Out" advanced="Record Movement"/></button>
             </div>
         </div>
 
-        {noWh && <div className="iv-flash iv-flash-err">Add a warehouse first — stock movements need a location.</div>}
+        {noWh && <div className="iv-flash iv-flash-err"><Term simple="Add a storage location first — stock always lives somewhere." advanced="Add a warehouse first — stock movements need a location."/></div>}
 
         {rows.length === 0 ? (
-            <Empty icon="scroll" title="No movements yet" desc="Record stock-ins, stock-outs and adjustments to build the ledger." />
+            <Empty icon="scroll" title={<Term simple="No stock in or out yet" advanced="No movements yet"/>} desc={<Term simple="Record stock coming in or going out and it'll show up here." advanced="Record stock-ins, stock-outs and adjustments to build the ledger."/>} />
         ) : (
             <div className="iv-tblwrap">
                 <table className="iv-tbl">
-                    <thead><tr><th>Date</th><th>Product</th><th>Type</th><th>Warehouse</th><th className="iv-tbl-r">Qty</th><th className="iv-tbl-r">Balance</th><th>Reference</th></tr></thead>
+                    <thead><tr><th>Date</th><th>Product</th><th>Type</th><th><Term simple="Storage Location" advanced="Warehouse"/></th><th className="iv-tbl-r">Qty</th><th className="iv-tbl-r">Balance</th><th>Reference</th></tr></thead>
                     <tbody>
                         {rows.map(m => {
                             const meta = MOVE_META[m.movement_type] || { label: m.movement_type, badge: "iv-b-gray", color: "#999" };
@@ -115,7 +119,7 @@ function RecordModal({ products, warehouses, onClose, onSave }) {
     const valid = form.product_id && form.warehouse_id && Number(form.quantity) !== 0;
 
     return (
-        <Modal title="Record Stock Movement" subtitle="Add, remove or adjust stock" onClose={onClose}>
+        <Modal title={<Term simple="Record Stock In/Out" advanced="Record Stock Movement"/>} subtitle="Add, remove or adjust stock" onClose={onClose}>
             <div className="iv-modal-scroll">
                 <div className="iv-seg" style={{ marginBottom: 16 }}>
                     {[["in", "Stock In"], ["out", "Stock Out"], ["adjust", "Adjustment"]].map(([v, l]) => (
@@ -131,7 +135,7 @@ function RecordModal({ products, warehouses, onClose, onSave }) {
                         </select>
                     </div>
                     <div className="iv-field">
-                        <label className="iv-label">Warehouse <span className="iv-req" /></label>
+                        <label className="iv-label"><Term simple="Storage Location" advanced="Warehouse"/> <span className="iv-req" /></label>
                         <select className="iv-fsel" value={form.warehouse_id || ""} onChange={e => set("warehouse_id", e.target.value)}>
                             <option value="">— Select —</option>
                             {warehouses.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}
@@ -144,9 +148,9 @@ function RecordModal({ products, warehouses, onClose, onSave }) {
                     </div>
                     {form.movement_type === "in" && (
                         <div className="iv-field iv-f-full">
-                            <label className="iv-label">Unit Cost (₱)</label>
+                            <label className="iv-label"><Term simple="Cost (₱)" advanced="Unit Cost (₱)"/></label>
                             <input className="iv-input" type="number" step="0.01" min="0" value={form.unit_cost ?? (prod?.cost_price ?? "")} onChange={e => set("unit_cost", e.target.value)} placeholder="0.00" />
-                            <span className="iv-hint">Used for accounting postings; defaults to the product cost.</span>
+                            <span className="iv-hint"><Term simple="Defaults to the product's cost." advanced="Used for accounting postings; defaults to the product cost."/></span>
                         </div>
                     )}
                     <div className="iv-field iv-f-full">
@@ -174,7 +178,7 @@ function TransferModal({ products, warehouses, onClose, onSave }) {
         && form.from_warehouse_id !== form.to_warehouse_id && Number(form.quantity) > 0;
 
     return (
-        <Modal title="Transfer Stock" subtitle="Move stock between warehouses" onClose={onClose}>
+        <Modal title="Transfer Stock" subtitle={<Term simple="Move stock between locations" advanced="Move stock between warehouses"/>} onClose={onClose}>
             <div className="iv-modal-scroll">
                 <div className="iv-f">
                     <div className="iv-field iv-f-full">

@@ -10,6 +10,7 @@ import FixedAssets from "./pages/fixedassets/Dashboard";
 import Sales from "./pages/sales/Dashboard";
 import Procurement from "./pages/procurement/Dashboard";
 import CRM from "./pages/crm/Dashboard";
+import Expenses from "./pages/expenses/Dashboard";
 import Settings from "./pages/settings/settings.jsx";
 
 export default function App() {
@@ -51,6 +52,7 @@ export default function App() {
                     <Route path="/accounting/tax" element={<Accounting />} />
                     <Route path="/accounting/bank" element={<Accounting />} />
                     <Route path="/accounting/reports" element={<Accounting />} />
+                    <Route path="/accounting/periods" element={<Accounting />} />
 
                     {/* Ticketing */}
                     <Route path="/ticketing" element={<Ticketing />} />
@@ -88,6 +90,12 @@ export default function App() {
                     <Route path="/sales/settings" element={<Sales />} />
 
                     {/* CRM */}
+                    {/* Expenses — employee reimbursement claims */}
+                    <Route path="/expenses" element={<Expenses />} />
+                    <Route path="/expenses/claims" element={<Expenses />} />
+                    <Route path="/expenses/categories" element={<Expenses />} />
+                    <Route path="/expenses/settings" element={<Expenses />} />
+
                     <Route path="/crm" element={<CRM />} />
                     <Route path="/crm/leads" element={<CRM />} />
                     <Route path="/crm/pipeline" element={<CRM />} />

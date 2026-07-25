@@ -1,9 +1,11 @@
 import { peso } from "./shared";
+import { useIsSimple } from "../../utils/uimode";
 
 /* Editable PO line-item grid. Each line:
    {product_id, description, quantity, unit_price, discount_pct, tax_rate, expense_account_id}
    Stock lines pick a product; non-stock/service lines use free text + an expense account. */
 export default function LineGrid({ products, accounts, lines, setLines }) {
+    const simple = useIsSimple();
     const expenseAccts = (accounts || []).filter(a => ["Expense", "Asset", "Cost of Goods Sold"].includes(a.account_type));
     const upd = (i, k, v) => setLines(ls => ls.map((l, j) => j === i ? { ...l, [k]: v } : l));
     const pick = (i, pid) => {
@@ -35,7 +37,7 @@ export default function LineGrid({ products, accounts, lines, setLines }) {
                                     {!l.product_id && <>
                                         <input className="pr-input" style={{ marginTop: 4 }} placeholder="Description" value={l.description || ""} onChange={e => upd(i, "description", e.target.value)} />
                                         <select className="pr-fsel" style={{ marginTop: 4, width: "100%" }} value={l.expense_account_id || ""} onChange={e => upd(i, "expense_account_id", e.target.value)}>
-                                            <option value="">— Expense account (uses default) —</option>
+                                            <option value="">{simple ? "— Spending category (uses default) —" : "— Expense account (uses default) —"}</option>
                                             {expenseAccts.map(a => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
                                         </select>
                                     </>}

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import HistoryTab, { canViewHistory } from "../components/HistoryTab";
+import { SimpleHint } from "../components/simplemode";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 
@@ -123,6 +124,7 @@ export default function AttendanceTab({ employees = [] }) {
     });
 
     return (<div className="at-wrap">
+        <SimpleHint icon="bulb">Clock-ins and hours worked — see who came in and when.</SimpleHint>
         {/* Bar */}
         <div className="at-bar">
             <div className="at-bar-left">

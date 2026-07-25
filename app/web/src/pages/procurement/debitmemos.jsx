@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import { api, Empty, peso, num, d10 } from "./shared";
+import { Term, SimpleHint } from "../components/simplemode";
+import { useIsSimple } from "../../utils/uimode";
 
 const DM_BADGE = { Draft: "pr-b-gray", Open: "pr-b-blue", Applied: "pr-b-green", Refunded: "pr-b-purple", Voided: "pr-b-red" };
 
@@ -26,6 +28,7 @@ export default function DebitMemos() {
 
     return (<>
         {msg && <div className={`pr-flash ${msg.err ? "pr-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">When you send goods back to a supplier, record the credit they owe you here.</SimpleHint>
         <div className="pr-bar">
             <div className="pr-bar-l">
                 <select className="pr-sel" value={status} onChange={e => setStatus(e.target.value)}>
@@ -33,16 +36,16 @@ export default function DebitMemos() {
                     {["Draft", "Open", "Applied", "Refunded", "Voided"].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
             </div>
-            <button className="pr-btn-p" disabled={orders.length === 0} onClick={() => setModal({ id: null })}><I name="file" size={13} /> New Debit Memo</button>
+            <button className="pr-btn-p" disabled={orders.length === 0} onClick={() => setModal({ id: null })}><I name="file" size={13} /> <Term simple="New Supplier Credit" advanced="New Debit Memo" /></button>
         </div>
-        {orders.length === 0 && <div className="pr-flash pr-flash-err">Debit memos are raised against a billed purchase order — none available yet.</div>}
+        {orders.length === 0 && <div className="pr-flash pr-flash-err"><Term simple="Supplier credits are raised against a billed purchase order — none available yet." advanced="Debit memos are raised against a billed purchase order — none available yet." /></div>}
 
         {rows.length === 0 ? (
-            <Empty icon="file" title={status ? "No matching debit memos" : "No debit memos"} desc="Return goods to a vendor; ship stock back and reverse the payable & GR/IR." action={status || orders.length === 0 ? null : "New debit memo"} onAction={() => setModal({ id: null })} />
+            <Empty icon="file" title={status ? <Term simple="No matching supplier credits" advanced="No matching debit memos" /> : <Term simple="No supplier credits" advanced="No debit memos" />} desc={<Term simple="Send goods back to a supplier and record the credit they owe you." advanced="Return goods to a vendor; ship stock back and reverse the payable & GR/IR." />} action={status || orders.length === 0 ? null : <Term simple="New supplier credit" advanced="New debit memo" />} onAction={() => setModal({ id: null })} />
         ) : (
             <div className="pr-tblwrap pr-tbl-click">
                 <table className="pr-tbl">
-                    <thead><tr><th>Memo</th><th>Vendor</th><th>PO</th><th className="pr-tbl-r">Total</th><th className="pr-tbl-r">Open Debit</th><th>Status</th></tr></thead>
+                    <thead><tr><th><Term simple="Credit" advanced="Memo" /></th><th><Term simple="Supplier" advanced="Vendor" /></th><th>PO</th><th className="pr-tbl-r">Total</th><th className="pr-tbl-r">Open Debit</th><th>Status</th></tr></thead>
                     <tbody>
                         {rows.map(m => (
                             <tr key={m.id} onClick={() => setModal({ id: m.id })}>
@@ -77,6 +80,7 @@ function MemoModal({ id, orders, accounts, onClose, flash }) {
         try { const d = await api("get_debit_memo", { id }); setM(d); } catch (e) { flash(e.message, true); }
     }, [id, isNew, flash]);
     useEffect(() => { load(); }, [load]);
+    const simple = useIsSimple();
 
     const pickOrder = async (oid) => {
         setOrderId(oid); setBillId(""); setBills([]);
@@ -124,7 +128,7 @@ function MemoModal({ id, orders, accounts, onClose, flash }) {
 
     if (isNew) {
         return (
-            <Modal title="New Debit Memo" subtitle="Return goods against a billed PO" onClose={onClose}>
+            <Modal title={<Term simple="New Supplier Credit" advanced="New Debit Memo" />} subtitle={<Term simple="Send goods back to a supplier and get credit" advanced="Return goods against a billed PO" />} onClose={onClose}>
                 <div className="pr-modal-scroll">
                     <div className="pr-f" style={{ marginBottom: 12 }}>
                         <div className="pr-field"><label className="pr-label">Purchase Order <span className="pr-req" /></label>
@@ -135,7 +139,7 @@ function MemoModal({ id, orders, accounts, onClose, flash }) {
                         </div>
                         <div className="pr-field"><label className="pr-label">Credit against Bill</label>
                             <select className="pr-fsel" value={billId} onChange={e => setBillId(e.target.value)} disabled={bills.length === 0}>
-                                <option value="">— None (open vendor credit) —</option>
+                                <option value="">{simple ? "— None (open supplier credit) —" : "— None (open vendor credit) —"}</option>
                                 {bills.map(b => <option key={b.id} value={b.id}>{b.bill_number} · bal {peso(b.balance_due)}</option>)}
                             </select>
                         </div>
@@ -175,7 +179,7 @@ function MemoModal({ id, orders, accounts, onClose, flash }) {
                     <div className="pr-field"><label className="pr-label">PO</label><div className="pr-ro">PO-{String(m.po_number).padStart(4, "0")}</div></div>
                     <div className="pr-field"><label className="pr-label">Date</label><div className="pr-ro">{d10(m.memo_date)}</div></div>
                     <div className="pr-field"><label className="pr-label">Total</label><div className="pr-ro">{peso(m.total_amount)}</div></div>
-                    <div className="pr-field"><label className="pr-label">Open Debit</label><div className="pr-ro">{peso(m.balance_debit)}</div></div>
+                    <div className="pr-field"><label className="pr-label"><Term simple="Credit left" advanced="Open Debit" /></label><div className="pr-ro">{peso(m.balance_debit)}</div></div>
                 </div>
                 {m.reason && <div className="pr-hint" style={{ marginBottom: 8 }}>{m.reason}</div>}
                 <div className="pr-tblwrap">
@@ -207,7 +211,7 @@ function MemoModal({ id, orders, accounts, onClose, flash }) {
             <div className="pr-modal-foot" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {m.status === "Draft" && <button className="pr-btn-danger" onClick={async () => { try { await api("delete_debit_memo", { id }); flash("Deleted"); onClose(); } catch (e) { flash(e.message, true); } }}>Delete</button>}
-                    {m.status === "Draft" && <button className="pr-btn-p" onClick={post}>Post</button>}
+                    {m.status === "Draft" && <button className="pr-btn-p" onClick={post}><Term simple="Record" advanced="Post" /></button>}
                     {m.status === "Open" && m.bill_id && <button className="pr-btn-p" onClick={applyToBill}>Apply to Bill</button>}
                     {m.status === "Open" && m.balance_debit > 0 && <button className="pr-btn-s" onClick={() => setRefundOpen(v => !v)}>Refund…</button>}
                     {["Open", "Applied"].includes(m.status) && <button className="pr-btn-s" onClick={() => act("void_debit_memo", {}, "Voided")}>Void</button>}

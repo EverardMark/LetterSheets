@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import HistoryTab, { canViewHistory } from "../components/HistoryTab";
+import { SimpleHint } from "../components/simplemode";
 
 /* ================================================================
    API
@@ -102,6 +103,7 @@ export default function DepartmentsTab({ departments, setDepartments, employees 
 
     return (<>
         <div className="dp-wrap">
+            <SimpleHint icon="bulb">The teams in your company — group people by what they work on.</SimpleHint>
             <div className="dp-bar">
                 <div className="dp-search-wrap">
                     {searching

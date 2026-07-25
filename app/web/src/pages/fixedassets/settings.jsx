@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import { api } from "./shared";
+import { AdvancedOnly, SimpleHint } from "../components/simplemode";
 
 const SLOTS = [
     { key: "asset_account_id",               label: "Asset Cost",           types: ["Asset"],              hint: "Debited on acquisition; credited on disposal" },
@@ -44,6 +45,10 @@ export default function Settings() {
 
     return (<>
         {msg && <div className={`fa-flash ${msg.err ? "fa-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">
+            This links your assets to your accounting. It's already set up with sensible defaults — leave it to whoever handles your books, or switch to Advanced (top right) to change it.
+        </SimpleHint>
+        <AdvancedOnly>
         <div className="fa-card" style={{ maxWidth: 720 }}>
             <div className="fa-card-h"><h3 className="fa-card-t">Accounting Integration</h3></div>
             <p style={{ fontSize: 13, color: "#888", marginBottom: 18, lineHeight: 1.6 }}>
@@ -84,5 +89,6 @@ export default function Settings() {
                 <button className="fa-btn-p" disabled={saving} onClick={save}><I name="check" size={13} /> {saving ? "Saving…" : "Save Settings"}</button>
             </div>
         </div>
+        </AdvancedOnly>
     </>);
 }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
+import { Term, SimpleHint } from "../components/simplemode";
 import { api, Empty, peso, num, stockStatus } from "./shared";
 
 const UNITS = ["pcs", "box", "kg", "g", "L", "mL", "m", "pack", "set", "unit"];
@@ -56,6 +57,7 @@ export default function Products() {
 
     return (<>
         {msg && <div className={`iv-flash ${msg.err ? "iv-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">Everything you buy, make or sell — with how many you have in stock.</SimpleHint>
         <div className="iv-bar">
             <div className="iv-bar-l">
                 <div className="iv-search"><I name="search" size={14} /><input placeholder="Search name or SKU..." value={search} onChange={e => setSearch(e.target.value)} /></div>
@@ -149,7 +151,7 @@ function ProductModal({ data, categories, suppliers, onClose, onSave, onDelete }
                         </select>
                     </div>
                     <div className="iv-field">
-                        <label className="iv-label">Cost Price (₱)</label>
+                        <label className="iv-label"><Term simple="Cost (₱)" advanced="Cost Price (₱)"/></label>
                         <input className="iv-input" type="number" min="0" step="0.01" value={form.cost_price ?? ""} onChange={e => set("cost_price", e.target.value)} placeholder="0.00" />
                     </div>
                     <div className="iv-field">
@@ -158,7 +160,7 @@ function ProductModal({ data, categories, suppliers, onClose, onSave, onDelete }
                         {margin != null && <span className="iv-hint">Margin: {margin.toFixed(1)}%</span>}
                     </div>
                     <div className="iv-field">
-                        <label className="iv-label">Reorder Point</label>
+                        <label className="iv-label"><Term simple="Low-stock alert" advanced="Reorder Point"/></label>
                         <input className="iv-input" type="number" min="0" step="1" value={form.reorder_point ?? ""} onChange={e => set("reorder_point", e.target.value)} placeholder="0" />
                         <span className="iv-hint">Alert when total stock drops to this level</span>
                     </div>
@@ -170,11 +172,11 @@ function ProductModal({ data, categories, suppliers, onClose, onSave, onDelete }
 
                 {isEdit && (
                     <div style={{ marginTop: 18 }}>
-                        <div className="iv-label" style={{ marginBottom: 8 }}>Stock by warehouse</div>
+                        <div className="iv-label" style={{ marginBottom: 8 }}><Term simple="Stock by location" advanced="Stock by warehouse"/></div>
                         {stock.length > 0 ? (
                             <div className="iv-tblwrap">
                                 <table className="iv-tbl">
-                                    <thead><tr><th>Warehouse</th><th className="iv-tbl-r">Quantity</th></tr></thead>
+                                    <thead><tr><th><Term simple="Storage Location" advanced="Warehouse"/></th><th className="iv-tbl-r">Quantity</th></tr></thead>
                                     <tbody>
                                         {stock.map((s, i) => (
                                             <tr key={i}><td>{s.warehouse_name}</td><td className="iv-tbl-r iv-tbl-mono">{num(s.quantity)} {form.unit}</td></tr>
@@ -182,7 +184,7 @@ function ProductModal({ data, categories, suppliers, onClose, onSave, onDelete }
                                     </tbody>
                                 </table>
                             </div>
-                        ) : <div className="iv-hint">No stock recorded yet. Use the Stock Movements tab to add stock.</div>}
+                        ) : <div className="iv-hint"><Term simple={"No stock yet. Use the \"Stock In & Out\" tab to add some."} advanced="No stock recorded yet. Use the Stock Movements tab to add stock."/></div>}
                     </div>
                 )}
             </div>

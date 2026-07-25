@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { I } from "../../layouts/ERPLayout";
 import "./crm.css";
 import { api, peso, OPEN_STAGES, STAGE_COLOR, Empty } from "./shared";
+import { Term, SimpleHint } from "../components/simplemode";
 import LeadsView from "./leads";
 import PipelineView from "./pipeline";
 import ActivitiesView from "./activities";
@@ -47,7 +48,7 @@ function Overview({ nav }) {
     if (!ov) return <Empty icon="chart" title="CRM overview unavailable" desc="Try reloading." />;
 
     const cards = [
-        { label: "Open Pipeline", value: peso(ov.open_value), sub: `${ov.open_count} deals`, icon: "chart", color: "#6366f1" },
+        { label: <Term simple="Open Deals" advanced="Open Pipeline" />, value: peso(ov.open_value), sub: `${ov.open_count} deals`, icon: "chart", color: "#6366f1" },
         { label: "Weighted Value", value: peso(ov.weighted_value), sub: "by probability", icon: "peso", color: "#0ea5e9" },
         { label: "Win Rate", value: Math.round(ov.win_rate) + "%", sub: `${ov.won_count}W · ${ov.lost_count}L`, icon: "check", color: "#22c55e" },
         { label: "New Leads", value: ov.new_leads, sub: ov.overdue_tasks + " overdue tasks", icon: "userplus", color: "#f59e0b" },
@@ -57,6 +58,7 @@ function Overview({ nav }) {
     const maxAmt = Math.max(1, ...openStages.map(s => s.amount));
 
     return (<>
+        <SimpleHint icon="bulb">Track potential customers from first contact to closed deal.</SimpleHint>
         <div className="crm-stats">
             {cards.map((c, i) => (
                 <div key={i} className="crm-st">
@@ -69,11 +71,11 @@ function Overview({ nav }) {
 
         <div className="crm-card">
             <div className="crm-card-h">
-                <h3 className="crm-card-t">Pipeline by stage</h3>
+                <h3 className="crm-card-t"><Term simple="Deals by stage" advanced="Pipeline by stage" /></h3>
                 <span className="crm-card-lk" onClick={() => nav("/crm/pipeline")}>Open board →</span>
             </div>
             {openStages.length === 0 || openStages.every(s => s.count === 0) ? (
-                <Empty icon="chart" title="No open deals" desc="Convert a lead or add an opportunity." action="Go to pipeline" onAction={() => nav("/crm/pipeline")} />
+                <Empty icon="chart" title="No open deals" desc={<Term simple="Convert a lead or add a deal." advanced="Convert a lead or add an opportunity." />} action={<Term simple="Go to deals" advanced="Go to pipeline" />} onAction={() => nav("/crm/pipeline")} />
             ) : (
                 <div className="crm-funnel">
                     {openStages.map(s => (

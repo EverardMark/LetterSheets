@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { I } from "../../layouts/ERPLayout";
+import { SimpleHint } from "../components/simplemode";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 async function api(action, body = {}) {
@@ -298,6 +299,7 @@ export default function OnboardingTab({ employees = [] }) {
     if (view === "templates") return <TemplatesView templates={templates} onBack={() => { setView("board"); loadTemplates(); }} onReload={loadTemplates} />;
 
     return (<div className="ob-wrap">
+        <SimpleHint icon="bulb">Steps to get a new hire set up on their first days.</SimpleHint>
         {/* Top bar */}
         <div className="ob-topbar">
             <div className="ob-topbar-left">

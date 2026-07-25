@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { I } from "../../layouts/ERPLayout";
+import { useIsSimple } from "../../utils/uimode";
 import "./acc-layout.css";
 
 const API = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
@@ -131,8 +132,13 @@ export default function JournalEntries() {
     const [formLines, setFormLines] = useState([{ account_id: "", description: "", debit: 0, credit: 0 }]);
     const [editingId, setEditingId] = useState(null);
 
-    // Simple (guided) entry mode — default for new entries; "advanced" reveals the raw grid
-    const [entryMode, setEntryMode] = useState("simple"); // simple | advanced
+    // Entry mode follows the GLOBAL Simple/Advanced toggle (top bar) so there is
+    // one control for the whole app, not a second one buried in this screen.
+    // `entryMode` is still local state because a beginner can escape to the raw
+    // grid for a single tricky entry via the inline link in the guided form; that
+    // one-off override resets whenever the create view is re-opened.
+    const globalSimple = useIsSimple();
+    const [entryMode, setEntryMode] = useState(globalSimple ? "simple" : "advanced"); // simple | advanced
     const [simpleType, setSimpleType] = useState("");      // preset id
     const [simpleAmount, setSimpleAmount] = useState("");
     const [sDebit, setSDebit] = useState("");
@@ -214,7 +220,7 @@ export default function JournalEntries() {
         setFormDate(new Date().toISOString().split("T")[0]);
         setFormMemo("");
         setFormLines([{ account_id: "", description: "", debit: 0, credit: 0 }, { account_id: "", description: "", debit: 0, credit: 0 }]);
-        setEntryMode("simple");
+        setEntryMode(globalSimple ? "simple" : "advanced");
         setSimpleType("");
         setSimpleAmount("");
         setSDebit("");
@@ -727,15 +733,18 @@ export default function JournalEntries() {
                 <div className="je-view-header">
                     <button className="je-back-btn" onClick={() => setView("list")}><I name="arrow-left" size={16}/></button>
                     <h3 className="acc-title" style={{ margin: 0 }}>{editingId ? "Edit Journal Entry" : "Record a Transaction"}</h3>
-                    {!editingId && (
-                        <div className="je-mode-toggle">
-                            <button className={entryMode === "simple" ? "je-mode-on" : ""} onClick={() => setEntryMode("simple")}>
-                                <I name="zap" size={13}/> Simple
-                            </button>
-                            <button className={entryMode === "advanced" ? "je-mode-on" : ""} onClick={() => setEntryMode("advanced")}>
-                                <I name="sliders" size={13}/> Advanced
-                            </button>
-                        </div>
+                    {/* The Simple/Advanced choice is the single global toggle in the top
+                        bar now — no second toggle here. When the guided form can't do
+                        what's needed, the inline "switch to the full grid" link below
+                        flips just this one entry. */}
+                    {!editingId && entryMode === "advanced" && globalSimple && (
+                        <button
+                            onClick={() => setEntryMode("simple")}
+                            style={{ marginLeft: "auto", border: "1px solid #e2e5e9", background: "#fff", color: "#2d9e8b",
+                                     fontFamily: "inherit", fontSize: 12, fontWeight: 600, padding: "6px 11px",
+                                     borderRadius: 8, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                            <I name="zap" size={12}/> Back to guided
+                        </button>
                     )}
                 </div>
 
@@ -878,7 +887,12 @@ export default function JournalEntries() {
                     <div className="je-simple-warn">
                         <I name="alert-triangle" size={14}/>
                         You don't have the right accounts set up for this yet. Add them under
-                        <b> Chart of Accts</b>, or use <b>Advanced</b> mode.
+                        <b> Chart of Accts</b>, or{" "}
+                        <button onClick={() => setEntryMode("advanced")}
+                            style={{ border: "none", background: "none", color: "#2d9e8b", fontFamily: "inherit",
+                                     fontSize: "inherit", fontWeight: 700, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+                            use the full grid
+                        </button>.
                     </div>
                 )}
 

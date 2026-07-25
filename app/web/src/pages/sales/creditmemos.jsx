@@ -2,10 +2,13 @@ import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import { api, Empty, peso, num, d10, today } from "./shared";
+import { Term, AdvancedOnly, SimpleHint } from "../components/simplemode";
+import { useIsSimple } from "../../utils/uimode";
 
 const CM_BADGE = { Draft: "so-b-gray", Open: "so-b-blue", Applied: "so-b-green", Refunded: "so-b-purple", Voided: "so-b-red" };
 
 export default function CreditMemos() {
+    const simple = useIsSimple();
     const [rows, setRows] = useState([]);
     const [orders, setOrders] = useState([]);
     const [accounts, setAccounts] = useState([]);
@@ -33,16 +36,17 @@ export default function CreditMemos() {
                     {["Draft", "Open", "Applied", "Refunded", "Voided"].map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
             </div>
-            <button className="so-btn-p" disabled={orders.length === 0} onClick={() => setModal({ id: null })}><I name="file" size={13} /> New Credit Memo</button>
+            <button className="so-btn-p" disabled={orders.length === 0} onClick={() => setModal({ id: null })}><I name="file" size={13} /> <Term simple="New Refund / Credit" advanced="New Credit Memo" /></button>
         </div>
-        {orders.length === 0 && <div className="so-flash so-flash-err">Credit memos are raised against an invoiced sales order — none available yet.</div>}
+        <SimpleHint icon="bulb">When you refund a customer or credit their account, record it here.</SimpleHint>
+        {orders.length === 0 && <div className="so-flash so-flash-err"><Term simple="A refund or credit is made against an order you've already invoiced — none available yet." advanced="Credit memos are raised against an invoiced sales order — none available yet." /></div>}
 
         {rows.length === 0 ? (
-            <Empty icon="file" title={status ? "No matching credit memos" : "No credit memos"} desc="Credit a customer for returned goods; restock and reverse the revenue/COGS." action={status || orders.length === 0 ? null : "New credit memo"} onAction={() => setModal({ id: null })} />
+            <Empty icon="file" title={status ? (simple ? "No matching refunds or credits" : "No matching credit memos") : (simple ? "No refunds or credits" : "No credit memos")} desc={simple ? "Give a customer money back or credit their account for returned goods." : "Credit a customer for returned goods; restock and reverse the revenue/COGS."} action={status || orders.length === 0 ? null : (simple ? "New refund / credit" : "New credit memo")} onAction={() => setModal({ id: null })} />
         ) : (
             <div className="so-tblwrap so-tbl-click">
                 <table className="so-tbl">
-                    <thead><tr><th>Memo</th><th>Customer</th><th>Order</th><th className="so-tbl-r">Total</th><th className="so-tbl-r">Open Credit</th><th>Status</th></tr></thead>
+                    <thead><tr><th><Term simple="Credit" advanced="Memo" /></th><th>Customer</th><th>Order</th><th className="so-tbl-r">Total</th><th className="so-tbl-r">Open Credit</th><th>Status</th></tr></thead>
                     <tbody>
                         {rows.map(m => (
                             <tr key={m.id} onClick={() => setModal({ id: m.id })}>
@@ -122,10 +126,10 @@ function MemoModal({ id, orders, accounts, onClose, flash }) {
     // NEW draft form
     if (isNew) {
         return (
-            <Modal title="New Credit Memo" subtitle="Return against an invoiced order" onClose={onClose}>
+            <Modal title={<Term simple="New Refund / Credit" advanced="New Credit Memo" />} subtitle={<Term simple="For goods returned on an order you've invoiced" advanced="Return against an invoiced order" />} onClose={onClose}>
                 <div className="so-modal-scroll">
                     <div className="so-f" style={{ marginBottom: 12 }}>
-                        <div className="so-field"><label className="so-label">Sales Order <span className="so-req" /></label>
+                        <div className="so-field"><label className="so-label"><Term simple="Order" advanced="Sales Order" /> <span className="so-req" /></label>
                             <select className="so-fsel" value={orderId} onChange={e => pickOrder(e.target.value)}>
                                 <option value="">— Select —</option>
                                 {orders.map(o => <option key={o.id} value={o.id}>SO-{String(o.order_number).padStart(4, "0")} · {o.customer_name}</option>)}
@@ -133,7 +137,7 @@ function MemoModal({ id, orders, accounts, onClose, flash }) {
                         </div>
                         <div className="so-field so-f-full"><label className="so-label">Reason</label><input className="so-input" value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Damaged on arrival" /></div>
                     </div>
-                    {orderId && (lines.length === 0 ? <div className="so-hint">No creditable (invoiced, un-returned) lines on this order.</div> : (
+                    {orderId && (lines.length === 0 ? <div className="so-hint"><Term simple="Nothing on this order can be refunded yet — it must be invoiced and not already returned." advanced="No creditable (invoiced, un-returned) lines on this order." /></div> : (
                         <div className="so-tblwrap">
                             <table className="so-tbl">
                                 <thead><tr><th style={{ width: 34 }}></th><th>Product</th><th className="so-tbl-r">Max</th><th style={{ width: 80 }}>Return</th><th style={{ width: 64 }}>Restock</th><th className="so-tbl-r">Credit</th></tr></thead>
@@ -154,9 +158,9 @@ function MemoModal({ id, orders, accounts, onClose, flash }) {
                         <div style={{ color: "#888" }}>Subtotal {peso(subtotal)} · Tax {peso(tax)}</div>
                         <div style={{ fontSize: 15, fontWeight: 700 }}>Credit Total: {peso(subtotal + tax)}</div>
                     </div>}
-                    <div className="so-hint" style={{ marginTop: 8 }}>Uncheck <b>Restock</b> for goods too damaged to resell (scrapped — cost hits Inventory Adjustment).</div>
+                    <div className="so-hint" style={{ marginTop: 8 }}>Uncheck <b>Restock</b> for goods too damaged to resell<AdvancedOnly> (scrapped — cost hits Inventory Adjustment)</AdvancedOnly>.</div>
                 </div>
-                <div className="so-modal-foot"><button className="so-btn-s" onClick={onClose}>Cancel</button><button className="so-btn-p" onClick={create}>Create Draft</button></div>
+                <div className="so-modal-foot"><button className="so-btn-s" onClick={onClose}>Cancel</button><button className="so-btn-p" onClick={create}><Term simple="Create" advanced="Create Draft" /></button></div>
             </Modal>
         );
     }
@@ -187,7 +191,7 @@ function MemoModal({ id, orders, accounts, onClose, flash }) {
                     </table>
                 </div>
                 {refundOpen && <div className="so-f" style={{ marginTop: 12 }}>
-                    <div className="so-field so-f-full"><label className="so-label">Refund from Cash/Bank account</label>
+                    <div className="so-field so-f-full"><label className="so-label"><Term simple="Which account should the refund come from?" advanced="Refund from Cash/Bank account" /></label>
                         <div style={{ display: "flex", gap: 8 }}>
                             <select className="so-fsel" id="cm-refund-acct" defaultValue="">
                                 <option value="">— Select —</option>
@@ -201,7 +205,7 @@ function MemoModal({ id, orders, accounts, onClose, flash }) {
             <div className="so-modal-foot" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {m.status === "Draft" && <button className="so-btn-danger" onClick={async () => { try { await api("delete_credit_memo", { id }); flash("Deleted"); onClose(); } catch (e) { flash(e.message, true); } }}>Delete</button>}
-                    {m.status === "Draft" && <button className="so-btn-p" onClick={post}>Post</button>}
+                    {m.status === "Draft" && <button className="so-btn-p" onClick={post}><Term simple="Record" advanced="Post" /></button>}
                     {m.status === "Open" && m.invoice_id && <button className="so-btn-p" onClick={applyToInvoice}>Apply to Invoice</button>}
                     {m.status === "Open" && m.balance_credit > 0 && <button className="so-btn-s" onClick={() => setRefundOpen(v => !v)}>Refund…</button>}
                     {["Open", "Applied"].includes(m.status) && <button className="so-btn-s" onClick={() => act("void_credit_memo", {}, "Voided")}>Void</button>}

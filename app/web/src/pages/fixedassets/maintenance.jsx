@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import { api, Empty, peso, d10 } from "./shared";
+import { Term, SimpleHint } from "../components/simplemode";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -34,6 +35,7 @@ export default function Maintenance() {
 
     return (<>
         {msg && <div className={`fa-flash ${msg.err ? "fa-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">Track repairs and servicing for each item — and when the next one's due.</SimpleHint>
         <div className="fa-bar">
             <div className="fa-bar-l"><span style={{ fontSize: 13, color: "#888" }}>{rows.length} record{rows.length !== 1 ? "s" : ""}</span></div>
             <button className="fa-btn-p" disabled={assets.length === 0} onClick={() => setModal({ m: { service_date: today(), maintenance_type: "service" } })}><I name="scroll" size={13} /> Log Maintenance</button>
@@ -43,7 +45,7 @@ export default function Maintenance() {
         ) : (
             <div className="fa-tblwrap fa-tbl-click">
                 <table className="fa-tbl">
-                    <thead><tr><th>Asset</th><th>Date</th><th>Type</th><th className="fa-tbl-r">Cost</th><th>Vendor</th><th>Next Service</th></tr></thead>
+                    <thead><tr><th>Asset</th><th>Date</th><th>Type</th><th className="fa-tbl-r">Cost</th><th><Term simple="Supplier" advanced="Vendor" /></th><th>Next Service</th></tr></thead>
                     <tbody>
                         {rows.map(m => (
                             <tr key={m.id} onClick={() => setModal({ m })}>
@@ -91,7 +93,7 @@ function MaintModal({ data, assets, onClose, onSave, onDelete }) {
                     <div className="fa-field"><label className="fa-label">Service Date</label><input className="fa-input" type="date" value={d10(f.service_date)} onChange={e => set("service_date", e.target.value)} /></div>
                     <div className="fa-field"><label className="fa-label">Type</label><input className="fa-input" value={f.maintenance_type || ""} onChange={e => set("maintenance_type", e.target.value)} placeholder="service / repair / inspection" /></div>
                     <div className="fa-field"><label className="fa-label">Cost (₱)</label><input className="fa-input" type="number" min="0" step="0.01" value={f.cost ?? ""} onChange={e => set("cost", e.target.value)} /></div>
-                    <div className="fa-field"><label className="fa-label">Vendor</label><input className="fa-input" value={f.vendor || ""} onChange={e => set("vendor", e.target.value)} /></div>
+                    <div className="fa-field"><label className="fa-label"><Term simple="Supplier" advanced="Vendor" /></label><input className="fa-input" value={f.vendor || ""} onChange={e => set("vendor", e.target.value)} /></div>
                     <div className="fa-field"><label className="fa-label">Performed By</label><input className="fa-input" value={f.performed_by || ""} onChange={e => set("performed_by", e.target.value)} /></div>
                     <div className="fa-field"><label className="fa-label">Next Service</label><input className="fa-input" type="date" value={d10(f.next_service_date)} onChange={e => set("next_service_date", e.target.value)} /></div>
                     <div className="fa-field fa-f-full"><label className="fa-label">Description</label><input className="fa-input" value={f.description || ""} onChange={e => set("description", e.target.value)} /></div>

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
 import { api, Empty, peso, d10, today, QUOTE_BADGE } from "./shared";
+import { Term, SimpleHint } from "../components/simplemode";
 import LineGrid from "./LineGrid";
 
 const custName = (c) => c.name || `${c.first_name || ""} ${c.last_name || ""}`.trim();
@@ -29,6 +30,7 @@ export default function Quotes() {
 
     return (<>
         {msg && <div className={`so-flash ${msg.err ? "so-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">A quote is a price estimate you send a customer. If they say yes, turn it into an order.</SimpleHint>
         <div className="so-bar">
             <div className="so-bar-l">
                 <select className="so-sel" value={status} onChange={e => setStatus(e.target.value)}>
@@ -103,7 +105,7 @@ function QuoteModal({ id, customers, products, nav, onClose, flash }) {
     };
 
     return (
-        <Modal title={isNew ? "New Quote" : `QUO-${String(q.quote_number).padStart(4, "0")}`} subtitle={isNew ? "Draft quotation" : q.status} onClose={onClose}>
+        <Modal title={isNew ? "New Quote" : `QUO-${String(q.quote_number).padStart(4, "0")}`} subtitle={isNew ? <Term simple="Draft quote" advanced="Draft quotation" /> : q.status} onClose={onClose}>
             <div className="so-modal-scroll">
                 <div className="so-f" style={{ marginBottom: 14 }}>
                     <div className="so-field"><label className="so-label">Customer <span className="so-req" /></label>

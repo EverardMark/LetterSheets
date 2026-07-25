@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
+import { Term, SimpleHint } from "../components/simplemode";
 
 const API_URL = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
 async function api(action, body = {}) {
@@ -164,6 +165,8 @@ export default function LoanTab({ employees = [] }) {
             </div>
         </div>
 
+        <SimpleHint icon="bulb">Money staff borrow and pay back through payroll.</SimpleHint>
+
         {/* Table */}
         <div className="ln-table-wrap">
             <table className="ln-table">
@@ -304,7 +307,7 @@ function LoanPanel({ loan, payments, onApprove, onReject, onCancel, onDelete, on
                                 <input className="ap-input" value={fmtMoney(loan.monthly_payment)} disabled />
                             </div>
                             <div className="ap-field">
-                                <label className="ap-label">Total Payable</label>
+                                <label className="ap-label"><Term simple="Total to repay" advanced="Total Payable" /></label>
                                 <input className="ap-input" value={fmtMoney(loan.total_payable)} disabled />
                             </div>
                             <div className="ap-field">
@@ -481,7 +484,7 @@ function ApplyModal({ employees, loanTypes, onSubmit, onClose }) {
                         {amt > 0 && (
                             <div className="ln-calc-box" style={{marginTop:12}}>
                                 <div className="ln-calc-row"><span>Interest ({rate}%)</span><strong>{fmtMoney(totalInterest)}</strong></div>
-                                <div className="ln-calc-row"><span>Total Payable</span><strong>{fmtMoney(totalPayable)}</strong></div>
+                                <div className="ln-calc-row"><span><Term simple="Total to repay" advanced="Total Payable" /></span><strong>{fmtMoney(totalPayable)}</strong></div>
                                 <div className="ln-calc-row ln-calc-highlight"><span>Monthly Payment</span><strong>{fmtMoney(monthlyPayment)}</strong></div>
                             </div>
                         )}

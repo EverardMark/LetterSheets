@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { I } from "../../layouts/ERPLayout";
 import Modal from "../components/Modal";
+import { Term, SimpleHint } from "../components/simplemode";
 import { api, Empty, peso, num } from "./shared";
 
 export default function Warehouses() {
@@ -28,17 +29,18 @@ export default function Warehouses() {
 
     return (<>
         {msg && <div className={`iv-flash ${msg.err ? "iv-flash-err" : ""}`}>{msg.text}</div>}
+        <SimpleHint icon="bulb">The places you keep stock — a shop, stockroom or shelf. Every item lives in one.</SimpleHint>
         <div className="iv-bar">
-            <div className="iv-bar-l"><span style={{ fontSize: 13, color: "#888" }}>{rows.length} warehouse{rows.length !== 1 ? "s" : ""}</span></div>
-            <button className="iv-btn-p" onClick={() => setModal({ cat: { is_active: true } })}><I name="building" size={13} /> Add Warehouse</button>
+            <div className="iv-bar-l"><span style={{ fontSize: 13, color: "#888" }}>{rows.length} <Term simple={`storage location${rows.length !== 1 ? "s" : ""}`} advanced={`warehouse${rows.length !== 1 ? "s" : ""}`} /></span></div>
+            <button className="iv-btn-p" onClick={() => setModal({ cat: { is_active: true } })}><I name="building" size={13} /> <Term simple="Add Storage Location" advanced="Add Warehouse"/></button>
         </div>
 
         {rows.length === 0 ? (
-            <Empty icon="building" title="No warehouses" desc="Add at least one warehouse — stock is always tracked per location." action="Add warehouse" onAction={() => setModal({ cat: { is_active: true } })} />
+            <Empty icon="building" title={<Term simple="No storage locations" advanced="No warehouses"/>} desc={<Term simple="Add at least one place to keep stock — every item lives in a location." advanced="Add at least one warehouse — stock is always tracked per location."/>} action={<Term simple="Add storage location" advanced="Add warehouse"/>} onAction={() => setModal({ cat: { is_active: true } })} />
         ) : (
             <div className="iv-tblwrap iv-tbl-click">
                 <table className="iv-tbl">
-                    <thead><tr><th>Warehouse</th><th>Code</th><th>Location</th><th className="iv-tbl-r">Units</th><th className="iv-tbl-r">Value</th><th>Status</th></tr></thead>
+                    <thead><tr><th><Term simple="Storage Location" advanced="Warehouse"/></th><th>Code</th><th>Location</th><th className="iv-tbl-r">Units</th><th className="iv-tbl-r">Value</th><th>Status</th></tr></thead>
                     <tbody>
                         {rows.map(w => (
                             <tr key={w.id} onClick={() => setModal({ cat: w })}>
@@ -64,7 +66,7 @@ function WhModal({ data, onClose, onSave, onDelete }) {
     const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
     const isEdit = !!form.id;
     return (
-        <Modal title={isEdit ? "Edit Warehouse" : "Add Warehouse"} subtitle="A storage location for stock" onClose={onClose}>
+        <Modal title={isEdit ? <Term simple="Edit Storage Location" advanced="Edit Warehouse"/> : <Term simple="Add Storage Location" advanced="Add Warehouse"/>} subtitle="A storage location for stock" onClose={onClose}>
             <div className="iv-modal-scroll">
                 <div className="iv-f">
                     <div className="iv-field">
@@ -82,7 +84,7 @@ function WhModal({ data, onClose, onSave, onDelete }) {
                     <div className="iv-field iv-f-full">
                         <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
                             <span className="iv-switch"><input type="checkbox" checked={!!form.is_default} onChange={e => set("is_default", e.target.checked)} /><span className="iv-slider" /></span>
-                            <span style={{ fontSize: 13, color: "#555" }}>Default warehouse for new stock</span>
+                            <span style={{ fontSize: 13, color: "#555" }}><Term simple="Use this location by default for new stock" advanced="Default warehouse for new stock"/></span>
                         </label>
                     </div>
                     {isEdit && (

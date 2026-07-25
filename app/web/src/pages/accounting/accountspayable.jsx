@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { I } from "../../layouts/ERPLayout";
+import { Term, SimpleHint } from "../components/simplemode";
 import "./acc-layout.css";
 
 const API = (import.meta.env.VITE_API_BASE||"")+"/api/execute";
@@ -191,20 +192,21 @@ export default function AccountsPayable() {
                     <select className="acc-filter" value={fVendor} onChange={e => setFVendor(e.target.value)}><option value="">All Vendors</option>{vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select>
                 </div>
                 <div className="acc-bar-right">
-                    <button className="acc-btn-s" onClick={() => setView("vendors")}><I name="users" size={14}/> Vendors</button>
-                    <button className="acc-btn-s" onClick={loadAging}><I name="clock" size={14}/> Aging</button>
+                    <button className="acc-btn-s" onClick={() => setView("vendors")}><I name="users" size={14}/> <Term simple="Suppliers" advanced="Vendors" /></button>
+                    <button className="acc-btn-s" onClick={loadAging}><I name="clock" size={14}/> <Term simple="Overdue" advanced="Aging" /></button>
                     <button className="acc-btn-p" onClick={() => openBillForm(null)}><I name="plus" size={14}/> New Bill</button>
                 </div>
             </div>
+            <SimpleHint icon="bulb">Bills your suppliers have sent you. Record them here and mark them paid when you pay.</SimpleHint>
             {/* Table */}
             {loading ? (
                 <div className="acc-empty"><div className="acc-loading"/><div className="acc-empty-t">Loading...</div></div>
             ) : filtered.length === 0 ? (
-                <div className="acc-empty"><div className="acc-empty-ic"><I name="inbox" size={28}/></div><div className="acc-empty-t">No bills found</div><div className="acc-empty-d">Create a bill to start tracking payables.</div></div>
+                <div className="acc-empty"><div className="acc-empty-ic"><I name="inbox" size={28}/></div><div className="acc-empty-t">No bills found</div><div className="acc-empty-d"><Term simple="Create a bill to start tracking money you owe." advanced="Create a bill to start tracking payables." /></div></div>
             ) : (
                 <div className="acc-tbl-wrap">
                     <table className="acc-tbl"><thead><tr>
-                        <th>Bill #</th><th>Vendor</th><th>Date</th><th>Due</th><th>Status</th><th className="acc-right">Total</th><th className="acc-right">Balance</th>
+                        <th>Bill #</th><th><Term simple="Supplier" advanced="Vendor" /></th><th>Date</th><th>Due</th><th>Status</th><th className="acc-right">Total</th><th className="acc-right">Balance</th>
                     </tr></thead><tbody>
                     {filtered.map(b => {
                         const overdue = b.status !== "Paid" && b.status !== "Voided" && new Date(b.due_date) < new Date();
@@ -233,12 +235,12 @@ export default function AccountsPayable() {
             <div className="acc-bar">
                 <div className="acc-bar-left">
                     <button className="acc-btn-s ap-back" onClick={() => setView("bills")}><I name="arrow-left" size={16}/></button>
-                    <div className="acc-title">Vendors / Suppliers</div>
+                    <div className="acc-title"><Term simple="Suppliers" advanced="Vendors / Suppliers" /></div>
                 </div>
-                <div className="acc-bar-right"><button className="acc-btn-p" onClick={() => openVendorForm(null)}><I name="plus" size={14}/> New Vendor</button></div>
+                <div className="acc-bar-right"><button className="acc-btn-p" onClick={() => openVendorForm(null)}><I name="plus" size={14}/> <Term simple="New Supplier" advanced="New Vendor" /></button></div>
             </div>
             {vendors.length === 0 ? (
-                <div className="acc-empty"><div className="acc-empty-ic"><I name="inbox" size={28}/></div><div className="acc-empty-t">No vendors yet</div><div className="acc-empty-d">Add a vendor to start recording bills.</div></div>
+                <div className="acc-empty"><div className="acc-empty-ic"><I name="inbox" size={28}/></div><div className="acc-empty-t"><Term simple="No suppliers yet" advanced="No vendors yet" /></div><div className="acc-empty-d"><Term simple="Add a supplier to start recording bills." advanced="Add a vendor to start recording bills." /></div></div>
             ) : (
                 <div className="acc-tbl-wrap">
                     <table className="acc-tbl"><thead><tr><th>Name</th><th>Contact</th><th>Email</th><th>Phone</th><th>TIN</th><th>Terms</th><th>Status</th><th></th></tr></thead>
@@ -271,12 +273,12 @@ export default function AccountsPayable() {
             <div className="acc-bar">
                 <div className="acc-bar-left">
                     <button className="acc-btn-s ap-back" onClick={() => setView("vendors")}><I name="arrow-left" size={16}/></button>
-                    <div className="acc-title">{f.id ? "Edit" : "New"} Vendor</div>
+                    <div className="acc-title">{f.id ? "Edit" : "New"} <Term simple="Supplier" advanced="Vendor" /></div>
                 </div>
             </div>
             <div className="acc-card">
                 <div className="acc-fields">
-                    <div className="acc-field"><label className="acc-label">Vendor Name <span className="acc-req"/></label><input className="acc-input" value={f.name} onChange={e => set("name", e.target.value)}/></div>
+                    <div className="acc-field"><label className="acc-label"><Term simple="Supplier Name" advanced="Vendor Name" /> <span className="acc-req"/></label><input className="acc-input" value={f.name} onChange={e => set("name", e.target.value)}/></div>
                     <div className="acc-field"><label className="acc-label">Contact Person</label><input className="acc-input" value={f.contact_person} onChange={e => set("contact_person", e.target.value)}/></div>
                     <div className="acc-field"><label className="acc-label">Email</label><input className="acc-input" type="email" value={f.email} onChange={e => set("email", e.target.value)}/></div>
                     <div className="acc-field"><label className="acc-label">Phone</label><input className="acc-input" value={f.phone} onChange={e => set("phone", e.target.value)}/></div>
@@ -323,19 +325,19 @@ export default function AccountsPayable() {
             </div>
             <div className="acc-card">
                 <div className="ap-bill-head">
-                    <div className="ap-bh-vendor"><label className="acc-label">Vendor <span className="acc-req"/></label><select className="acc-input" value={f.vendor_id} onChange={e => onVendorChange(e.target.value)}><option value="">Select vendor...</option>{vendors.filter(v => v.is_active).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
+                    <div className="ap-bh-vendor"><label className="acc-label"><Term simple="Supplier" advanced="Vendor" /> <span className="acc-req"/></label><select className="acc-input" value={f.vendor_id} onChange={e => onVendorChange(e.target.value)}><option value="">Select vendor...</option>{vendors.filter(v => v.is_active).map(v => <option key={v.id} value={v.id}>{v.name}</option>)}</select></div>
                     <div className="ap-bh-col"><label className="acc-label">Bill #</label><input className="acc-input" value={f.bill_number} onChange={e => set("bill_number", e.target.value)} placeholder="BILL-001"/></div>
-                    <div className="ap-bh-col"><label className="acc-label">Vendor Invoice #</label><input className="acc-input" value={f.reference} onChange={e => set("reference", e.target.value)}/></div>
+                    <div className="ap-bh-col"><label className="acc-label"><Term simple="Their Invoice #" advanced="Vendor Invoice #" /></label><input className="acc-input" value={f.reference} onChange={e => set("reference", e.target.value)}/></div>
                     <div className="ap-bh-col"><label className="acc-label">Bill Date <span className="acc-req"/></label><input className="acc-input" type="date" value={f.bill_date} onChange={e => set("bill_date", e.target.value)}/></div>
                     <div className="ap-bh-col"><label className="acc-label">Due Date</label><input className="acc-input" type="date" value={f.due_date} onChange={e => set("due_date", e.target.value)}/></div>
                 </div>
                 <div className="acc-field acc-field-full ap-memo"><label className="acc-label">Memo</label><input className="acc-input" value={f.memo} onChange={e => set("memo", e.target.value)} placeholder="Description of purchase"/></div>
 
                 {/* Line Items */}
-                <div className="acc-sec-title">Line Items</div>
+                <div className="acc-sec-title"><Term simple="Items" advanced="Line Items" /></div>
                 <div className="acc-tbl-wrap">
                 <table className="acc-tbl ap-items-tbl"><thead><tr>
-                    <th className="ap-w-acct">Expense Account</th><th className="ap-w-desc">Description</th><th className="acc-right ap-w-qty">Qty</th><th className="acc-right ap-w-price">Price</th><th className="acc-right ap-w-tax">Tax %</th><th className="acc-right ap-w-total">Total</th><th className="ap-w-x"></th>
+                    <th className="ap-w-acct"><Term simple="Expense category" advanced="Expense Account" /></th><th className="ap-w-desc">Description</th><th className="acc-right ap-w-qty">Qty</th><th className="acc-right ap-w-price">Price</th><th className="acc-right ap-w-tax">Tax %</th><th className="acc-right ap-w-total">Total</th><th className="ap-w-x"></th>
                 </tr></thead><tbody>
                 {billItems.map((item, i) => (<tr key={i}>
                     <td><select className="acc-input ap-cell-input" value={item.account_id} onChange={e => updateItem(i, "account_id", e.target.value)}><option value="">Select...</option>{accounts.filter(a => a.account_type === "Expense" || a.account_type === "Asset").map(a => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}</select></td>
@@ -393,11 +395,11 @@ export default function AccountsPayable() {
             </div>
 
             {b.memo && <div className="ap-memo-box">{b.memo}</div>}
-            {b.reference && <div className="ap-ref-line">Vendor Invoice: <strong>{b.reference}</strong></div>}
+            {b.reference && <div className="ap-ref-line"><Term simple="Their Invoice" advanced="Vendor Invoice" />: <strong>{b.reference}</strong></div>}
 
             {/* Line Items */}
             <div className="acc-card">
-                <div className="acc-card-t ap-card-t">Line Items</div>
+                <div className="acc-card-t ap-card-t"><Term simple="Items" advanced="Line Items" /></div>
                 <div className="acc-tbl-wrap">
                 <table className="acc-tbl"><thead><tr><th>Account</th><th>Description</th><th className="acc-right">Qty</th><th className="acc-right">Price</th><th className="acc-right">Tax</th><th className="acc-right">Total</th></tr></thead>
                     <tbody>
@@ -458,14 +460,14 @@ export default function AccountsPayable() {
             <div className="acc-bar">
                 <div className="acc-bar-left">
                     <button className="acc-btn-s ap-back" onClick={() => setView("bills")}><I name="arrow-left" size={16}/></button>
-                    <div className="acc-title">AP Aging Report</div>
+                    <div className="acc-title"><Term simple="Overdue" advanced="AP Aging Report" /></div>
                 </div>
             </div>
             {aging.length === 0 ? (
-                <div className="acc-empty"><div className="acc-empty-ic"><I name="inbox" size={28}/></div><div className="acc-empty-t">No outstanding payables</div><div className="acc-empty-d">There are no unpaid bills to age.</div></div>
+                <div className="acc-empty"><div className="acc-empty-ic"><I name="inbox" size={28}/></div><div className="acc-empty-t"><Term simple="No overdue bills" advanced="No outstanding payables" /></div><div className="acc-empty-d"><Term simple="You're all caught up — nothing's overdue." advanced="There are no unpaid bills to age." /></div></div>
             ) : (
                 <div className="acc-tbl-wrap">
-                    <table className="acc-tbl"><thead><tr><th>Vendor</th><th>Bills</th><th className="acc-right">Current</th><th className="acc-right">1-30</th><th className="acc-right">31-60</th><th className="acc-right">61-90</th><th className="acc-right ap-th-90">90+</th><th className="acc-right">Total</th></tr></thead>
+                    <table className="acc-tbl"><thead><tr><th><Term simple="Supplier" advanced="Vendor" /></th><th>Bills</th><th className="acc-right">Current</th><th className="acc-right">1-30</th><th className="acc-right">31-60</th><th className="acc-right">61-90</th><th className="acc-right ap-th-90">90+</th><th className="acc-right">Total</th></tr></thead>
                         <tbody>
                         {aging.map(a => (<tr key={a.vendor_id}><td className="acc-cell-name">{a.vendor_name}</td><td>{a.bill_count}</td><td className="acc-right acc-cell-mono">{peso(a.current_due)}</td><td className="acc-right acc-cell-mono">{a.days_1_30 > 0 ? peso(a.days_1_30) : ""}</td><td className="acc-right acc-cell-mono" style={{ color: a.days_31_60 > 0 ? "#f59e0b" : "" }}>{a.days_31_60 > 0 ? peso(a.days_31_60) : ""}</td><td className="acc-right acc-cell-mono" style={{ color: a.days_61_90 > 0 ? "#ef4444" : "" }}>{a.days_61_90 > 0 ? peso(a.days_61_90) : ""}</td><td className="acc-right acc-cell-mono" style={{ fontWeight: a.days_over_90 > 0 ? 700 : 400, color: a.days_over_90 > 0 ? "#ef4444" : "" }}>{a.days_over_90 > 0 ? peso(a.days_over_90) : ""}</td><td className="acc-right acc-cell-mono" style={{ fontWeight: 700 }}>{peso(a.total_due)}</td></tr>))}
                         <tr className="ap-total-row ap-aging-total"><td colSpan={2} className="ap-grand-lbl" style={{ textAlign: "left" }}>TOTALS</td><td className="acc-right acc-cell-mono" style={{ fontWeight: 700 }}>{peso(totals.current)}</td><td className="acc-right acc-cell-mono" style={{ fontWeight: 700 }}>{peso(totals.d30)}</td><td className="acc-right acc-cell-mono" style={{ fontWeight: 700 }}>{peso(totals.d60)}</td><td className="acc-right acc-cell-mono" style={{ fontWeight: 700 }}>{peso(totals.d90)}</td><td className="acc-right acc-cell-mono" style={{ fontWeight: 700, color: "#ef4444" }}>{peso(totals.over)}</td><td className="acc-right acc-cell-mono" style={{ fontWeight: 700 }}>{peso(totals.total)}</td></tr>
