@@ -53,7 +53,7 @@ function InventoryOverview({ nav }) {
 
     return (<>
         <SimpleHint icon="bulb">A snapshot of what you have in stock and what's running low.</SimpleHint>
-        <div className="iv-stats">
+        <div className="iv-stats" data-tour="inv-stats">
             {cards.map((c, i) => (
                 <div key={i} className="iv-st">
                     <div className="iv-st-ic" style={{ background: c.color + "14", color: c.color }}><I name={c.icon} /></div>
@@ -63,7 +63,7 @@ function InventoryOverview({ nav }) {
             ))}
         </div>
 
-        <div className="iv-grid2">
+        <div className="iv-grid2" data-tour="inv-grid">
             {/* Reorder alerts */}
             <div className="iv-card" style={{ marginBottom: 0 }}>
                 <div className="iv-card-h">

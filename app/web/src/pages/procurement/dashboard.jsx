@@ -44,7 +44,7 @@ function ProcurementOverview({ nav }) {
 
     return (<>
         <SimpleHint icon="bulb">Buying things for the business — from a request, to a purchase order, to receiving the goods.</SimpleHint>
-        <div className="pr-stats">
+        <div className="pr-stats" data-tour="proc-stats">
             {cards.map((c, i) => (
                 <div key={i} className="pr-st">
                     <div className="pr-st-ic" style={{ background: c.color + "14", color: c.color }}><I name={c.icon} /></div>
@@ -54,7 +54,7 @@ function ProcurementOverview({ nav }) {
             ))}
         </div>
 
-        <div className="pr-grid2">
+        <div className="pr-grid2" data-tour="proc-grid">
             <div className="pr-card" style={{ marginBottom: 0 }}>
                 <div className="pr-card-h">
                     <h3 className="pr-card-t">Recent Purchase Orders</h3>

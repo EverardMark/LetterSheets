@@ -19,6 +19,7 @@ import {
 } from "@fortawesome/pro-light-svg-icons";
 import UpdateButton from "../pages/components/updatebutton";
 import { ModeToggle } from "../pages/components/simplemode";
+import { TourButton, PageTour } from "../pages/components/tour";
 import { useIsSimple } from "../utils/uimode";
 import { Permissions, SELF_SERVICE_MODULES } from "../utils/permissions";
 
@@ -465,10 +466,8 @@ export default function ERPLayout() {
         try { await notifApi("mark_all_notifications_read"); } catch { /* optimistic */ }
     };
 
-    if (!hasKey) return null;
-
     const active = findActive(location.pathname, navModules);
-    const activeParent = findParent(active.id, navModules);
+    const activeParent = findParent(active?.id, navModules);
 
     // Track expanded parents
     const [expanded, setExpanded] = useState(() => {
@@ -485,6 +484,12 @@ export default function ERPLayout() {
         setMobileMenu(false);
         setMobileNotif(false);
     }, [location.pathname]);
+
+    // Every hook above runs unconditionally; the no-key bail-out lives AFTER them
+    // so the hook order is identical on every render (React's Rules of Hooks).
+    // Returning earlier changed the hook count once the key appeared and crashed
+    // with "rendered more hooks than during the previous render".
+    if (!hasKey) return null;
 
     const toggle = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
 
@@ -601,6 +606,7 @@ export default function ERPLayout() {
                     </div>
                     <div className="tb-r">
                         <ModeToggle />
+                        <TourButton />
                         <div className="tb-srch"><I name="search" size={15}/><input type="text" placeholder="Search..." className="tb-inp"/></div>
                         <div className="tb-prof" onClick={()=>navigate("/settings")} title="Account & Settings">
                             <div className="tb-av">{(user.username||"U")[0].toUpperCase()}</div>
@@ -613,7 +619,7 @@ export default function ERPLayout() {
                         </button>
                     </div>
                 </header>
-                <div className="pg"><Outlet/></div>
+                <div className="pg"><Outlet/><PageTour/></div>
             </div>
 
             <aside className={`rp${rightOpen?"":" rp-closed"}${mobileNotif?" rp-open":""}`}>

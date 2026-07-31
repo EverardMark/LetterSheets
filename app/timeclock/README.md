@@ -63,7 +63,7 @@ local disk, keep the kiosk physically secured / disk-encrypted.
 
 Like `app/web`, the API base comes from the **`VITE_API_BASE`** environment
 variable (not the UI). It defaults to the remote deploy
-`http://47.129.29.202:8080`. Point it at a different server at launch:
+`https://api.lettersheets.com`. Point it at a different server at launch:
 
 ```bash
 VITE_API_BASE=http://localhost:8080 npm start   # local dev

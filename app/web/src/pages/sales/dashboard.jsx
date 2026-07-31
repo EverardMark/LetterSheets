@@ -48,7 +48,7 @@ function SalesOverview({ nav }) {
 
     return (<>
         <SimpleHint icon="bulb">How your selling is going — quotes out, orders in, and what's been delivered.</SimpleHint>
-        <div className="so-stats">
+        <div className="so-stats" data-tour="sales-stats">
             {cards.map((c, i) => (
                 <div key={i} className="so-st">
                     <div className="so-st-ic" style={{ background: c.color + "14", color: c.color }}><I name={c.icon} /></div>
@@ -58,7 +58,7 @@ function SalesOverview({ nav }) {
             ))}
         </div>
 
-        <div className="so-grid2">
+        <div className="so-grid2" data-tour="sales-grid">
             <div className="so-card" style={{ marginBottom: 0 }}>
                 <div className="so-card-h">
                     <h3 className="so-card-t">Recent Orders</h3>

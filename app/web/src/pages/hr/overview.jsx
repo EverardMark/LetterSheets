@@ -295,7 +295,7 @@ function Overview({ nav, employees, departments }) {
 
     return (<>
         <SimpleHint icon="bulb">Your team at a glance — who's in, who's on leave, and what needs attention.</SimpleHint>
-        <div className="h-stats">
+        <div className="h-stats" data-tour="hr-stats">
             {[
                 { label:"Total Employees", value: employees.length.toString(), icon:"users",    color:"#2d9e8b" },
                 { label:"Present Today",   value: presentToday.toString(),     icon:"check",    color:"#0ea5e9" },
@@ -312,7 +312,7 @@ function Overview({ nav, employees, departments }) {
         <div className="h-g-main">
             <div className="h-g-col">
                 {/* Recent Employees */}
-                <div className="h-card">
+                <div className="h-card" data-tour="hr-employees">
                     <div className="h-card-h"><h3 className="h-card-t">Recent Employees</h3><span className="h-card-lk" onClick={()=>nav("/hr/employees")}>View all →</span></div>
                     {employees.length > 0 ? (
                         <div style={{overflowX:"auto"}}><table className="h-tbl"><thead><tr><th>Name</th><th>Department</th><th>Position</th><th>Status</th></tr></thead><tbody>
@@ -346,7 +346,7 @@ function Overview({ nav, employees, departments }) {
                 </div>
             </div>
 
-            <div className="h-g-col">
+            <div className="h-g-col" data-tour="hr-side">
                 {/* Pending Leave */}
                 <div className="h-card">
                     <div className="h-card-h"><h3 className="h-card-t">Pending Leave</h3><span className="h-card-lk" onClick={()=>nav("/hr/leave")}>View all</span></div>

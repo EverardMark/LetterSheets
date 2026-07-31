@@ -146,14 +146,14 @@ export default function Dashboard() {
 
   return (<>
     {/* Greeting */}
-    <div style={{marginBottom:22}}>
+    <div style={{marginBottom:22}} data-tour="dash-hi">
       <h1 className="d-h1">Hi {user.username || "there"} <span className="d-accent">Great to see you!</span></h1>
       <p className="d-sub">Here's your business overview for today.</p>
     </div>
 
     {/* Top summary from available modules */}
     {summaryItems.length > 0 && (
-        <div className="d-summary">
+        <div className="d-summary" data-tour="dash-summary">
           {summaryItems.map((s,i)=>(
               <div key={i} className="d-sum-item">
                 <div className="d-sum-ic" style={{background:s.color+"14",color:s.color}}><I name={s.icon} size={16}/></div>
@@ -168,7 +168,7 @@ export default function Dashboard() {
 
     {/* Module cards — only available ones */}
     {availableModules.length > 0 ? (
-        <div className="d-modules" style={{gridTemplateColumns: availableModules.length === 1 ? "1fr" : `repeat(${Math.min(availableModules.length, 3)}, 1fr)`}}>
+        <div className="d-modules" data-tour="dash-modules" style={{gridTemplateColumns: availableModules.length === 1 ? "1fr" : `repeat(${Math.min(availableModules.length, 3)}, 1fr)`}}>
           {availableModules.map(mod => {
             const data = moduleMetrics[mod.id];
             const color = getColor(mod.id);

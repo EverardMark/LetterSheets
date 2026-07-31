@@ -105,7 +105,7 @@ function AccountingOverview({ nav }) {
     return (<>
         <SimpleHint icon="bulb">A quick snapshot of your business finances — cash on hand, money owed to you, and bills to pay.</SimpleHint>
 
-        <div className="a-stats">
+        <div className="a-stats" data-tour="acc-stats">
             {[
                 { label: "Cash Balance",        value: fmt(cashBalance),               icon: "banknote", color: "#2d9e8b" },
                 { label: <Term simple="Money Owed to You" advanced="Accounts Receivable"/>, value: fmt(ar.total_receivable),  icon: "peso", color: "#0ea5e9" },
@@ -123,7 +123,7 @@ function AccountingOverview({ nav }) {
         <div className="a-g-main">
             <div className="a-g-col">
                 {/* Recent Journal Entries */}
-                <div className="a-card">
+                <div className="a-card" data-tour="acc-recent">
                     <div className="a-card-h"><h3 className="a-card-t"><Term simple="Recent Transactions" advanced="Recent Journal Entries"/></h3><span className="a-card-lk" onClick={() => nav("/accounting/journal")}>View all →</span></div>
                     {entries.length > 0 ? (
                         <div style={{ overflowX: "auto" }}><table className="a-tbl"><thead><tr><th>Entry #</th><th>Date</th><th>Amount</th><th>Status</th></tr></thead><tbody>
@@ -135,7 +135,7 @@ function AccountingOverview({ nav }) {
                 </div>
 
                 {/* Accounts by Type */}
-                <div className="a-card">
+                <div className="a-card" data-tour="acc-coa">
                     <div className="a-card-h"><h3 className="a-card-t"><Term simple="Accounts" advanced="Chart of Accounts"/></h3><span className="a-card-lk" onClick={() => nav("/accounting/coa")}>Manage →</span></div>
                     {accountsByType.length > 0 ? (
                         <div className="a-type-grid">{accountsByType.map((t, i) => (
@@ -157,7 +157,7 @@ function AccountingOverview({ nav }) {
                 </div>
             </div>
 
-            <div className="a-g-col">
+            <div className="a-g-col" data-tour="acc-side">
                 {/* Outstanding Invoices */}
                 <div className="a-card">
                     <div className="a-card-h"><h3 className="a-card-t"><Term simple="Money Owed to You" advanced="Outstanding Invoices"/></h3><span className="a-card-lk" onClick={() => nav("/accounting/receivables")}>View all</span></div>

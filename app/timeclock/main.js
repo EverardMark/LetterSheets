@@ -13,7 +13,7 @@ let allowQuit = false;
 // remote deploy; override at launch for local dev, e.g.
 // VITE_API_BASE=http://localhost:8080 npm start.
 // ---------------------------------------------------------------------------
-const SERVER_URL = (process.env.VITE_API_BASE || 'http://47.129.29.202:8080')
+const SERVER_URL = (process.env.VITE_API_BASE || 'https://api.lettersheets.com')
   .replace(/\/+$/, '');
 
 // In-memory kiosk session (established once when the device signs in).

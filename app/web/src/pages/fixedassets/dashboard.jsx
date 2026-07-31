@@ -55,7 +55,7 @@ function FixedAssetsOverview({ nav }) {
 
     return (<>
         <SimpleHint icon="bulb">Your big things of value — equipment, vehicles, furniture — and how their value drops over time.</SimpleHint>
-        <div className="fa-stats">
+        <div className="fa-stats" data-tour="fa-stats">
             {cards.map((c, i) => (
                 <div key={i} className="fa-st">
                     <div className="fa-st-ic" style={{ background: c.color + "14", color: c.color }}><I name={c.icon} /></div>
@@ -65,7 +65,7 @@ function FixedAssetsOverview({ nav }) {
             ))}
         </div>
 
-        <div className="fa-grid2">
+        <div className="fa-grid2" data-tour="fa-grid">
             {/* Recent depreciation runs */}
             <div className="fa-card" style={{ marginBottom: 0 }}>
                 <div className="fa-card-h">

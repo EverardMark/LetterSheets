@@ -68,7 +68,7 @@ function Overview({ nav }) {
     ];
 
     return (<>
-        <div className="ex-stats">
+        <div className="ex-stats" data-tour="exp-stats">
             {cards.map((c, i) => (
                 <div key={i} className="ex-st">
                     <div className="ex-st-ic" style={{ background: c.color + "18", color: c.color }}><I name={c.icon} size={17}/></div>
@@ -78,7 +78,7 @@ function Overview({ nav }) {
             ))}
         </div>
 
-        <div className="ex-card">
+        <div className="ex-card" data-tour="exp-pending">
             <div className="ex-card-h">
                 <h3 className="ex-card-t">Waiting on an approver</h3>
                 <span className="ex-card-lk" onClick={() => nav("/expenses/claims")}>All claims →</span>

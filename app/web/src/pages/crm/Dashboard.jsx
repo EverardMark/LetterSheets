@@ -59,7 +59,7 @@ function Overview({ nav }) {
 
     return (<>
         <SimpleHint icon="bulb">Track potential customers from first contact to closed deal.</SimpleHint>
-        <div className="crm-stats">
+        <div className="crm-stats" data-tour="crm-stats">
             {cards.map((c, i) => (
                 <div key={i} className="crm-st">
                     <div className="crm-st-ic" style={{ background: c.color + "18", color: c.color }}><I name={c.icon} size={17} /></div>
@@ -69,7 +69,7 @@ function Overview({ nav }) {
             ))}
         </div>
 
-        <div className="crm-card">
+        <div className="crm-card" data-tour="crm-pipeline">
             <div className="crm-card-h">
                 <h3 className="crm-card-t"><Term simple="Deals by stage" advanced="Pipeline by stage" /></h3>
                 <span className="crm-card-lk" onClick={() => nav("/crm/pipeline")}>Open board →</span>

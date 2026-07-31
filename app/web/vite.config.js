@@ -9,7 +9,7 @@ import react from '@vitejs/plugin-react'
 // or rebuild (`npm run build`) after changing it.
 const DEV_MODE = false
 const LOCAL_API = 'http://localhost:8080'
-const REMOTE_API = 'http://47.129.29.202:8080'
+const REMOTE_API = 'https://api.lettersheets.com'
 const API_BASE = DEV_MODE ? LOCAL_API : REMOTE_API
 // ─────────────────────────────────────────────────────────────────────────
 
