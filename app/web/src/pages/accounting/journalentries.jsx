@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { I } from "../../layouts/ERPLayout";
 import { useIsSimple } from "../../utils/uimode";
 import "./acc-layout.css";
@@ -18,6 +19,32 @@ async function api(action, body = {}) {
 
 function fmtMoney(n) {
     return "₱" + Number(n || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+/* A field label with an optional "?" that reveals a one-line explanation on
+   hover or keyboard focus — so a first-time user knows what each box is for. */
+function HelpLabel({ help, children, style }) {
+    return (
+        <label className="acc-label" style={style}>
+            <span>{children}</span>
+            {help && (
+                <span className="je-help" tabIndex={0} aria-label={help}>
+                    <I name="help-circle" size={13}/>
+                    <span className="je-help-pop" role="tooltip">{help}</span>
+                </span>
+            )}
+        </label>
+    );
+}
+
+/* Friendly plural noun for the kind of account a preset side needs — shown in the
+   "no … accounts yet" prompt under an empty picker. */
+function needNoun(side) {
+    if (!side) return "accounts";
+    if (side.role === "cash") return "cash or bank accounts";
+    return ({ Expense: "expense accounts", Liability: "payable accounts",
+              Revenue: "income accounts", Equity: "equity accounts",
+              Asset: "asset accounts" })[side.types?.[0]] || "accounts";
 }
 
 const STATUS_CLR = { Draft: "#f59e0b", Posted: "#22c55e", Voided: "#ef4444" };
@@ -64,52 +91,68 @@ const TXN_PRESETS = [
     {
         id: "pay_expense", group: "Money Out", icon: "trending-down", color: "#ef4444",
         label: "Pay an expense", sub: "Rent, utilities, supplies, fuel…",
-        debit: { role: "category", types: ["Expense"], label: "What was it for?", hint: "" },
-        credit: { role: "cash", types: ["Asset"], label: "Paid from", hint: "cash" },
+        debit: { role: "category", types: ["Expense"], label: "What was it for?", hint: "",
+                 help: "The expense this money went to — e.g. Rent, Utilities, Supplies or Fuel." },
+        credit: { role: "cash", types: ["Asset"], label: "Paid from", hint: "cash",
+                 help: "The cash or bank account the money came out of." },
     },
     {
         id: "pay_supplier", group: "Money Out", icon: "receipt", color: "#f97316",
         label: "Pay a supplier / bill", sub: "Settle money you already owe",
-        debit: { role: "category", types: ["Liability"], label: "Which payable?", hint: "payable" },
-        credit: { role: "cash", types: ["Asset"], label: "Paid from", hint: "cash" },
+        debit: { role: "category", types: ["Liability"], label: "Which payable?", hint: "payable",
+                 help: "The bill or supplier balance you're paying down (Accounts Payable)." },
+        credit: { role: "cash", types: ["Asset"], label: "Paid from", hint: "cash",
+                 help: "The cash or bank account the money came out of." },
     },
     {
         id: "buy_asset", group: "Money Out", icon: "cube", color: "#8b5cf6",
         label: "Buy equipment / asset", sub: "Something you'll keep and use",
-        debit: { role: "category", types: ["Asset"], label: "What did you buy?", hint: "equip" },
-        credit: { role: "cash", types: ["Asset"], label: "Paid from", hint: "cash" },
+        debit: { role: "category", types: ["Asset"], label: "What did you buy?", hint: "equip",
+                 help: "The asset account for the thing you bought and will keep — equipment, a vehicle, etc." },
+        credit: { role: "cash", types: ["Asset"], label: "Paid from", hint: "cash",
+                 help: "The cash or bank account the money came out of." },
     },
     {
         id: "owner_draw", group: "Money Out", icon: "user-minus", color: "#ec4899",
         label: "Owner withdrawal", sub: "Money the owner took out",
-        debit: { role: "category", types: ["Equity"], label: "Drawings account", hint: "draw" },
-        credit: { role: "cash", types: ["Asset"], label: "Paid from", hint: "cash" },
+        debit: { role: "category", types: ["Equity"], label: "Drawings account", hint: "draw",
+                 help: "The owner's drawings / withdrawals account (an equity account)." },
+        credit: { role: "cash", types: ["Asset"], label: "Paid from", hint: "cash",
+                 help: "The cash or bank account the money came out of." },
     },
     // ---- MONEY IN ----
     {
         id: "cash_sale", group: "Money In", icon: "trending-up", color: "#22c55e",
         label: "Sale / income received", sub: "Cash sale or other income",
-        debit: { role: "cash", types: ["Asset"], label: "Received into", hint: "cash" },
-        credit: { role: "category", types: ["Revenue"], label: "Kind of income", hint: "" },
+        debit: { role: "cash", types: ["Asset"], label: "Received into", hint: "cash",
+                 help: "The cash or bank account the money landed in." },
+        credit: { role: "category", types: ["Revenue"], label: "Kind of income", hint: "",
+                 help: "The income category for this money — e.g. Sales or Service Income." },
     },
     {
         id: "collect_ar", group: "Money In", icon: "hand-coin", color: "#10b981",
         label: "Customer paid me", sub: "Collecting money owed to you",
-        debit: { role: "cash", types: ["Asset"], label: "Received into", hint: "cash" },
-        credit: { role: "category", types: ["Asset"], label: "Which receivable?", hint: "receivable" },
+        debit: { role: "cash", types: ["Asset"], label: "Received into", hint: "cash",
+                 help: "The cash or bank account the money landed in." },
+        credit: { role: "category", types: ["Asset"], label: "Which receivable?", hint: "receivable",
+                 help: "The receivable account the customer was paying off (Accounts Receivable)." },
     },
     {
         id: "owner_invest", group: "Money In", icon: "user-plus", color: "#0ea5e9",
         label: "Owner investment", sub: "Owner put money into the business",
-        debit: { role: "cash", types: ["Asset"], label: "Received into", hint: "cash" },
-        credit: { role: "category", types: ["Equity"], label: "Capital account", hint: "capital" },
+        debit: { role: "cash", types: ["Asset"], label: "Received into", hint: "cash",
+                 help: "The cash or bank account the money landed in." },
+        credit: { role: "category", types: ["Equity"], label: "Capital account", hint: "capital",
+                 help: "The owner's capital / equity account for money they put in." },
     },
     // ---- MOVE MONEY ----
     {
         id: "transfer", group: "Move Money", icon: "repeat", color: "#6366f1",
         label: "Transfer / deposit", sub: "Move money between cash & bank",
-        debit: { role: "cash", types: ["Asset"], label: "To (destination)", hint: "bank" },
-        credit: { role: "cash", types: ["Asset"], label: "From (source)", hint: "cash" },
+        debit: { role: "cash", types: ["Asset"], label: "To (destination)", hint: "bank",
+                 help: "The cash or bank account the money is going into." },
+        credit: { role: "cash", types: ["Asset"], label: "From (source)", hint: "cash",
+                 help: "The cash or bank account the money is coming from." },
     },
 ];
 const TXN_GROUPS = ["Money Out", "Money In", "Move Money"];
@@ -138,6 +181,7 @@ export default function JournalEntries() {
     // grid for a single tricky entry via the inline link in the guided form; that
     // one-off override resets whenever the create view is re-opened.
     const globalSimple = useIsSimple();
+    const navigate = useNavigate();
     const [entryMode, setEntryMode] = useState(globalSimple ? "simple" : "advanced"); // simple | advanced
     const [simpleType, setSimpleType] = useState("");      // preset id
     const [simpleAmount, setSimpleAmount] = useState("");
@@ -886,18 +930,20 @@ export default function JournalEntries() {
                 {missingAccts && (
                     <div className="je-simple-warn">
                         <I name="alert-triangle" size={14}/>
-                        You don't have the right accounts set up for this yet. Add them under
-                        <b> Chart of Accts</b>, or{" "}
-                        <button onClick={() => setEntryMode("advanced")}
-                            style={{ border: "none", background: "none", color: "#2d9e8b", fontFamily: "inherit",
-                                     fontSize: "inherit", fontWeight: 700, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
-                            use the full grid
-                        </button>.
+                        <span>
+                            You don't have the right accounts set up for this yet.{" "}
+                            <button className="je-warn-link" onClick={() => navigate("/accounting/coa")}>
+                                Set them up in Chart of Accounts
+                            </button>, or{" "}
+                            <button className="je-warn-link" onClick={() => setEntryMode("advanced")}>
+                                use the full grid
+                            </button>.
+                        </span>
                     </div>
                 )}
 
                 {/* Amount — the star of the form */}
-                <label className="acc-label">Amount</label>
+                <HelpLabel help="How much money changed hands, in pesos.">Amount</HelpLabel>
                 <div className="je-amount-wrap">
                     <span className="je-amount-peso">₱</span>
                     <input type="number" min="0" step="0.01" className="je-amount-input" placeholder="0.00"
@@ -907,28 +953,38 @@ export default function JournalEntries() {
                 {/* The two accounts, in plain language */}
                 <div className="je-simple-row">
                     <div style={{ flex: 1 }}>
-                        <label className="acc-label">{p.debit.label}</label>
+                        <HelpLabel help={p.debit.help}>{p.debit.label}</HelpLabel>
                         <select className="acc-input" style={{ margin: 0 }} value={sDebit} onChange={e => setSDebit(e.target.value)}>
                             <option value="">Select…</option>
                             {debitList.map(a => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
                         </select>
+                        {debitList.length === 0 && (
+                            <button type="button" className="je-field-need" onClick={() => navigate("/accounting/coa")}>
+                                <I name="plus" size={11}/> No {needNoun(p.debit)} yet — add one
+                            </button>
+                        )}
                     </div>
                     <div style={{ flex: 1 }}>
-                        <label className="acc-label">{p.credit.label}</label>
+                        <HelpLabel help={p.credit.help}>{p.credit.label}</HelpLabel>
                         <select className="acc-input" style={{ margin: 0 }} value={sCredit} onChange={e => setSCredit(e.target.value)}>
                             <option value="">Select…</option>
                             {creditList.map(a => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
                         </select>
+                        {creditList.length === 0 && (
+                            <button type="button" className="je-field-need" onClick={() => navigate("/accounting/coa")}>
+                                <I name="plus" size={11}/> No {needNoun(p.credit)} yet — add one
+                            </button>
+                        )}
                     </div>
                 </div>
 
                 <div className="je-simple-row">
                     <div style={{ flex: 1 }}>
-                        <label className="acc-label">Date</label>
+                        <HelpLabel help="The day the money actually moved.">Date</HelpLabel>
                         <input type="date" className="acc-input" style={{ margin: 0 }} value={formDate} onChange={e => setFormDate(e.target.value)}/>
                     </div>
                     <div style={{ flex: 2 }}>
-                        <label className="acc-label">Note <span style={{ color: "#aaa", fontWeight: 400 }}>(optional)</span></label>
+                        <HelpLabel help="An optional reminder of what this was for — it shows on the entry.">Note <span style={{ color: "#aaa", fontWeight: 400 }}>(optional)</span></HelpLabel>
                         <input className="acc-input" style={{ margin: 0 }} placeholder="e.g. July office rent" value={formMemo} onChange={e => setFormMemo(e.target.value)}/>
                     </div>
                 </div>
@@ -1203,10 +1259,14 @@ export default function JournalEntries() {
         }
 
         // Step 2 — transaction details + schedule.
-        const debitList = activeRecPreset ? pickAccounts(activeRecPreset.debit) : accounts;
-        const creditList = activeRecPreset ? pickAccounts(activeRecPreset.credit) : accounts;
-        const debitLabel = activeRecPreset ? activeRecPreset.debit.label : "Money goes to (debit)";
-        const creditLabel = activeRecPreset ? activeRecPreset.credit.label : "Money comes from (credit)";
+        const debitSide = activeRecPreset ? activeRecPreset.debit : null;
+        const creditSide = activeRecPreset ? activeRecPreset.credit : null;
+        const debitList = debitSide ? pickAccounts(debitSide) : accounts;
+        const creditList = creditSide ? pickAccounts(creditSide) : accounts;
+        const debitLabel = debitSide ? debitSide.label : "Money goes to (debit)";
+        const creditLabel = creditSide ? creditSide.label : "Money comes from (credit)";
+        const debitHelp = debitSide ? debitSide.help : "The account the money goes into — the debit side of this entry.";
+        const creditHelp = creditSide ? creditSide.help : "The account the money comes from — the credit side of this entry.";
         const acctName = (id) => { const a = acctMap[id]; return a ? `${a.code} ${a.name}` : "—"; };
         const amt = Number(recAmount) || 0;
         const ready = recName.trim() && amt > 0 && recDebit && recCredit && recDebit !== recCredit && recStart;
@@ -1226,10 +1286,10 @@ export default function JournalEntries() {
                         </button>
                     )}
 
-                    <label className="acc-label">Name</label>
+                    <HelpLabel help="A short name so you can spot this rule later — e.g. 'Monthly office rent'.">Name</HelpLabel>
                     <input className="acc-input" placeholder="e.g. Monthly office rent" value={recName} onChange={e => setRecName(e.target.value)}/>
 
-                    <label className="acc-label" style={{ marginTop: 14 }}>Amount</label>
+                    <HelpLabel help="How much each run posts, in pesos." style={{ marginTop: 14 }}>Amount</HelpLabel>
                     <div className="je-amount-wrap">
                         <span className="je-amount-peso">₱</span>
                         <input type="number" min="0" step="0.01" className="je-amount-input" placeholder="0.00"
@@ -1238,18 +1298,28 @@ export default function JournalEntries() {
 
                     <div className="je-simple-row">
                         <div style={{ flex: 1 }}>
-                            <label className="acc-label">{debitLabel}</label>
+                            <HelpLabel help={debitHelp}>{debitLabel}</HelpLabel>
                             <select className="acc-input" style={{ margin: 0 }} value={recDebit} onChange={e => setRecDebit(e.target.value)}>
                                 <option value="">Select…</option>
                                 {debitList.map(a => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
                             </select>
+                            {debitList.length === 0 && (
+                                <button type="button" className="je-field-need" onClick={() => navigate("/accounting/coa")}>
+                                    <I name="plus" size={11}/> No {needNoun(debitSide)} yet — add one
+                                </button>
+                            )}
                         </div>
                         <div style={{ flex: 1 }}>
-                            <label className="acc-label">{creditLabel}</label>
+                            <HelpLabel help={creditHelp}>{creditLabel}</HelpLabel>
                             <select className="acc-input" style={{ margin: 0 }} value={recCredit} onChange={e => setRecCredit(e.target.value)}>
                                 <option value="">Select…</option>
                                 {creditList.map(a => <option key={a.id} value={a.id}>{a.code} {a.name}</option>)}
                             </select>
+                            {creditList.length === 0 && (
+                                <button type="button" className="je-field-need" onClick={() => navigate("/accounting/coa")}>
+                                    <I name="plus" size={11}/> No {needNoun(creditSide)} yet — add one
+                                </button>
+                            )}
                         </div>
                     </div>
 
@@ -1257,13 +1327,13 @@ export default function JournalEntries() {
                         <div className="je-group-title" style={{ marginTop: 4 }}>Schedule</div>
                         <div className="je-simple-row" style={{ marginTop: 0 }}>
                             <div style={{ flex: 1 }}>
-                                <label className="acc-label">Repeats</label>
+                                <HelpLabel help="How often this repeats — weekly, monthly, quarterly or yearly.">Repeats</HelpLabel>
                                 <select className="acc-input" style={{ margin: 0 }} value={recFreq} onChange={e => setRecFreq(e.target.value)}>
                                     {FREQ_OPTIONS.map(f => <option key={f} value={f}>{f}</option>)}
                                 </select>
                             </div>
                             <div style={{ flex: 1 }}>
-                                <label className="acc-label">Every</label>
+                                <HelpLabel help="The gap between runs — e.g. 2 means every other one.">Every</HelpLabel>
                                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                                     <input type="number" min="1" step="1" className="acc-input" style={{ margin: 0, width: 70 }}
                                         value={recInterval} onChange={e => setRecInterval(e.target.value)}/>
@@ -1273,15 +1343,15 @@ export default function JournalEntries() {
                         </div>
                         <div className="je-simple-row">
                             <div style={{ flex: 1 }}>
-                                <label className="acc-label">Starts</label>
+                                <HelpLabel help="The date of the first run.">Starts</HelpLabel>
                                 <input type="date" className="acc-input" style={{ margin: 0 }} value={recStart} onChange={e => setRecStart(e.target.value)}/>
                             </div>
                             <div style={{ flex: 1 }}>
-                                <label className="acc-label">Ends <span style={{ color: "#aaa", fontWeight: 400 }}>(optional)</span></label>
+                                <HelpLabel help="Optional last date — leave blank to keep it running.">Ends <span style={{ color: "#aaa", fontWeight: 400 }}>(optional)</span></HelpLabel>
                                 <input type="date" className="acc-input" style={{ margin: 0 }} value={recEnd} onChange={e => setRecEnd(e.target.value)}/>
                             </div>
                             <div style={{ flex: 1 }}>
-                                <label className="acc-label">Max runs <span style={{ color: "#aaa", fontWeight: 400 }}>(optional)</span></label>
+                                <HelpLabel help="Optional cap on how many times it runs — blank means unlimited.">Max runs <span style={{ color: "#aaa", fontWeight: 400 }}>(optional)</span></HelpLabel>
                                 <input type="number" min="1" step="1" className="acc-input" style={{ margin: 0 }} placeholder="∞"
                                     value={recLimit} onChange={e => setRecLimit(e.target.value)}/>
                             </div>
@@ -1389,6 +1459,17 @@ const jeCSS = `
   .je-change-type:hover{color:#2d9e8b}
   .je-simple-title{display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid #f1f5f9}
   .je-simple-warn{display:flex;gap:8px;align-items:flex-start;background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:12px;line-height:1.5;padding:10px 12px;border-radius:8px;margin-bottom:14px}
+  .je-warn-link{background:none;border:none;color:#b45309;font-family:inherit;font-size:inherit;font-weight:700;cursor:pointer;padding:0;text-decoration:underline}
+  .je-warn-link:hover{color:#78350f}
+  /* "?" help affordance beside a field label */
+  .je-help{position:relative;display:inline-flex;align-items:center;color:#b4bcc8;cursor:help;outline:none}
+  .je-help:hover,.je-help:focus-visible{color:#2d9e8b}
+  .je-help-pop{position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);width:210px;background:#1e293b;color:#f1f5f9;font-size:11px;font-weight:500;line-height:1.45;text-align:left;padding:8px 10px;border-radius:8px;box-shadow:0 6px 22px rgba(15,23,42,.30);opacity:0;visibility:hidden;transition:opacity .12s ease,visibility .12s ease;z-index:60;pointer-events:none;white-space:normal}
+  .je-help-pop::after{content:"";position:absolute;top:100%;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:#1e293b}
+  .je-help:hover .je-help-pop,.je-help:focus .je-help-pop,.je-help:focus-visible .je-help-pop{opacity:1;visibility:visible}
+  /* inline "no accounts yet — add one" prompt under an empty picker */
+  .je-field-need{display:inline-flex;align-items:center;gap:4px;margin-top:6px;background:none;border:none;padding:0;color:#d97706;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit}
+  .je-field-need:hover{color:#b45309;text-decoration:underline}
   .je-simple-row{display:flex;gap:14px;margin-top:14px}
   .je-amount-wrap{display:flex;align-items:center;border:2px solid #e5e7eb;border-radius:10px;padding:4px 14px;background:#fff;transition:border-color .15s}
   .je-amount-wrap:focus-within{border-color:#2d9e8b}

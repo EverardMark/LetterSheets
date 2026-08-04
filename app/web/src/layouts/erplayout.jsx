@@ -15,7 +15,7 @@ import {
     faFloppyDisk, faPenToSquare, faTrashCan, faPlay, faPause, faCircleXmark,
     faPaperclip, faUpload, faDownload, faImage, faFileLines,
     faXmark, faPhone, faFlag, faBullseye,
-    faCircleInfo, faLightbulb,
+    faCircleInfo, faLightbulb, faCircleQuestion,
 } from "@fortawesome/pro-light-svg-icons";
 import UpdateButton from "../pages/components/updatebutton";
 import { ModeToggle } from "../pages/components/simplemode";
@@ -359,6 +359,7 @@ const faMap = {
     target: faBullseye,
     info: faCircleInfo,
     bulb: faLightbulb,
+    "help-circle": faCircleQuestion,
 };
 
 export const I = ({ name, size = 16 }) => {
