@@ -21,7 +21,7 @@ contextBridge.exposeInMainWorld('api', {
   clockIn: (employeeId) => ipcRenderer.invoke('attendance:clockIn', { employeeId }),
   clockOut: (attendanceId) => ipcRenderer.invoke('attendance:clockOut', { attendanceId }),
 
-  // Fingerprint templates (persisted in the ERP)
+  // Fingerprint templates (stored locally on the kiosk, never sent to the server)
   fpList: () => ipcRenderer.invoke('fp:list'),
   fpEnroll: (employeeId, fingerIndex, template, quality) =>
     ipcRenderer.invoke('fp:enroll', { employeeId, fingerIndex, template, quality }),

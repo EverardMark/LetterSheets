@@ -1,0 +1,30 @@
+# systemd unit to keep fpbridge running on the kiosk.
+#
+# fpbridge binds ws://127.0.0.1:52100 (loopback only) and needs USB access to
+# the reader — install 99-dp-uareu.rules first (see README). Adjust User and
+# ExecStart to your install, then:
+#
+#   sudo cp fpbridge /usr/local/bin/fpbridge
+#   sudo cp fpbridge.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now fpbridge
+#
+# Check it: systemctl status fpbridge  ·  journalctl -u fpbridge -f
+
+[Unit]
+Description=LetterSheets Time Clock fingerprint bridge
+After=multi-user.target
+
+[Service]
+Type=simple
+# Run as the kiosk user (must be the active seat user for TAG+="uaccess",
+# or a member of the group used in the udev rule).
+User=kiosk
+ExecStart=/usr/local/bin/fpbridge
+Restart=always
+RestartSec=2
+# If the SDK libraries are not on the default loader path, point to them:
+# Environment=LD_LIBRARY_PATH=/opt/DigitalPersona/UareUSDK/lib
+
+[Install]
+WantedBy=multi-user.target

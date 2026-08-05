@@ -558,7 +558,9 @@ async function onIdentifyResult(m) {
     return;
   }
 
-  const emp = employees.find((e) => e.id === m.employeeId);
+  // Match by string form: the bridge echoes employeeId as a string, while
+  // get_employees may return numeric ids — a strict === would miss those.
+  const emp = employees.find((e) => String(e.id) === String(m.employeeId));
   if (!emp) { setTimeout(() => armIdentify(), 800); return; }
 
   identifyActive = false; // pause while we clock this person
