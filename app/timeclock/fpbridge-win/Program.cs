@@ -35,7 +35,9 @@ namespace FpBridge
 
         // FMD comparison threshold. DigitalPersona scores are dissimilarity:
         // lower = better match. PROBABILITY_ONE / 100000 ≈ FAR 1 in 100,000.
-        private static readonly int MatchThreshold = Constants.PROBABILITY_ONE / 100000;
+        // PROBABILITY_ONE is 0x7FFFFFFF (int.MaxValue) in the U.are.U SDK; the
+        // named constant moved/renamed across SDK builds, so use the value.
+        private static readonly int MatchThreshold = 2147483647 / 100000;
 
         private const int CaptureTimeoutMs = 15000;
         private const int EnrollScansNeeded = 4;
@@ -48,6 +50,7 @@ namespace FpBridge
 
         private static Reader _reader;
         private static CancellationTokenSource _opCts; // cancels the running capture op
+        private static volatile bool _identifying;     // true while an identify loop runs (blocks overlapping captures)
 
         private static async Task Main()
         {
@@ -143,7 +146,9 @@ namespace FpBridge
             catch { return; }
             if (msg == null || !msg.ContainsKey("cmd")) return;
 
-            switch (Convert.ToString(msg["cmd"]))
+            var _cmd = Convert.ToString(msg["cmd"]);
+            Console.WriteLine("[cmd] " + _cmd);
+            switch (_cmd)
             {
                 case "status":
                     await SendStatus(ws);
@@ -151,7 +156,9 @@ namespace FpBridge
 
                 case "load":
                     LoadTemplates(msg);
-                    await SendStatus(ws);
+                    // NO status reply here on purpose: the app reloads templates on
+                    // every status, so a status-after-load creates an infinite
+                    // load<->status loop -> overlapping captures -> DP_DEVICE_BUSY.
                     break;
 
                 case "cancel":
@@ -160,10 +167,15 @@ namespace FpBridge
                     break;
 
                 case "identify":
+                {
+                    if (_identifying) break; // already scanning; drop duplicate arms (avoids overlap -> DP_DEVICE_BUSY)
                     CancelOp();
+                    _identifying = true;
                     _opCts = new CancellationTokenSource();
-                    _ = Task.Run(() => IdentifyLoop(ws, _opCts.Token));
+                    var idTok = _opCts.Token;
+                    _ = Task.Run(async () => { try { await IdentifyLoop(ws, idTok); } finally { _identifying = false; } });
                     break;
+                }
 
                 case "enroll":
                     CancelOp();
@@ -179,6 +191,7 @@ namespace FpBridge
         {
             try { _opCts?.Cancel(); } catch { }
             _opCts = null;
+            _identifying = false;
         }
 
         private static Task SendStatus(WebSocket ws) => Send(ws, new
@@ -221,6 +234,7 @@ namespace FpBridge
         {
             if (_reader == null) { await Send(ws, Err("No reader connected.")); return; }
 
+            Console.WriteLine("[identify] loop started; loaded templates=" + _enrolledFmds.Count);
             Fmd probe = await CaptureFmd(ws, ct);
             if (probe == null) return; // canceled or errored (already reported)
 
@@ -301,16 +315,22 @@ namespace FpBridge
                 }
                 catch (Exception ex)
                 {
+                    Console.WriteLine("[capture] EXCEPTION: " + ex);
                     await Send(ws, Err("Capture error: " + ex.Message));
                     return null;
                 }
 
                 if (ct.IsCancellationRequested) return null;
 
+                Console.WriteLine("[capture] rc=" + (cap == null ? "null" : cap.ResultCode.ToString()) +
+                                  " quality=" + (cap == null ? "null" : cap.Quality.ToString()));
+
                 if (cap == null || cap.ResultCode != Constants.ResultCode.DP_SUCCESS)
                 {
-                    // Timeout with no finger: loop and wait again.
-                    if (cap != null && cap.ResultCode == Constants.ResultCode.DP_ERROR_TIMED_OUT) continue;
+                    // Non-success is normally a timeout with no finger yet, or the
+                    // device is momentarily busy -> pause briefly and keep polling
+                    // (don't spin the CPU or hammer a busy reader).
+                    if (cap != null) { await Task.Delay(300); continue; }
                     await Send(ws, Err("Capture failed — try again."));
                     return null;
                 }

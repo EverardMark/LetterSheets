@@ -30,4 +30,10 @@
     </Reference>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- net48 reference assemblies via NuGet, so the .NET Framework 4.8
+         Developer Pack is NOT required on the build machine. -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
 </Project>
