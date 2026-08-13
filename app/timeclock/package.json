@@ -9,7 +9,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "package:win": "electron-packager . LetterSheetsTimeClock --platform=win32 --arch=x64 --out=dist --overwrite"
+    "package:win": "electron-packager . LetterSheetsTimeClock --platform=win32 --arch=x64 --out=dist --overwrite",
+    "package:linux-arm64": "electron-packager . LetterSheetsTimeClock --platform=linux --arch=arm64 --out=dist --overwrite"
   },
   "devDependencies": {
     "@electron/packager": "^20.2.1",

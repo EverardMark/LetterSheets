@@ -8,9 +8,12 @@
 #   sudo udevadm control --reload-rules && sudo udevadm trigger
 # Then unplug/replug the reader.
 
-SUBSYSTEM=="usb", ATTR{idVendor}=="05ba", MODE="0660", TAG+="uaccess"
+# Primary (Pi kiosk): fpbridge runs as a system service (User=biometrics), which
+# is not guaranteed to be the active seat, so grant access via a group. Create it
+# and add the service user once:
+#   sudo groupadd -f plugdev && sudo usermod -aG plugdev biometrics
+SUBSYSTEM=="usb", ATTR{idVendor}=="05ba", MODE="0660", GROUP="plugdev"
 
-# If fpbridge runs as a dedicated service account rather than the seat user,
-# drop TAG+="uaccess" above and instead grant a group (create it, add the
-# service user, and uncomment):
-# SUBSYSTEM=="usb", ATTR{idVendor}=="05ba", MODE="0660", GROUP="plugdev"
+# Alternative: if fpbridge runs as the active seat/login user instead, drop the
+# GROUP line above and use uaccess (grants the ACL to whoever is logged in):
+# SUBSYSTEM=="usb", ATTR{idVendor}=="05ba", MODE="0660", TAG+="uaccess"

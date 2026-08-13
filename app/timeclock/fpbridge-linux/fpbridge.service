@@ -17,9 +17,11 @@ After=multi-user.target
 
 [Service]
 Type=simple
-# Run as the kiosk user (must be the active seat user for TAG+="uaccess",
-# or a member of the group used in the udev rule).
-User=kiosk
+# Run as the desktop seat user (the Pi 5 kiosk box logs in as `biometrics`).
+# The udev rule (99-dp-uareu.rules) must grant this user access to the reader:
+# either add it to the rule's GROUP (default, plugdev) or use TAG+="uaccess"
+# with this being the active seat user.
+User=biometrics
 ExecStart=/usr/local/bin/fpbridge
 Restart=always
 RestartSec=2
