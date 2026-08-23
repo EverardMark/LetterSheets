@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -237,6 +237,146 @@ ipcMain.handle('fp:delete', async (_e, { employeeId, fingerIndex }) => {
   const kept = list.filter((t) =>
     t.employee_id !== employeeId || (fingerIndex != null && t.finger_index !== fingerIndex));
   if (!fpSave(kept)) return { ok: false, error: 'Could not write local fingerprint store.' };
+  return { ok: true, data: { deleted: before - kept.length } };
+});
+
+// --- Face recognition templates (stored LOCALLY on the kiosk, ENCRYPTED) ---
+//
+// Same rule as fingerprints: embeddings never leave this machine, and each one
+// is linked to an employee_id that does come from the ERP.
+//
+// Unlike the fingerprint store, this file is encrypted at rest. A kiosk's disk
+// is an SD card anyone can walk off with, and a face embedding is biometric
+// data under the Data Privacy Act — sensitive personal information, and no more
+// revocable than a fingerprint. Electron's safeStorage binds the key to the OS
+// keyring, so a lifted card yields ciphertext rather than a roster of faces.
+//
+// Caveat worth knowing on a headless kiosk: safeStorage needs an unlocked
+// keyring backend. Where none is available Electron falls back to a weak
+// "basic_text" scheme, which is barely better than plaintext — faceStoreHealth()
+// reports which is in force so setup can verify it rather than assume.
+
+function faceStorePath() {
+  if (!session.companyId) return null;
+  const safe = String(session.companyId).replace(/[^a-zA-Z0-9_-]/g, '');
+  return path.join(app.getPath('userData'), `faces-${safe}.enc`);
+}
+
+// faceStoreHealth reports whether real OS-backed encryption is available.
+// Surfaced to the UI so a misconfigured kiosk is visible during setup instead
+// of silently storing biometrics under a weak fallback.
+function faceStoreHealth() {
+  const available = safeStorage.isEncryptionAvailable();
+  let backend = 'unknown';
+  try {
+    // Linux-only API; absent elsewhere, where the platform keychain is used.
+    backend = typeof safeStorage.getSelectedStorageBackend === 'function'
+      ? safeStorage.getSelectedStorageBackend()
+      : process.platform;
+  } catch { /* leave as unknown */ }
+
+  const weak = !available || backend === 'basic_text';
+  return {
+    available,
+    backend,
+    weak,
+    message: weak
+      ? 'Face templates are NOT protected by the OS keyring on this machine. '
+        + 'Enable a keyring (gnome-keyring / kwallet) before enrolling anyone.'
+      : null,
+  };
+}
+
+function faceLoad() {
+  const p = faceStorePath();
+  if (!p) return null;
+  try {
+    const blob = fs.readFileSync(p);
+    if (!blob.length) return [];
+    const json = safeStorage.decryptString(blob);
+    const list = JSON.parse(json);
+    return Array.isArray(list) ? list : [];
+  } catch (err) {
+    if (err && err.code === 'ENOENT') return [];
+    // A store that cannot be decrypted must NOT silently become an empty one:
+    // that would look like "nobody is enrolled" and quietly re-enroll everyone
+    // against a fresh key, leaving the original ciphertext orphaned on disk.
+    console.error('face store is unreadable:', err);
+    return null;
+  }
+}
+
+function faceSave(list) {
+  const p = faceStorePath();
+  if (!p) return false;
+  if (!safeStorage.isEncryptionAvailable()) {
+    console.error('refusing to write face templates: no encryption available');
+    return false;
+  }
+  try {
+    const blob = safeStorage.encryptString(JSON.stringify(list));
+    // 0600: even before encryption, the file should not be world-readable.
+    fs.writeFileSync(p, blob, { mode: 0o600 });
+    return true;
+  } catch (err) {
+    console.error('failed to save face templates:', err);
+    return false;
+  }
+}
+
+ipcMain.handle('face:health', async () => ({ ok: true, data: faceStoreHealth() }));
+
+ipcMain.handle('face:list', async () => {
+  if (!isAuthed()) return { ok: false, error: 'Not signed in.', code: 401 };
+  const list = faceLoad();
+  if (list === null) {
+    return { ok: false, error: 'The local face store could not be decrypted on this machine.' };
+  }
+  return { ok: true, data: list };
+});
+
+ipcMain.handle('face:enroll', async (_e, { employeeId, embedding, quality }) => {
+  if (!isAuthed()) return { ok: false, error: 'Not signed in.', code: 401 };
+  if (!employeeId || !embedding) {
+    return { ok: false, error: 'employeeId and embedding are required.' };
+  }
+  const health = faceStoreHealth();
+  if (health.weak) {
+    // Refuse rather than warn. Enrolling biometrics onto a kiosk that cannot
+    // protect them is the one outcome there is no way to walk back.
+    return { ok: false, error: health.message };
+  }
+
+  const list = faceLoad();
+  if (list === null) {
+    return { ok: false, error: 'The local face store could not be decrypted; enrollment aborted.' };
+  }
+
+  const rec = {
+    employee_id: employeeId,
+    embedding,
+    quality: quality || 0,
+    created_at: new Date().toISOString(),
+  };
+  // One face per employee: unlike fingers, there is only one to enroll, so a
+  // re-enroll replaces rather than accumulating stale templates that widen the
+  // match surface over time.
+  const at = list.findIndex((t) => t.employee_id === employeeId);
+  if (at >= 0) list[at] = rec; else list.push(rec);
+
+  if (!faceSave(list)) return { ok: false, error: 'Could not write the local face store.' };
+  return { ok: true, data: { saved: true } };
+});
+
+ipcMain.handle('face:delete', async (_e, { employeeId }) => {
+  if (!isAuthed()) return { ok: false, error: 'Not signed in.', code: 401 };
+  const list = faceLoad();
+  if (list === null) {
+    return { ok: false, error: 'The local face store could not be decrypted.' };
+  }
+  const before = list.length;
+  const kept = list.filter((t) => t.employee_id !== employeeId);
+  if (!faceSave(kept)) return { ok: false, error: 'Could not write the local face store.' };
   return { ok: true, data: { deleted: before - kept.length } };
 });
 

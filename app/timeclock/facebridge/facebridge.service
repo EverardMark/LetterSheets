@@ -1,0 +1,55 @@
+# systemd unit to keep facebridge running on the kiosk.
+#
+# facebridge binds ws://127.0.0.1:52101 (loopback only) and needs V4L2 access to
+# the camera. Unlike fpbridge there is no udev rule to install: membership of
+# the `video` group is enough on a stock Ubuntu/Raspberry Pi OS.
+#
+#   sudo usermod -aG video biometrics
+#   sudo cp facebridge /usr/local/bin/facebridge
+#   sudo mkdir -p /usr/local/share/facebridge/models
+#   sudo cp models/antispoof.onnx /usr/local/share/facebridge/models/
+#   sudo cp facebridge.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now facebridge
+#
+# Check it: systemctl status facebridge  ·  journalctl -u facebridge -f
+
+[Unit]
+Description=LetterSheets Time Clock face bridge
+After=multi-user.target
+
+[Service]
+Type=simple
+# Same seat user as fpbridge. Must be in the `video` group to open /dev/video0.
+User=biometrics
+SupplementaryGroups=video
+
+ExecStart=/usr/local/bin/facebridge
+Restart=always
+RestartSec=2
+
+# Model cache. insightface downloads its pack on first run and writes here, so
+# the directory must exist and be writable by User above — otherwise the first
+# identify fails with a permission error that looks like a camera fault.
+Environment=INSIGHTFACE_HOME=/var/lib/facebridge
+Environment=FACEBRIDGE_SPOOF_MODEL=/usr/local/share/facebridge/models/antispoof.onnx
+
+# Uncomment ONLY for bench testing without an anti-spoof model. With this set, a
+# printed photograph will clock someone in.
+# Environment=FACEBRIDGE_LIVENESS=0
+
+# Hardening. The bridge needs the camera, the model cache and a loopback socket,
+# and nothing else.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/facebridge
+# Biometric templates must never be reachable off-box; the socket is loopback,
+# and this makes that structural rather than a matter of configuration.
+IPAddressAllow=localhost
+IPAddressDeny=any
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

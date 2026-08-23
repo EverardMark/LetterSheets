@@ -241,3 +241,26 @@ input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px 
 /* Scrollbar */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 8px; }
+
+/* Face enrollment additions ------------------------------------------------ */
+
+/* Consent/scope line inside the enroll modal. Sits between the instruction and
+   the capture pips, where an admin cannot miss it before capturing biometrics. */
+.enroll-mode-row {
+  margin: 10px 0 4px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(148, 163, 184, .08);
+  border: 1px solid rgba(148, 163, 184, .18);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+  text-align: left;
+}
+
+/* A kiosk that cannot protect biometrics at rest must look wrong, not merely
+   say so in passing. */
+.summary.warn {
+  color: #ffb4b4;
+  font-weight: 600;
+}

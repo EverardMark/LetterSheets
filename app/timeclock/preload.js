@@ -27,4 +27,13 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.invoke('fp:enroll', { employeeId, fingerIndex, template, quality }),
   fpDelete: (employeeId, fingerIndex) =>
     ipcRenderer.invoke('fp:delete', { employeeId, fingerIndex }),
+
+  // Face templates (stored locally on the kiosk, encrypted at rest, never sent
+  // to the server). faceHealth reports whether the OS keyring is actually
+  // protecting them — check it during setup before enrolling anyone.
+  faceHealth: () => ipcRenderer.invoke('face:health'),
+  faceList: () => ipcRenderer.invoke('face:list'),
+  faceEnroll: (employeeId, embedding, quality) =>
+    ipcRenderer.invoke('face:enroll', { employeeId, embedding, quality }),
+  faceDelete: (employeeId) => ipcRenderer.invoke('face:delete', { employeeId }),
 });

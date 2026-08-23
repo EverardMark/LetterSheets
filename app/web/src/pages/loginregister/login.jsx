@@ -119,7 +119,11 @@ export default function Login({ onNavigate }) {
         console.warn("Key unlock failed:", cryptoErr);
       }
 
-      navigate("/dashboard");
+      // Prompt-first when the server has an assistant; the dashboard when it
+      // does not. Servers without the AI layer are the normal case during
+      // rollout, and landing users on a "switched off" page is worse than
+      // simply not offering it.
+      navigate(localStorage.getItem("ls_ai_off") === "1" ? "/dashboard" : "/assistant");
     } catch (e) {
       setError("Cannot connect to server");
     }

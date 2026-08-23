@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"lettersheets/internal/ai"
 	"lettersheets/internal/config"
 	"lettersheets/internal/mailer"
 	"lettersheets/internal/models"
@@ -61,6 +62,14 @@ type Handler struct {
 	notifRepo      *repository.NotificationRepo
 	expRepo        *repository.ExpenseRepo
 	mail           *mailer.Mailer
+
+	// Prompt layer. Nil when no model is configured, in which case the ai_*
+	// actions report the assistant is off and the rest of the server is
+	// unaffected. Installed via SetAI rather than through NewHandler's argument
+	// list, which is long enough.
+	aiEngine   *ai.Engine
+	aiRepo     *repository.AIRepo
+	aiRegistry *ai.Registry
 	// closeMu serializes year-end close/reopen so two clicks can't post two
 	// closing entries for the same year (single-server deployment).
 	closeMu sync.Mutex
@@ -297,6 +306,9 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 
 	case "get_employee":
 		h.withAuth(w, r, h.getEmployee)
+
+	case "find_employees":
+		h.withAuth(w, r, h.findEmployees)
 
 	case "create_employee":
 		h.withAuth(w, r, h.createEmployee)
@@ -1226,6 +1238,16 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 		h.withAuth(w, r, h.downloadExpReceipt)
 	case "delete_exp_receipt":
 		h.withAuth(w, r, h.deleteExpReceipt)
+
+	// AI prompt layer. These need only a valid session: ai_prompt gates each
+	// tool it offers against the caller's permissions, and ai_confirm re-checks
+	// every action before running it and again inside the handler it re-enters.
+	case "ai_prompt":
+		h.withAuth(w, r, h.aiPrompt)
+	case "ai_confirm":
+		h.withAuth(w, r, h.aiConfirm)
+	case "ai_training_status":
+		h.withAuth(w, r, h.aiTrainingStatus)
 
 	default:
 		Error(w, http.StatusBadRequest, "unknown action: "+action)
@@ -3253,9 +3275,15 @@ func (h *Handler) createLeave(w http.ResponseWriter, r *http.Request, session *m
 		Error(w, http.StatusBadRequest, "employee_id, leave_type, start_date, end_date are required")
 		return
 	}
-	if req.Days <= 0 {
-		req.Days = 1
+
+	// Reconcile days against the date range rather than defaulting to 1. See
+	// resolveLeaveDays for why this is not the client's job.
+	days, err := resolveLeaveDays(req.StartDate, req.EndDate, req.Days)
+	if err != nil {
+		Error(w, http.StatusBadRequest, err.Error())
+		return
 	}
+	req.Days = days
 
 	req.ID = uuid.New().String()
 	req.CompanyID = session.CompanyID
@@ -3283,9 +3311,17 @@ func (h *Handler) updateLeave(w http.ResponseWriter, r *http.Request, session *m
 		Error(w, http.StatusBadRequest, "id, leave_type, start_date, end_date are required")
 		return
 	}
-	if req.Days <= 0 {
-		req.Days = 1
+
+	// Same reconciliation as createLeave, and it matters more here: the credit
+	// ledger is reversed and re-recorded around this edit, so a days value that
+	// disagrees with the dates is written straight into an employee's balance.
+	days, err := resolveLeaveDays(req.StartDate, req.EndDate, req.Days)
+	if err != nil {
+		Error(w, http.StatusBadRequest, err.Error())
+		return
 	}
+	req.Days = days
+
 	ctx := r.Context()
 
 	// Reconcile leave credits around the edit. ReverseForLeave must run FIRST —

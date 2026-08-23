@@ -1,0 +1,95 @@
+# vLLM serving the document-scanning model, alongside erp-vllm on the same GPU.
+#
+#   sudo cp erp-vllm-vision.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now erp-vllm-vision
+#
+# REQUIRES AN L4 (24GB) OR LARGER. This does not fit on the T4 the deployment
+# started on — proven by trying: an 8B tool-caller with a working KV cache
+# leaves ~2.6GB, and the smallest useful vision model needs ~3GB. The OOM was
+# clean (the tool-calling model was unaffected), but there is no 15GB
+# configuration that runs both.
+#
+# Why a SECOND model rather than one that does both: swapping the tool-caller
+# for a vision-language model would put the ERP's most load-bearing capability —
+# picking the right action and filling its arguments — on an older, weaker text
+# model. Two specialised models on one 24GB card is the better trade.
+
+[Unit]
+Description=LetterSheets document scanning (vLLM, Qwen2.5-VL-3B-AWQ)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/erp_ai
+# The venv's bin MUST be on PATH.
+#
+# vLLM shells out to `ninja` to compile kernels at startup on Ada-class GPUs
+# (L4). systemd's default PATH does not include the venv, so the binary sits
+# right there in .venv/bin and is never found — the service loads the model,
+# reaches CUDA graph capture, dies with FileNotFoundError: 'ninja', and
+# restarts forever. It looks like an OOM and is not one.
+#
+# The T4 never took this code path, so this only appears after moving to a
+# newer card.
+Environment=PATH=/home/ubuntu/erp_ai/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin
+Environment=HF_HOME=/home/ubuntu/erp_ai/models
+EnvironmentFile=/home/ubuntu/erp_ai/erp-vllm.env
+
+ExecStart=/home/ubuntu/erp_ai/.venv/bin/vllm serve Qwen/Qwen2.5-VL-3B-Instruct-AWQ \
+  --served-model-name qwen-vl \
+  --host 0.0.0.0 \
+  --port 8002 \
+  --dtype float16 \
+  --gpu-memory-utilization 0.42 \
+  --max-model-len 4096 \
+  --limit-mm-per-prompt.image 2
+
+# --- Budget on a 24GB L4 ---
+#
+#   erp-vllm (tool calling)  0.45  -> ~10.4GB  (measured: 12.1GB resident)
+#   this      (vision)       0.42  ->  ~9.7GB
+#                                    ~21.8GB of 23GB usable
+#
+# WHY 3B AND NOT 7B. The 7B variant would not start in ~9.7GB: it reported
+# needing 0.22GiB of KV cache and being unable to find it, meaning weights plus
+# encoder had consumed the entire allocation. AWQ quantizes the LANGUAGE weights
+# to 4-bit but leaves the vision encoder in fp16, so a "7B AWQ" VL model is far
+# heavier than a 7B AWQ text model.
+#
+# Making room by shrinking the tool-calling service was the alternative and was
+# rejected: squeezing that model is what caused a 12-minute outage on the T4,
+# and tool calling is the capability everything else depends on. A smaller
+# vision model that fits the space already free is the safer trade — handwriting
+# accuracy is lower on a 3B, which the confirmation card is there to catch.
+#
+# --max-model-len 4096 rather than 8192: an image plus an extraction prompt
+# fits easily, and halving the context halves the KV cache — which is what
+# bought the room for the encoder.
+#
+# Both processes compute their share from TOTAL card memory, so the two figures
+# must be chosen together — raising either one alone will starve the other at
+# startup, and vLLM pre-allocates, so the failure is at boot rather than under
+# load.
+#
+# --dtype float16      The L4 is Ada and does support bfloat16, unlike the T4.
+#                      float16 is kept for parity with the tool-calling service
+#                      and because AWQ weights are float16 regardless.
+#
+# --limit-mm-per-prompt.image 2
+#                      Two images per request. Each one costs a large number of
+#                      tokens, and the extractor sends them one at a time; this
+#                      is a ceiling against a client that does not.
+
+Restart=always
+RestartSec=10
+TimeoutStartSec=900
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/erp_ai
+
+[Install]
+WantedBy=multi-user.target

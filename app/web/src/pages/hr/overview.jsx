@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { I } from "../../layouts/ERPLayout";
 import Employee, { Employees } from "./Employee";
 import ComplianceTab from "./Compliance";
@@ -72,6 +72,7 @@ function getTab(pathname) {
 export default function HR() {
     const location = useLocation();
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const tab = getTab(location.pathname);
     const [empPanel, setEmpPanel] = useState({ open: false, mode: "add", employee: null });
     const [agencies, setAgencies] = useState([]);
@@ -116,6 +117,26 @@ export default function HR() {
             } catch {}
         })();
     }, []);
+
+    // Deep link: /hr/employees?id=<uuid> opens that person's panel directly.
+    //
+    // Added so the assistant can answer "show me Andrew's details" by taking the
+    // user to the real record instead of reproducing a thinner copy of it in
+    // chat. This page decrypts salary, contact details and government IDs
+    // client-side; the assistant structurally cannot, so sending the user here
+    // is both less work and a better answer.
+    //
+    // Waits for the roster to arrive, since the panel needs the record itself.
+    useEffect(() => {
+        const wanted = searchParams.get("id");
+        if (!wanted || !employees.length || empPanel.open) return;
+        const emp = employees.find((e) => String(e.id) === String(wanted));
+        if (!emp) return;
+        setEmpPanel({ open: true, mode: "view", employee: emp });
+        // Clear the param so a later close/reopen is not fought by this effect.
+        searchParams.delete("id");
+        setSearchParams(searchParams, { replace: true });
+    }, [employees, searchParams, empPanel.open, setSearchParams]);
 
     const openAdd = () => setEmpPanel({ open: true, mode: "add", employee: null });
     const openView = (emp) => setEmpPanel({ open: true, mode: "view", employee: emp });

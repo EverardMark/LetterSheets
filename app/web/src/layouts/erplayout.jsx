@@ -7,6 +7,7 @@ import {
     faBox, faCartShopping, faTruck, faShieldHalved, faFile,
     faCircleCheck, faChartSimple, faScroll, faGear, faBars,
     faMagnifyingGlass, faBell, faRightFromBracket, faLock, faTag,
+    faEye, faEyeSlash,
     faUser, faArrowLeft, faComment, faDesktop, faHouse, faInbox,
     faChevronDown, faTags,
     faArrowTrendDown, faArrowTrendUp, faReceipt, faCube, faUserMinus,
@@ -65,6 +66,9 @@ function relTime(ts) {
    `group` on children = visual separator between groups.
 ================================================================ */
 export const modules = [
+    // First, and above Dashboard, because the assistant is the intended way in
+    // — the module tree below it is the fallback for anything it cannot do.
+    { id: "assistant", label: "Assistant", path: "/assistant", icon: "zap" },
     { id: "dashboard", label: "Dashboard", path: "/dashboard", icon: "grid" },
     {
         id: "hr", label: "Human Resource", icon: "users", badge: 24,
@@ -316,7 +320,7 @@ const faMap = {
     search: faMagnifyingGlass,
     bell: faBell,
     logout: faRightFromBracket,
-    lock: faLock,
+    lock: faLock, eye: faEye, eyeOff: faEyeSlash,
     tag: faTag,
     tags: faTags,
     user: faUser,

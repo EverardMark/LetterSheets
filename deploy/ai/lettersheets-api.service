@@ -1,0 +1,42 @@
+# LetterSheets ERP API, AI-enabled, colocated with the model it talks to.
+#
+#   sudo cp lettersheets-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now lettersheets-api
+#   journalctl -u lettersheets-api -f
+#
+# Colocation is the point: the assistant reaches vLLM over 127.0.0.1:8001, so
+# the model is never exposed to a network at all. That is why ai.base_url in
+# config.json is a loopback address and why neither service needs a tunnel.
+
+[Unit]
+Description=LetterSheets ERP API (AI-enabled)
+After=network-online.target mysql.service erp-vllm.service
+Wants=network-online.target
+Requires=mysql.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/erp_server
+
+# The binary reads ./config.json relative to its working directory. That file is
+# 0600 and holds the database password and the vLLM key, which is why it is a
+# file rather than Environment= lines — unit files are world-readable.
+ExecStart=/home/ubuntu/erp_server/lettersheets-linux-amd64
+
+Restart=always
+RestartSec=5
+
+# The API server starts before vLLM has finished loading its model on a cold
+# boot. That is fine and needs no ordering fix: with no model reachable the ai_*
+# actions fail individually and every other action works normally, so the ERP is
+# usable while the assistant warms up.
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/erp_server
+
+[Install]
+WantedBy=multi-user.target

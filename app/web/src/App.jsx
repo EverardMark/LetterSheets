@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import Frame from "./pages/loginregister/Frame";
 import ERPLayout from "./layouts/ERPLayout";
 import Dashboard from "./pages/Dashboard";
+import Assistant from "./pages/ai/assistant.jsx";
 import HR from "./pages/hr/overview.jsx";
 import Accounting from "./pages/accounting/Dashboard";
 import Ticketing from "./pages/ticketing/Dashboard";
@@ -22,6 +23,11 @@ export default function App() {
 
                 {/* ERP Shell */}
                 <Route element={<ERPLayout />}>
+                    {/* Prompt-first: the assistant is the landing surface, and the
+                        module pages below are where a prompt lands rather than
+                        where navigation starts. /dashboard stays reachable for
+                        anything the assistant cannot do. */}
+                    <Route path="/assistant" element={<Assistant />} />
                     <Route path="/dashboard" element={<Dashboard />} />
 
                     {/* Account & Settings */}

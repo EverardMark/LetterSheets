@@ -10,7 +10,24 @@ import react from '@vitejs/plugin-react'
 const DEV_MODE = false
 const LOCAL_API = 'http://localhost:8080'
 const REMOTE_API = 'https://api.lettersheets.com'
-const API_BASE = DEV_MODE ? LOCAL_API : REMOTE_API
+
+// An explicit VITE_API_BASE wins over the switch above.
+//
+// DEPLOY.md §4 documents building with `VITE_API_BASE=https://erp.example.com
+// npm run electron:build`, but the `define` block below replaces every
+// reference to that variable with whatever this constant holds — so before
+// this line the documented command silently did nothing and every build
+// shipped pointing at REMOTE_API. Reading the environment first makes the
+// runbook true, and leaves DEV_MODE as the local convenience it was meant
+// to be.
+// `??`, not `||`, so an explicitly EMPTY VITE_API_BASE is honoured. That is the
+// setting for the hosted site, where nginx serves the SPA and proxies /api/ from
+// the same origin: a relative path then works over both https://api.lettersheets.com
+// and the plain-HTTP default server, where a baked-in absolute https:// URL would
+// instead be a cross-origin request. Unset still means REMOTE_API, which is what
+// the Electron build needs — it loads from file:// and has no origin to be
+// relative to.
+const API_BASE = process.env.VITE_API_BASE ?? (DEV_MODE ? LOCAL_API : REMOTE_API)
 // ─────────────────────────────────────────────────────────────────────────
 
 // Inject a Content-Security-Policy into the PRODUCTION build only (so Vite's dev

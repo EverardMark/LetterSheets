@@ -14,6 +14,14 @@ let readerReady = false;   // reader present + initialized
 let identifyActive = false; // 1:N loop running on the clock view
 let enrollingEmp = null;   // employee currently in the enroll modal
 
+let faceBridge = null;     // FaceBridge instance
+let faceReady = false;     // camera present + models loaded + liveness installed
+let faceIdentifyActive = false;
+let faceTemplates = [];    // [{ employee_id, embedding }]
+let faceEnrolledByEmp = {}; // employee_id -> true
+// Which biometric the enroll modal is currently capturing.
+let enrollMode = 'finger'; // 'finger' | 'face' 
+
 const $ = (id) => document.getElementById(id);
 
 // ---------------------------------------------------------------------------
@@ -24,6 +32,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   wireEvents();
 
   initBridge();
+  initFaceBridge();
 
   const cfg = await window.api.getConfig();
 
@@ -280,6 +289,12 @@ async function loadClockData() {
     enrolledByEmp[t.employee_id] = (enrolledByEmp[t.employee_id] || 0) + 1;
   }
   loadTemplatesIntoReader();
+
+  // Face templates load in the same pass. Kept as a separate call because the
+  // face store is encrypted and can fail for reasons the fingerprint one
+  // cannot — loadFaceTemplates surfaces that rather than silently showing
+  // "nobody enrolled".
+  await loadFaceTemplates();
 
   employees = (empRes.data || [])
     .filter((e) => (e.status || '').toLowerCase() !== 'inactive' && (e.status || '').toLowerCase() !== 'terminated')
@@ -557,14 +572,23 @@ async function onIdentifyResult(m) {
     setTimeout(() => { if (identifyActive) armIdentify(); }, 1400);
     return;
   }
+  await clockIdentifiedEmployee(m.employeeId);
+}
 
-  // Match by string form: the bridge echoes employeeId as a string, while
+// Shared by both biometrics. Once a bridge has said "this is employee X", the
+// clock action is identical — only the words on the way in differ, so this is
+// the one copy of it.
+async function clockIdentifiedEmployee(employeeId) {
+  // Match by string form: the bridges echo employeeId as a string, while
   // get_employees may return numeric ids — a strict === would miss those.
-  const emp = employees.find((e) => String(e.id) === String(m.employeeId));
-  if (!emp) { setTimeout(() => armIdentify(), 800); return; }
+  const emp = employees.find((e) => String(e.id) === String(employeeId));
+  if (!emp) { rearm(); return; }
 
-  identifyActive = false; // pause while we clock this person
+  // Pause BOTH loops: the person is being clocked, and a second bridge
+  // resolving mid-action would double-post.
+  stopAllIdentify();
   flashScanner('scan');
+
   const st = empState(emp);
   let result;
   if (st.key === 'out') result = await window.api.clockIn(emp.id);
@@ -586,12 +610,154 @@ async function onIdentifyResult(m) {
 }
 
 function rearm() {
-  setTimeout(() => { if (isClockViewVisible()) armIdentify(); }, 1600);
+  setTimeout(() => {
+    if (!isClockViewVisible()) return;
+    armIdentify();
+    armFaceIdentify();
+  }, 1600);
+}
+
+function stopAllIdentify() {
+  identifyActive = false;
+  stopFaceIdentify();
 }
 
 function flashScanner(cls) {
   const s = $('fpScanner');
   if (s) s.className = 'fp-scanner ' + cls;
+}
+
+// ===========================================================================
+// Face bridge
+// ===========================================================================
+function initFaceBridge() {
+  faceBridge = new FaceBridge();
+
+  faceBridge.on('connection', ({ connected }) => {
+    if (!connected) {
+      faceReady = false;
+      setFaceChip('off', 'No camera');
+      stopFaceIdentify();
+    }
+  });
+
+  faceBridge.on('status', (m) => {
+    // usable() is stricter than ready: without the anti-spoof model the bridge
+    // refuses every identify, so treating it as available would leave someone
+    // standing at a camera that never resolves.
+    faceReady = faceBridge.usable();
+
+    if (faceReady) {
+      setFaceChip('ready', 'Camera ready');
+    } else if (m.ready && !m.liveness) {
+      // The specific misconfiguration worth naming: hardware fine, safety
+      // check missing.
+      setFaceChip('off', 'Liveness not installed');
+    } else {
+      setFaceChip('off', 'No camera');
+    }
+
+    if (faceReady && isClockViewVisible()) {
+      loadTemplatesIntoCamera();
+      armFaceIdentify();
+    }
+  });
+
+  faceBridge.on('identify', onFaceIdentifyResult);
+  faceBridge.on('enrollProgress', (m) => {
+    if (enrollMode === 'face') updateEnrollPips(m.captured, m.needed);
+  });
+  faceBridge.on('enrollComplete', onFaceEnrollComplete);
+  faceBridge.on('error', (m) => {
+    if (enrollingEmp && enrollMode === 'face') setEnrollMsg(m.message || 'Camera error.', 'error');
+    else if (isClockViewVisible()) toast(m.message || 'Camera error.', 'err');
+  });
+
+  faceBridge.start();
+}
+
+function setFaceChip(state, label) {
+  const chip = $('faceChip');
+  if (!chip) return;
+  chip.className = 'reader-chip ' + state;
+  $('faceLabel').textContent = label;
+}
+
+function loadTemplatesIntoCamera() {
+  if (!faceBridge || !faceBridge.connected) return;
+  faceBridge.loadTemplates(faceTemplates.map((t) => ({
+    employeeId: t.employee_id,
+    embedding: t.embedding,
+  })));
+}
+
+function armFaceIdentify() {
+  if (!faceReady || !faceBridge || !faceBridge.connected || !isClockViewVisible()) return;
+  if (!faceTemplates.length) return; // nobody enrolled; don't hold the camera
+  faceIdentifyActive = true;
+  faceBridge.identify();
+}
+
+function stopFaceIdentify() {
+  faceIdentifyActive = false;
+  if (faceBridge && faceBridge.connected) faceBridge.cancel();
+}
+
+async function onFaceIdentifyResult(m) {
+  if (!faceIdentifyActive) return;
+
+  if (!m.matched || !m.employeeId) {
+    // The reason matters. "Not recognised" is a retry; a suspected photo is a
+    // person trying to clock in someone who isn't here, and saying so plainly
+    // is the deterrent.
+    const spoof = m.reason && (m.reason.includes('photo') || m.reason.includes('movement'));
+    if (spoof) {
+      $('fpTitle').textContent = 'That looked like a photo';
+      $('fpHint').textContent = 'Face sign-in needs a real person at the camera.';
+      toast('Face check failed — please use your name or a finger.', 'err');
+    }
+    // Quietly re-arm on ordinary misses: nobody is necessarily standing there,
+    // and the camera loop runs continuously on the clock view.
+    setTimeout(() => { if (faceIdentifyActive) armFaceIdentify(); }, spoof ? 2500 : 900);
+    return;
+  }
+
+  await clockIdentifiedEmployee(m.employeeId);
+}
+
+async function loadFaceTemplates() {
+  const r = await window.api.faceList();
+  if (!r.ok) {
+    // A store that won't decrypt must be loud: it means enrolled staff silently
+    // cannot use face sign-in.
+    faceTemplates = [];
+    faceEnrolledByEmp = {};
+    if (r.code !== 401) toast(r.error || 'Face templates unavailable.', 'err');
+    return;
+  }
+  faceTemplates = r.data || [];
+  faceEnrolledByEmp = {};
+  for (const t of faceTemplates) faceEnrolledByEmp[t.employee_id] = true;
+  loadTemplatesIntoCamera();
+}
+
+async function onFaceEnrollComplete(m) {
+  if (!enrollingEmp || enrollMode !== 'face') return;
+  updateEnrollPips(5, 5);
+  setEnrollMsg('Saving…', 'ok');
+
+  const r = await window.api.faceEnroll(enrollingEmp.id, m.embedding, m.quality || 0);
+  if (!r.ok) {
+    setEnrollMsg(r.error || 'Could not save the face template.', 'error');
+    $('enrollStartBtn').disabled = false;
+    $('enrollStartBtn').textContent = 'Try again';
+    return;
+  }
+
+  setEnrollMsg('Enrolled.', 'ok');
+  await loadFaceTemplates();
+  renderEnrollGrid();
+  setTimeout(closeEnrollModal, 900);
 }
 
 // ===========================================================================
@@ -602,10 +768,33 @@ function showEnrollView() {
   $('clockView').classList.add('hidden');
   $('signinView').classList.add('hidden');
   $('enrollView').classList.remove('hidden');
-  $('enrollReaderNote').textContent = readerReady
-    ? 'Reader ready — pick an employee to enroll.'
-    : 'No reader connected — enrollment needs the fingerprint reader.';
+  updateEnrollDeviceNote();
   renderEnrollGrid();
+}
+
+// The enroll screen is where a misconfigured kiosk has to become visible: an
+// admin standing here is about to capture biometrics, and "no keyring" needs
+// saying before that happens, not after.
+async function updateEnrollDeviceNote() {
+  const note = $('enrollReaderNote');
+  if (!note) return;
+
+  const devices = [];
+  devices.push(readerReady ? 'Fingerprint reader ready' : 'No fingerprint reader');
+  if (faceReady) devices.push('Camera ready');
+  else if (faceBridge && faceBridge.connected && !faceBridge.liveness) devices.push('Camera present but liveness checking is NOT installed — face enrollment disabled');
+  else devices.push('No camera');
+
+  let text = devices.join(' · ');
+
+  const health = await window.api.faceHealth();
+  if (health.ok && health.data && health.data.weak) {
+    text += ' — ' + health.data.message;
+    note.classList.add('warn');
+  } else {
+    note.classList.remove('warn');
+  }
+  note.textContent = text;
 }
 
 function renderEnrollGrid() {
@@ -633,19 +822,36 @@ function renderEnrollGrid() {
         <div class="emp-sub">${escapeHtml(sub || '—')}</div>
       </div>`;
 
+    const hasFace = !!faceEnrolledByEmp[emp.id];
+
     const badge = document.createElement('div');
-    badge.innerHTML = count > 0
-      ? `<span class="enrolled-badge">✓ ${count} finger${count > 1 ? 's' : ''} enrolled</span>`
+    const marks = [];
+    if (count > 0) marks.push(`✓ ${count} finger${count > 1 ? 's' : ''}`);
+    if (hasFace) marks.push('✓ face');
+    badge.innerHTML = marks.length
+      ? `<span class="enrolled-badge">${escapeHtml(marks.join(' · '))} enrolled</span>`
       : `<span class="enrolled-badge none">Not enrolled</span>`;
 
     const actions = document.createElement('div');
     actions.className = 'emp-actions';
-    const enrollBtn = mkBtn(count > 0 ? 'Re-enroll' : 'Enroll', 'btn btn-primary', () => openEnrollModal(emp));
+
+    const enrollBtn = mkBtn(count > 0 ? 'Re-enroll finger' : 'Enroll finger', 'btn btn-primary',
+      () => openEnrollModal(emp, 'finger'));
     if (!readerReady) enrollBtn.setAttribute('disabled', 'true');
     actions.appendChild(enrollBtn);
+
+    const faceBtn = mkBtn(hasFace ? 'Re-enroll face' : 'Enroll face', 'btn btn-primary',
+      () => openEnrollModal(emp, 'face'));
+    if (!faceReady) faceBtn.setAttribute('disabled', 'true');
+    actions.appendChild(faceBtn);
+
     if (count > 0) {
-      const del = mkBtn('Remove', 'btn btn-ghost', () => removeEnrollment(emp));
+      const del = mkBtn('Remove finger', 'btn btn-ghost', () => removeEnrollment(emp));
       actions.appendChild(del);
+    }
+    if (hasFace) {
+      const delFace = mkBtn('Remove face', 'btn btn-ghost', () => removeFaceEnrollment(emp));
+      actions.appendChild(delFace);
     }
 
     card.append(head, badge, actions);
@@ -653,26 +859,53 @@ function renderEnrollGrid() {
   }
 }
 
-function openEnrollModal(emp) {
-  if (!readerReady) return toast('Reader not connected.', 'err');
+function openEnrollModal(emp, mode) {
+  enrollMode = mode === 'face' ? 'face' : 'finger';
+
+  if (enrollMode === 'finger' && !readerReady) return toast('Reader not connected.', 'err');
+  if (enrollMode === 'face' && !faceReady) return toast('Camera not ready.', 'err');
+
   enrollingEmp = emp;
   $('enrollModalName').textContent = `Enroll — ${emp.first_name} ${emp.last_name}`;
-  $('enrollModalSub').textContent = 'Place the same finger on the reader 4 times.';
+  $('enrollModalSub').textContent = enrollMode === 'face'
+    ? 'Look at the camera and move your head slightly between captures.'
+    : 'Place the same finger on the reader 4 times.';
+
+  // Consent is a legal requirement for biometric data, not a nicety, and the
+  // person being enrolled is standing right here — so it is stated at the
+  // moment of capture rather than buried in a policy nobody reads.
+  $('enrollModeRow').textContent = enrollMode === 'face'
+    ? 'This stores a face template on this kiosk only. It is never sent to the server. Confirm the employee agrees before capturing.'
+    : 'This stores a fingerprint template on this kiosk only. It is never sent to the server.';
+
   setEnrollMsg('');
   $('enrollStartBtn').disabled = false;
   $('enrollStartBtn').textContent = 'Start capture';
-  updateEnrollPips(0, 4);
+  updateEnrollPips(0, enrollMode === 'face' ? 5 : 4);
   $('enrollModal').classList.remove('hidden');
 }
 
 function closeEnrollModal() {
   if (bridge && bridge.connected) bridge.cancel();
+  if (faceBridge && faceBridge.connected) faceBridge.cancel();
   enrollingEmp = null;
   $('enrollModal').classList.add('hidden');
 }
 
 function startEnrollCapture() {
-  if (!enrollingEmp || !bridge || !bridge.connected) return;
+  if (!enrollingEmp) return;
+
+  if (enrollMode === 'face') {
+    if (!faceBridge || !faceBridge.connected) return;
+    $('enrollStartBtn').disabled = true;
+    $('enrollStartBtn').textContent = 'Capturing…';
+    setEnrollMsg('Look at the camera…', 'ok');
+    updateEnrollPips(0, 5);
+    faceBridge.enroll(enrollingEmp.id);
+    return;
+  }
+
+  if (!bridge || !bridge.connected) return;
   $('enrollStartBtn').disabled = true;
   $('enrollStartBtn').textContent = 'Capturing…';
   setEnrollMsg('Place your finger…', 'ok');
@@ -716,6 +949,19 @@ async function removeEnrollment(emp) {
     return toast(r.error || 'Failed to remove.', 'err');
   }
   toast(`${emp.first_name}'s fingerprints removed`, 'ok');
+  await loadClockData();
+  renderEnrollGrid();
+}
+
+// Deleting biometric data has to actually work — it is a right the employee
+// has, and an offboarding step. It is deliberately one click from the roster.
+async function removeFaceEnrollment(emp) {
+  const r = await window.api.faceDelete(emp.id);
+  if (!r.ok) {
+    if (r.code === 401) return handleExpired();
+    return toast(r.error || 'Failed to remove.', 'err');
+  }
+  toast(`${emp.first_name}'s face template removed`, 'ok');
   await loadClockData();
   renderEnrollGrid();
 }

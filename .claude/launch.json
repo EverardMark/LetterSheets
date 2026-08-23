@@ -4,9 +4,38 @@
     {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--", "--port", "5199", "--strictPort"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5199",
+        "--strictPort"
+      ],
       "cwd": "app/web",
       "port": 5199,
+      "autoPort": false
+    },
+    {
+      "name": "web-ai",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "VITE_API_BASE=https://api.lettersheets.com npx vite --port 5200 --strictPort"
+      ],
+      "cwd": "app/web",
+      "port": 5200,
+      "autoPort": false
+    },
+    {
+      "name": "web-electron",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "VITE_API_BASE=https://api.lettersheets.com npx vite --port 5173 --strictPort"
+      ],
+      "cwd": "app/web",
+      "port": 5173,
       "autoPort": false
     }
   ]

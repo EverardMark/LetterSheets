@@ -1,0 +1,14 @@
+# facebridge runtime dependencies.
+#
+# Pinned to major/minor because this is deployed to a kiosk that is not
+# rebuilt often, and an insightface or onnxruntime bump changing model
+# behaviour would silently shift the matching threshold under a live roster.
+#
+# All four have aarch64 wheels — which is the whole reason face recognition can
+# ship on the Pi while the fingerprint path is still waiting on a vendor SDK.
+
+numpy~=2.0
+opencv-python-headless~=4.10   # headless: the kiosk needs V4L2 capture, not GUI windows
+onnxruntime~=1.19
+insightface~=0.7
+websockets~=13.0

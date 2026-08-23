@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
+	"lettersheets/internal/ai"
 	"lettersheets/internal/api"
 	"lettersheets/internal/config"
 	"lettersheets/internal/database"
@@ -66,6 +68,45 @@ func main() {
 		repository.NewExpenseRepo(db),
 		cfg,
 	)
+
+	// Prompt layer. Off unless configured — with no model the ai_* actions
+	// report the assistant is switched off and nothing else changes.
+	//
+	// One inference server, one resident base model, and a LoRA adapter per
+	// company selected per request from ai_company_adapters. Deploying a
+	// separate model per tenant would cost roughly 9GB of VRAM each and stop
+	// scaling in the teens; this costs one base plus a few hundred MB per
+	// company.
+	if cfg.AI.Ready() {
+		aiRepo := repository.NewAIRepo(db)
+		registry := ai.NewRegistry()
+		timeout := time.Duration(cfg.AI.TimeoutSeconds) * time.Second
+
+		router := ai.NewAdapterRouter(cfg.AI.BaseURL, cfg.AI.BaseModel, cfg.AI.APIKey, timeout, aiRepo)
+		router.SetThinking(cfg.AI.Thinking)
+		engine := ai.NewEngine(router, registry, aiRepo)
+
+		if cfg.AI.VisionModel != "" {
+			// The vision model normally runs as its own vLLM process on another
+			// port, so it needs its own URL; falling back to BaseURL covers a
+			// single model serving both roles.
+			visionURL := cfg.AI.VisionBaseURL
+			if visionURL == "" {
+				visionURL = cfg.AI.BaseURL
+			}
+			engine.SetExtractor(ai.NewVLMExtractor(visionURL, cfg.AI.VisionModel, cfg.AI.APIKey,
+				&http.Client{Timeout: timeout}))
+			log.Printf("AI: document scanning enabled (%s at %s)", cfg.AI.VisionModel, visionURL)
+		} else {
+			log.Println("AI: document scanning disabled (set ai.vision_model to turn it on)")
+		}
+
+		handler.SetAI(engine, aiRepo, registry)
+		log.Printf("AI: enabled (%s, base model %s, %d tools, thinking=%v)",
+			cfg.AI.BaseURL, cfg.AI.BaseModel, registry.Len(), cfg.AI.Thinking)
+	} else {
+		log.Println("AI: disabled (set ai.enabled + ai.base_url + ai.base_model to turn it on)")
+	}
 
 	// Background scheduler: auto-generate due recurring journal entries so they
 	// post/draft on schedule without anyone opening the Journal. Idempotent and

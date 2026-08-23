@@ -49,6 +49,9 @@ func Get() (*AppConfig, error) {
 	if cfg.Server.LockoutMinutes == 0 {
 		cfg.Server.LockoutMinutes = 30
 	}
+	if cfg.AI.TimeoutSeconds == 0 {
+		cfg.AI.TimeoutSeconds = 180
+	}
 	if cfg.SMTP.Port == 0 {
 		cfg.SMTP.Port = 587
 	}
@@ -66,6 +69,27 @@ func Get() (*AppConfig, error) {
 func applyEnvOverrides(cfg *AppConfig) {
 	if v := os.Getenv("LS_SERVER_HOST"); v != "" {
 		cfg.Server.Host = v
+	}
+	if v := os.Getenv("LS_AI_ENABLED"); v != "" {
+		cfg.AI.Enabled = v == "true" || v == "1"
+	}
+	if v := os.Getenv("LS_AI_BASE_URL"); v != "" {
+		cfg.AI.BaseURL = v
+	}
+	if v := os.Getenv("LS_AI_BASE_MODEL"); v != "" {
+		cfg.AI.BaseModel = v
+	}
+	if v := os.Getenv("LS_AI_API_KEY"); v != "" {
+		cfg.AI.APIKey = v
+	}
+	if v := os.Getenv("LS_AI_VISION_MODEL"); v != "" {
+		cfg.AI.VisionModel = v
+	}
+	if v := os.Getenv("LS_AI_THINKING"); v != "" {
+		cfg.AI.Thinking = v == "true" || v == "1"
+	}
+	if n, ok := envInt("LS_AI_TIMEOUT_SECONDS"); ok {
+		cfg.AI.TimeoutSeconds = n
 	}
 	if n, ok := envInt("LS_SERVER_PORT"); ok {
 		cfg.Server.Port = n
@@ -174,6 +198,65 @@ type AppConfig struct {
 	Server   ServerConfig   `json:"server"`
 	Database DatabaseConfig `json:"database"`
 	SMTP     SMTPConfig     `json:"smtp"`
+	AI       AIConfig       `json:"ai"`
+}
+
+// AIConfig drives the prompt layer.
+//
+// OFF UNTIL EXPLICITLY ENABLED, for the same reason SMTP is: a deployment that
+// says nothing about AI gets none, and the ai_* actions report the assistant is
+// switched off. Nothing else changes.
+//
+// The architecture is one fine-tuned adapter per company served from a shared
+// base model, so BaseURL points at ONE inference server (vLLM with
+// --enable-lora) and per-company adapter names come from the database. BaseModel
+// serves companies that do not have an adapter yet — the normal state of every
+// tenant on its first day.
+type AIConfig struct {
+	Enabled bool `json:"enabled"`
+
+	// BaseURL is an OpenAI-compatible inference server: vLLM, Ollama,
+	// llama.cpp's server, LM Studio. The dialect is what makes a self-hosted
+	// fine-tune a config change rather than a code change.
+	BaseURL string `json:"base_url"`
+
+	// BaseModel is the shared base served to companies with no adapter.
+	BaseModel string `json:"base_model"`
+
+	// APIKey is optional — Ollama and llama.cpp ignore it, vLLM can require one.
+	APIKey string `json:"api_key"`
+
+	// VisionBaseURL is where the vision model is served, when it is a SEPARATE
+	// process from the tool-calling one — which it is in practice: two vLLM
+	// instances on one GPU, on different ports. Empty falls back to BaseURL for
+	// the case where a single model serves both.
+	VisionBaseURL string `json:"vision_base_url"`
+
+	// VisionModel reads scanned receipts and invoices. Deliberately a separate
+	// model from BaseModel: document understanding needs a vision-language base,
+	// and folding it into the tool-calling adapter would make every tenant carry
+	// vision weights whether or not they scan anything. Empty ⇒ scanning off.
+	VisionModel string `json:"vision_model"`
+
+	// Thinking turns on the base model's chain-of-thought.
+	//
+	// Off by default: measured on the deployment host, the same request takes
+	// ~1.5s without it and ~15s with. It does buy accuracy the base model
+	// otherwise lacks — notably multi-turn reference resolution, where an 8B
+	// asked "which Ana?" and told "the one in Finance" will otherwise repeat
+	// its question instead of acting. That gap is what a per-company adapter is
+	// trained to close, so this is a stopgap for deployments running on the
+	// shared base model.
+	Thinking bool `json:"thinking"`
+
+	// TimeoutSeconds bounds one model call. Self-hosted generation on modest
+	// hardware is slow; 0 ⇒ 180.
+	TimeoutSeconds int `json:"timeout_seconds"`
+}
+
+// Ready reports whether the prompt layer has enough to serve a request.
+func (a *AIConfig) Ready() bool {
+	return a.Enabled && a.BaseURL != "" && a.BaseModel != ""
 }
 
 // SMTPConfig drives outbound email (migration 021's outbox worker).

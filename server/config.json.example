@@ -34,5 +34,16 @@
     "skip_verify": false,
     "worker_seconds": 60,
     "batch_size": 20
+  },
+  "ai": {
+    "_comment": "The prompt assistant is OFF until enabled is true AND base_url + base_model are set. base_url is ONE OpenAI-compatible inference server (vLLM with --enable-lora, Ollama, llama.cpp); per-company LoRA adapters are selected per request from the ai_company_adapters table, falling back to base_model for companies that do not have one yet.",
+    "enabled": false,
+    "base_url": "http://127.0.0.1:8000",
+    "base_model": "qwen3-14b",
+    "api_key": "",
+    "_vision_comment": "Reads scanned receipts and invoices. A SEPARATE vision-language model from base_model — folding vision into the tool-calling adapter would make every tenant carry vision weights whether or not they scan anything. Empty disables scanning.",
+    "vision_base_url": "http://127.0.0.1:8002",
+    "vision_model": "",
+    "timeout_seconds": 180
   }
 }

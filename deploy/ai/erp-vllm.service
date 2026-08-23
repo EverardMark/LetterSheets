@@ -1,0 +1,140 @@
+# vLLM serving the ERP assistant's base model, with per-company LoRA adapters.
+#
+#   sudo cp erp-vllm.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now erp-vllm
+#   journalctl -u erp-vllm -f
+#
+# THIS HOST IS SHARED. pixelmine-serve.service is a live, unrelated RAG API on
+# the same box and the same GPU. Every setting below that looks conservative is
+# conservative on purpose — an OOM here takes that service down too.
+
+[Unit]
+Description=LetterSheets ERP assistant (vLLM, Qwen3-8B-AWQ + per-company LoRA)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/erp_ai
+
+# Model cache lives with the deployment, not in ~/.cache, so it is obvious what
+# is using the disk and a teardown is one directory.
+# The venv's bin MUST be on PATH.
+#
+# vLLM shells out to `ninja` to compile kernels at startup on Ada-class GPUs
+# (L4). systemd's default PATH does not include the venv, so the binary sits
+# right there in .venv/bin and is never found — the service loads the model,
+# reaches CUDA graph capture, dies with FileNotFoundError: 'ninja', and
+# restarts forever. It looks like an OOM and is not one.
+#
+# The T4 never took this code path, so this only appears after moving to a
+# newer card.
+Environment=PATH=/home/ubuntu/erp_ai/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/bin
+Environment=HF_HOME=/home/ubuntu/erp_ai/models
+
+# The API key arrives as VLLM_API_KEY from a 0600 file rather than as --api-key
+# on the command line. A unit file in /etc/systemd/system is world-readable and
+# the full argv is visible in `ps` to every user on the box; neither is a place
+# for a bearer token.
+EnvironmentFile=/home/ubuntu/erp_ai/erp-vllm.env
+
+ExecStart=/home/ubuntu/erp_ai/.venv/bin/vllm serve Qwen/Qwen3-8B-AWQ \
+  --served-model-name qwen3-8b \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --dtype float16 \
+  --gpu-memory-utilization 0.45 \
+  --max-model-len 8192 \
+  --enable-lora \
+  --max-loras 4 \
+  --max-lora-rank 32 \
+  --max-cpu-loras 32 \
+  --enable-auto-tool-choice \
+  --tool-call-parser hermes \
+  --reasoning-parser qwen3
+
+# --- Why each flag ---
+#
+# --dtype float16      The T4 is Turing (compute 7.5) and has no bfloat16. Left
+#                      on "auto" vLLM picks bf16 from the model config and dies
+#                      at load with an unhelpful error.
+#
+# --gpu-memory-utilization 0.72
+#                      ~8.4GB of the T4's 15GB, lowered from 0.72 to make room
+#                      for the vision model on 8002.
+#
+#                      The slack was in the KV cache, not the weights. At 0.72
+#                      vLLM sized a 25,424-token cache against a max_model_len
+#                      of 8,192 — three conversations' worth for an assistant
+#                      one person uses at a time. At 0.55 the cache still holds
+#                      ~13k tokens, which is one full context plus room to
+#                      spare; what it costs is concurrency, not capability.
+#
+#                      vLLM PRE-ALLOCATES this pool at startup, so raising it
+#                      again would starve the vision model on the same card.
+#
+# --max-model-len 8192 The KV cache is sized from this, and on a 15GB card the
+#                      cache competes directly with everything else. 8k covers a
+#                      system prompt, twelve tool schemas and a long turn with
+#                      room to spare; the model supports far more, but paying
+#                      for context nobody uses costs throughput.
+#
+# --enable-lora        The point of the architecture: one resident base model,
+#   --max-loras 4      a small adapter per company swapped in per request. Four
+#   --max-cpu-loras 32 concurrently on the GPU, thirty-two held in host RAM and
+#                      paged in on demand — so the tenant count is bounded by RAM
+#                      rather than by VRAM.
+#
+# --max-lora-rank 32   Must be >= the rank the adapters were TRAINED at. Raising
+#                      it later means a restart, so it is set above the rank 16
+#                      a first LoRA run typically uses.
+#
+# --enable-auto-tool-choice + --tool-call-parser hermes
+#                      WITHOUT THESE THE WHOLE FEATURE IS INERT. vLLM rejects
+#                      tool_choice:"auto" outright when they are missing, and
+#                      even permissively it would hand back the model's
+#                      <tool_call> block as plain text in `content` — the client
+#                      would parse zero tool calls and the assistant would look
+#                      like it simply refused to act. Qwen3 emits Hermes-style
+#                      tags, hence `hermes` rather than the qwen3_coder or
+#                      qwen3_xml parsers, which are for other Qwen variants.
+#
+# --reasoning-parser qwen3
+#                      A safety net. The client sends enable_thinking:false, so
+#                      normally nothing reasons. If thinking is ever switched on,
+#                      this routes the <think> block into reasoning_content
+#                      instead of leaving it in `content`, where the client would
+#                      show the model's private deliberation to the user as
+#                      though it were the answer.
+#
+# --host 0.0.0.0       The ERP server is a DIFFERENT machine. Production holds
+#                      the data and has no GPU; this box has the GPU and no
+#                      data. Inference has to cross a network, so loopback is
+#                      not an option any more.
+#
+#                      THE SECURITY GROUP IS LOAD-BEARING NOW. Port 8001 must be
+#                      restricted to the ERP server (47.129.29.202/32) and
+#                      nothing else. An inference endpoint open to the internet
+#                      lets anyone spend this GPU, and VLLM_API_KEY is then the
+#                      only thing in the way.
+#
+# VLLM_API_KEY         Required on every request. Set before exposure rather
+#                      than after — a service that was never authenticated tends
+#                      to get exposed without auth.
+
+Restart=always
+RestartSec=10
+# Loading an 8B and warming the CUDA graphs takes a while on a T4; without this
+# systemd kills it mid-load and restarts forever.
+TimeoutStartSec=900
+
+# Hardening. It needs the GPU, its own directory and one loopback port.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ReadWritePaths=/home/ubuntu/erp_ai
+
+[Install]
+WantedBy=multi-user.target
