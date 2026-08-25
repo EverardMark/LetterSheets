@@ -85,6 +85,9 @@ func main() {
 		router := ai.NewAdapterRouter(cfg.AI.BaseURL, cfg.AI.BaseModel, cfg.AI.APIKey, timeout, aiRepo)
 		router.SetThinking(cfg.AI.Thinking)
 		engine := ai.NewEngine(router, registry, aiRepo)
+		// The same repository supplies the retrieval memory: every confirmed
+		// action becomes an example the assistant can be shown next time.
+		engine.SetMemory(aiRepo)
 
 		if cfg.AI.VisionModel != "" {
 			// The vision model normally runs as its own vLLM process on another

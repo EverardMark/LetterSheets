@@ -228,3 +228,69 @@ func nullInt(n int) any {
 	}
 	return n
 }
+
+// Similar returns past confirmed interactions for a company, for the retrieval
+// memory to rank.
+//
+// Ranking happens in Go rather than SQL: MySQL full-text would need an index
+// tuned for this, and the candidate pool is small — one company's confirmed
+// actions — so pulling the recent ones and scoring them in memory is both
+// simpler and identical to how tools are ranked.
+//
+// The company filter is not a nicety. A remembered example is one tenant's
+// wording and data; leaking it into another tenant's prompt would be the worst
+// failure this system could have, so the scope is enforced here, at the query,
+// and not left to the caller.
+func (r *AIRepo) Similar(ctx context.Context, companyID, prompt string, limit int) ([]ai.Remembered, error) {
+	if companyID == "" {
+		return nil, fmt.Errorf("retrieval requires a company")
+	}
+	if limit <= 0 {
+		limit = 3
+	}
+
+	// A pool of recent confirmations, ranked in memory. Capped so a long-lived
+	// company does not pull thousands of rows on every prompt.
+	const pool = 300
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT prompt, proposed_calls, final_calls, verdict
+		  FROM ai_training_examples
+		 WHERE company_id = ? AND verdict IN ('confirmed','edited')
+		 ORDER BY created_at DESC
+		 LIMIT ?`, companyID, pool)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var candidates []ai.Remembered
+	for rows.Next() {
+		var (
+			p        string
+			proposed string
+			final    sql.NullString
+			verdict  sql.NullString
+		)
+		if err := rows.Scan(&p, &proposed, &final, &verdict); err != nil {
+			return nil, err
+		}
+
+		// The user's corrected arguments are the truth where they exist; the
+		// model's original proposal is what it got wrong.
+		raw := proposed
+		corrected := verdict.Valid && verdict.String == string(ai.VerdictEdited)
+		if corrected && final.Valid && final.String != "" {
+			raw = final.String
+		}
+
+		var calls []ai.ToolCall
+		if err := json.Unmarshal([]byte(raw), &calls); err != nil || len(calls) == 0 {
+			continue
+		}
+		candidates = append(candidates, ai.Remembered{Prompt: p, Calls: calls, Corrected: corrected})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return ai.RankRemembered(prompt, candidates, limit), nil
+}

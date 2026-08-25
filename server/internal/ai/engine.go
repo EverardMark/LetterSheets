@@ -34,6 +34,14 @@ type Engine struct {
 	selector *Selector
 	recorder Recorder
 
+	// memory supplies past confirmed interactions to show the model. Nil is not
+	// allowed; NopMemory stands in when retrieval is off.
+	memory Memory
+
+	// rememberLimit caps how many past examples are shown. Two: each costs
+	// prompt budget every turn, and the tool schemas already take most of it.
+	rememberLimit int
+
 	// extractor reads attached documents into fields before the model turn.
 	// Nil is not allowed; NopExtractor stands in when scanning is off so the
 	// user is told it is unavailable rather than getting silence.
@@ -73,11 +81,22 @@ func NewEngine(r Router, reg *Registry, rec Recorder) *Engine {
 		// engine's own interventions rather than by the model's reasoning, and
 		// at six a request that needed a lookup AND a chase ran out before
 		// reaching an answer it was one step away from.
+		memory:        NopMemory{},
+		rememberLimit: 2,
 		followUps:     true,
 		maxIterations: 8,
 		topK:          DefaultTopK,
 		now:           time.Now,
 	}
+}
+
+// SetMemory installs the retrieval memory. Passing nil restores NopMemory
+// rather than leaving a nil to panic on.
+func (e *Engine) SetMemory(m Memory) {
+	if m == nil {
+		m = NopMemory{}
+	}
+	e.memory = m
 }
 
 // SetFollowUps turns the conversational handlers on or off. See Engine.followUps.
@@ -268,7 +287,24 @@ func (e *Engine) Run(ctx context.Context, exec Executor, t Turn) (*Result, error
 	// Trim the replayed conversation to what the window can hold. Without this
 	// a couple of large tool results push every later request over the limit and
 	// the assistant fails permanently — see budget.go.
-	msgs := append(TrimHistory(t.History, HistoryBudget()), Message{Role: RoleUser, Text: prompt})
+	msgs := TrimHistory(t.History, HistoryBudget())
+
+	// What worked before, for a request that resembles this one.
+	//
+	// Placed ahead of the conversation rather than inside it: these are worked
+	// examples, not things the user said, and a model reading them as recent
+	// history will answer the example instead of the question. Only on a FIRST
+	// turn — once a conversation is under way its own history is the better
+	// context, and the budget is better spent on it.
+	if len(t.History) == 0 && e.rememberLimit > 0 {
+		if past, err := e.memory.Similar(ctx, t.CompanyID, prompt, e.rememberLimit); err != nil {
+			log.Printf("ai: retrieval memory unavailable: %v", err)
+		} else if examples := asMessages(past); len(examples) > 0 {
+			msgs = append(examples, msgs...)
+		}
+	}
+
+	msgs = append(msgs, Message{Role: RoleUser, Text: prompt})
 
 	// Identifiers the turn is allowed to reference. Seeded from what the user
 	// typed — someone pasting a real UUID is legitimate — and extended by every
