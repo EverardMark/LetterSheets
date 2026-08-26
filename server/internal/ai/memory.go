@@ -27,6 +27,12 @@ import (
 type Remembered struct {
 	Prompt string
 	Calls  []ToolCall
+
+	// Answer is what the assistant should SAY, for examples whose lesson is
+	// wording rather than action — declining something, asking for a missing
+	// detail, explaining a house convention. A captured interaction rarely has
+	// one; an authored example often is one.
+	Answer string
 	// Corrected marks an example the user EDITED before confirming. The
 	// strongest signal there is: the model proposed something close and a human
 	// wrote down what it should have been.
@@ -132,12 +138,12 @@ func asMessages(remembered []Remembered) []Message {
 	var out []Message
 	for _, r := range remembered {
 		calls := redactIDs(r.Calls)
-		if len(calls) == 0 {
+		if len(calls) == 0 && strings.TrimSpace(r.Answer) == "" {
 			continue
 		}
 		out = append(out,
 			Message{Role: RoleUser, Internal: true, Text: r.Prompt},
-			Message{Role: RoleAssistant, Internal: true, ToolCalls: calls},
+			Message{Role: RoleAssistant, Internal: true, Text: r.Answer, ToolCalls: calls},
 		)
 	}
 	return out
