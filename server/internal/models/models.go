@@ -2582,3 +2582,32 @@ type ExpenseStats struct {
 	PayableAmount   float64 `json:"payable_amount"`
 	PaidThisMonth   float64 `json:"paid_this_month"`
 }
+
+// ==================== FACE TEMPLATES ====================
+
+// FaceTemplate is a face-recognition enrollment for the time clock.
+//
+// EmbeddingEnc is ciphertext the server cannot read: the kiosk encrypts the
+// embedding with the company key before sending it, the same envelope used for
+// employees.email_enc. Matching happens on the device, so the plaintext vector
+// never needs to exist server-side. Treat this struct as opaque — nothing in
+// the API layer should attempt to interpret EmbeddingEnc.
+type FaceTemplate struct {
+	ID           string  `json:"id" db:"id"`
+	CompanyID    string  `json:"company_id" db:"company_id"`
+	EmployeeID   string  `json:"employee_id" db:"employee_id"`
+	EmbeddingEnc string  `json:"embedding_enc" db:"embedding_enc"`
+	Model        string  `json:"model" db:"model"`
+	Dims         int     `json:"dims" db:"dims"`
+	Quality      float64 `json:"quality" db:"quality"`
+	ConsentAt    *string `json:"consent_at,omitempty" db:"consent_at"`
+	EnrolledBy   *string `json:"enrolled_by,omitempty" db:"enrolled_by"`
+	Device       string  `json:"device" db:"device"`
+	CreatedAt    string  `json:"created_at" db:"created_at"`
+	UpdatedAt    string  `json:"updated_at" db:"updated_at"`
+	// Joined fields
+	FirstName  string `json:"first_name,omitempty" db:"first_name"`
+	LastName   string `json:"last_name,omitempty" db:"last_name"`
+	Department string `json:"department,omitempty" db:"department"`
+	Position   string `json:"position,omitempty" db:"position"`
+}

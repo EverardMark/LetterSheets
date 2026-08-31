@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <!--
+    Locked down for a kiosk: no remote script, no remote frames. Fonts and
+    styles may come from Google Fonts when the kiosk has a network, and fall
+    back to the system stack when it does not. `wasm-unsafe-eval` is required
+    by onnxruntime-web — WebAssembly compilation counts as eval to CSP.
+  -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; object-src 'none'; base-uri 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'" />
+  <title>LetterSheets Face Clock</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ===================== Top bar ===================== -->
+<header class="tb">
+  <div class="tb-left">
+    <div class="tb-logo">Letter<b>Sheets</b></div>
+    <span class="tb-sep"></span>
+    <span class="tb-mod">Face Clock</span>
+    <span id="companyName" class="tb-company"></span>
+  </div>
+  <div class="tb-right">
+    <div id="chipCamera" class="chip off"><span class="dot"></span><span id="chipCameraLabel">Camera</span></div>
+    <div id="chipModels" class="chip off"><span class="dot"></span><span id="chipModelsLabel">Models</span></div>
+    <div id="chipSync"   class="chip off"><span class="dot"></span><span id="chipSyncLabel">Not synced</span></div>
+    <div class="tb-clock"><span id="clockTime">--:--</span><small id="clockDate"></small></div>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ===================== Setup ===================== -->
+  <section id="viewSetup" class="view hidden">
+    <div class="setup-wrap">
+      <div class="card setup-card">
+        <div class="setup-head">
+          <div class="setup-icon" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2d9e8b" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3"/>
+              <circle cx="12" cy="11" r="3"/><path d="M7 18a5 5 0 0 1 10 0"/>
+            </svg>
+          </div>
+          <div>
+            <h1>Set up this device</h1>
+            <p class="muted">Sign in once with an administrator account. The device stays signed in afterwards.</p>
+          </div>
+        </div>
+
+        <div id="setupStep1">
+          <label class="lbl" for="suEmail">Email</label>
+          <input id="suEmail" class="inp" type="email" autocomplete="off" placeholder="admin@company.com" />
+          <label class="lbl" for="suPassword">Password</label>
+          <input id="suPassword" class="inp" type="password" autocomplete="off" placeholder="••••••••" />
+          <p class="hint">The password unlocks this company’s encryption key so the kiosk can read face templates. It is not stored.</p>
+          <button id="suNext" class="btn-p full">Continue</button>
+        </div>
+
+        <div id="setupStep2" class="hidden">
+          <label class="lbl" for="suCompany">Company</label>
+          <select id="suCompany" class="inp"></select>
+          <div class="row-btns">
+            <button id="suBack" class="btn-s">Back</button>
+            <button id="suFinish" class="btn-p grow">Finish setup</button>
+          </div>
+        </div>
+
+        <div id="setupMsg" class="msg hidden"></div>
+      </div>
+      <p class="setup-foot">Server: <span id="setupServer" class="mono"></span></p>
+    </div>
+  </section>
+
+  <!-- ===================== Clock ===================== -->
+  <section id="viewClock" class="view hidden">
+    <div class="clock-grid">
+
+      <div class="card cam-card">
+        <div class="cam-stage">
+          <video id="video" autoplay muted playsinline></video>
+          <canvas id="overlay"></canvas>
+          <div id="camIdle" class="cam-idle">
+            <div class="cam-idle-icon" aria-hidden="true">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#2d9e8b" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="11" r="3.2"/><path d="M6.5 19a5.5 5.5 0 0 1 11 0"/>
+                <path d="M3 8V5.5A2.5 2.5 0 0 1 5.5 3H8M16 3h2.5A2.5 2.5 0 0 1 21 5.5V8M21 16v2.5a2.5 2.5 0 0 1-2.5 2.5H16M8 21H5.5A2.5 2.5 0 0 1 3 18.5V16"/>
+              </svg>
+            </div>
+            <p id="camIdleText">Starting camera…</p>
+          </div>
+        </div>
+        <div class="cam-foot">
+          <div>
+            <div id="fcTitle" class="fc-title">Look at the camera</div>
+            <div id="fcHint" class="fc-hint muted">Stand square to the screen and hold still for a moment.</div>
+          </div>
+          <div id="fcBadge" class="fc-badge hidden"></div>
+        </div>
+      </div>
+
+      <div class="card roster-card">
+        <div class="roster-head">
+          <div>
+            <div class="sec-title">Today</div>
+            <div class="sec-sub muted"><span id="inCount">0</span> in · <span id="outCount">0</span> out</div>
+          </div>
+          <div class="search-wrap">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input id="search" class="search" type="text" placeholder="Search name…" />
+          </div>
+        </div>
+        <div id="roster" class="roster"></div>
+        <div id="rosterEmpty" class="empty hidden">
+          <p>No employees found.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===================== Enrollment ===================== -->
+  <section id="viewEnroll" class="view hidden">
+    <div class="card enroll-card">
+      <div class="enroll-head">
+        <div>
+          <div class="sec-title">Face enrollment</div>
+          <div class="sec-sub muted">Templates are encrypted with the company key before they leave this device.</div>
+        </div>
+        <button id="enrollClose" class="btn-s">Back to clock</button>
+      </div>
+      <div class="tbl-wrap">
+        <table class="tbl">
+          <thead>
+            <tr><th>Employee</th><th>Department</th><th>Face</th><th class="right">Action</th></tr>
+          </thead>
+          <tbody id="enrollBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ===================== Enroll modal ===================== -->
+<div id="enrollModal" class="modal hidden">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div>
+        <div class="sec-title" id="emName">Enroll</div>
+        <div class="sec-sub muted">Look straight at the camera. Move your head slightly between captures.</div>
+      </div>
+      <button id="emCancel" class="icon-btn" aria-label="Cancel">&times;</button>
+    </div>
+    <div class="em-stage">
+      <video id="emVideo" autoplay muted playsinline></video>
+      <canvas id="emOverlay"></canvas>
+    </div>
+    <div class="em-pips" id="emPips"></div>
+    <div id="emMsg" class="msg hidden"></div>
+    <div class="em-consent">
+      <label class="chk">
+        <input type="checkbox" id="emConsent" />
+        <span>This employee is present and consents to face enrollment.</span>
+      </label>
+    </div>
+    <div class="row-btns">
+      <button id="emClose" class="btn-s">Cancel</button>
+      <button id="emStart" class="btn-p grow" disabled>Start capture</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== Admin modal ===================== -->
+<div id="adminModal" class="modal hidden">
+  <div class="modal-card narrow">
+    <div class="modal-head">
+      <div><div class="sec-title">Administrator</div>
+      <div class="sec-sub muted">Sign in to leave the kiosk or manage enrollment.</div></div>
+      <button id="amCancel" class="icon-btn" aria-label="Cancel">&times;</button>
+    </div>
+    <label class="lbl" for="amEmail">Email</label>
+    <input id="amEmail" class="inp" type="email" autocomplete="off" />
+    <label class="lbl" for="amPassword">Password</label>
+    <input id="amPassword" class="inp" type="password" autocomplete="off" />
+    <div id="amMsg" class="msg hidden"></div>
+    <div class="row-btns wrap">
+      <button id="amEnroll" class="btn-s">Manage enrollment</button>
+      <button id="amExit" class="btn-danger">Exit kiosk</button>
+      <button id="amSignOut" class="btn-danger">Sign out device</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="../node_modules/onnxruntime-web/dist/ort.wasm.min.js"></script>
+<script src="face-engine.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

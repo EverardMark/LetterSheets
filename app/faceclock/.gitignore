@@ -1,0 +1,6 @@
+node_modules/
+dist/
+
+# Model weights are fetched or exported per build host, never committed:
+# they are large, and the third-party licences differ from this repo's.
+models/*.onnx

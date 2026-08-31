@@ -1,0 +1,43 @@
+[Unit]
+# Face clock kiosk, started into the seat user's graphical session.
+#
+# This is a USER unit (systemctl --user), not a system one. The app needs the
+# Wayland/X display and the login keyring of the seat user — running it as a
+# system service under multi-user.target is the mistake that leaves the kiosk
+# with no display and no keyring, and therefore no stored company key.
+#
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp faceclock.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now faceclock
+#
+# Then, so it starts without anyone logging in interactively:
+#   sudo loginctl enable-linger <seat-user>
+Description=LetterSheets Face Clock kiosk
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/opt/lettersheets-faceclock/LetterSheetsFaceClock
+
+# Point at a different deployment when commissioning against staging.
+# Environment=VITE_API_BASE=https://api.lettersheets.com
+
+# Models live outside the app bundle so they can be updated without
+# redeploying the whole kiosk.
+Environment=FACECLOCK_MODELS=/usr/local/share/faceclock/models
+
+# Ozone/Wayland. Drop these two lines on an X11 seat.
+Environment=ELECTRON_OZONE_PLATFORM_HINT=auto
+
+Restart=always
+RestartSec=5
+
+# A camera glitch or a model load failure should restart the app, not spin it.
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Install]
+WantedBy=graphical-session.target

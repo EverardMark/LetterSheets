@@ -66,6 +66,7 @@ func main() {
 		repository.NewPeriodRepo(db),
 		repository.NewNotificationRepo(db),
 		repository.NewExpenseRepo(db),
+		repository.NewFaceRepo(db),
 		cfg,
 	)
 

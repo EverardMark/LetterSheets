@@ -1,0 +1,24 @@
+{
+  "name": "lettersheets-faceclock",
+  "version": "1.0.0",
+  "description": "LetterSheets face-recognition time & attendance kiosk. Matches on-device against company-key-encrypted templates synced from the LetterSheets API.",
+  "main": "main.js",
+  "author": "LetterSheets",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "selftest": "electron . --selftest",
+    "package:linux-arm64": "electron-packager . LetterSheetsFaceClock --platform=linux --arch=arm64 --out=dist --overwrite",
+    "package:win": "electron-packager . LetterSheetsFaceClock --platform=win32 --arch=x64 --out=dist --overwrite",
+    "package:mac": "electron-packager . LetterSheetsFaceClock --platform=darwin --arch=arm64 --out=dist --overwrite"
+  },
+  "dependencies": {
+    "onnxruntime-web": "^1.29.0"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.2.1",
+    "electron": "^33.4.11"
+  }
+}

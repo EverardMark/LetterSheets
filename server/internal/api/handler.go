@@ -61,6 +61,7 @@ type Handler struct {
 	periodRepo     *repository.PeriodRepo
 	notifRepo      *repository.NotificationRepo
 	expRepo        *repository.ExpenseRepo
+	faceRepo       *repository.FaceRepo
 	mail           *mailer.Mailer
 
 	// Prompt layer. Nil when no model is configured, in which case the ai_*
@@ -127,6 +128,7 @@ func NewHandler(
 	periodRepo *repository.PeriodRepo,
 	notifRepo *repository.NotificationRepo,
 	expRepo *repository.ExpenseRepo,
+	faceRepo *repository.FaceRepo,
 	cfg *config.AppConfig,
 ) *Handler {
 	trustProxyHeaders = cfg.Server.TrustProxyHeaders
@@ -167,6 +169,7 @@ func NewHandler(
 		periodRepo:     periodRepo,
 		notifRepo:      notifRepo,
 		expRepo:        expRepo,
+		faceRepo:       faceRepo,
 		mail: mailer.New(mailer.Config{
 			Host:        cfg.SMTP.Host,
 			Port:        cfg.SMTP.Port,
@@ -369,6 +372,17 @@ func (h *Handler) Execute(w http.ResponseWriter, r *http.Request) {
 
 	case "delete_attendance":
 		h.withAuth(w, r, h.deleteAttendance)
+
+	// Face recognition templates (app/faceclock kiosk). Embeddings are stored
+	// and returned as company-key ciphertext; the server never matches faces.
+	case "get_face_templates":
+		h.withAuth(w, r, h.getFaceTemplates)
+
+	case "save_face_template":
+		h.withAuth(w, r, h.saveFaceTemplate)
+
+	case "delete_face_template":
+		h.withAuth(w, r, h.deleteFaceTemplate)
 
 	// Leaves
 	case "get_leaves":
@@ -1355,6 +1369,11 @@ var actionPerm = map[string]perm{
 	"create_attendance_batch":      {"attendance", "create"},
 	"update_attendance":            {"attendance", "edit"},
 	"delete_attendance":            {"attendance", "delete"},
+	// Enrolling a face is writing biometric data about a person, so it is
+	// gated on the same edit right as changing their attendance, not on a
+	// weaker "kiosk can do it" rule. Deleting is a delete.
+	"save_face_template":           {"attendance", "edit"},
+	"delete_face_template":         {"attendance", "delete"},
 	"create_work_schedule":         {"attendance", "edit"},
 	"update_work_schedule":         {"attendance", "edit"},
 	"delete_work_schedule":         {"attendance", "delete"},

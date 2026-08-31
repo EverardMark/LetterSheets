@@ -52,6 +52,14 @@ func TestEveryDispatchedActionIsReachable(t *testing.T) {
 		// in, and the key material is generated in the browser and cannot be
 		// produced server-side — so a proposal would be unsafe AND broken.
 		"create_employee_account": true, "create_user": true, "update_user_access": true,
+
+		// Face-recognition templates. The embeddings are company-key ciphertext
+		// the server cannot read, so the model has nothing it could usefully
+		// say about one, and it could not produce a valid template to enroll
+		// even if asked. More to the point, enrolling or deleting biometrics is
+		// a deliberate act a person performs at the kiosk with the subject
+		// present and consenting — not something to reach through a chat turn.
+		"get_face_templates": true, "save_face_template": true, "delete_face_template": true,
 	}
 
 	reg := NewRegistry()
