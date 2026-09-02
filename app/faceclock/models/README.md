@@ -23,30 +23,59 @@ PyTorch `.pth`, and there is no official ONNX release. Until it is present,
 **face sign-in stays disabled** and the kiosk falls back to name-tap. That
 refusal is intentional — see the note below.
 
-To produce it, on a machine with PyTorch:
+Use the bundled exporter:
 
 ```bash
-git clone https://github.com/minivision-ai/Silent-Face-Anti-Spoofing
+git clone --depth 1 https://github.com/minivision-ai/Silent-Face-Anti-Spoofing
+python3 -m venv venv && ./venv/bin/pip install torch onnx
+./venv/bin/python tools/export-antispoof.py --repo ./Silent-Face-Anti-Spoofing
 ```
 
-Load a checkpoint from its `resources/anti_spoof_models/` (the `80x80` variant),
-then export with `torch.onnx.export` at a fixed input of `1x3x80x80`. The graph
-must emit **3 logits** in the order `[print-spoof, real, replay-spoof]`; the
-kiosk softmaxes them and reads index 1 as P(real).
+It exports `2.7_80x80_MiniFASNetV2.pth` at a fixed `1x3x80x80` input, emitting
+**3 raw logits** in the order `[print-spoof, real, replay-spoof]`; the kiosk
+softmaxes them and reads index 1 as P(real). Python 3.9–3.13 (torch has no 3.14
+wheels yet).
 
-The kiosk feeds this model a **2.7x context crop** around the face box, scaled
-to 80x80 and normalised to `[0,1]` — matching the reference implementation's
-`ToTensor()` preprocessing. If you export a variant trained with a different
-crop scale or normalisation, update `SPOOF_CROP_SCALE` and the `warpToTensor`
-call in `renderer/face-engine.js` to match, or the scores will be meaningless
-while still looking plausible.
+### Preprocessing this model actually needs
 
-> **Validate any model you export against real print and replay attempts on the
-> actual kiosk hardware before trusting it.** Anti-spoof accuracy depends
-> heavily on the specific camera and lighting; a model that scores well on its
-> own benchmark can do poorly on one webcam under office fluorescents. Test by
-> holding a printed photo and a phone screen up to the camera and confirming
-> both are rejected.
+Three details are **not** what the upstream docs say. Each one silently breaks
+the gate rather than raising an error, so all three are asserted or commented
+at the call site in `renderer/face-engine.js`:
+
+| | Correct | Naive guess | Effect of getting it wrong |
+|---|---|---|---|
+| Range | raw `[0,255]` | `[0,1]` | Network emits a near-constant vector for *every* input |
+| Channels | **BGR** | RGB | Upstream's own spoof samples score P(real) 0.96 / 0.99 — photos accepted |
+| Crop | `_get_new_box`: w and h scaled independently by 2.7, squashed to 80x80, edge boxes shifted not clipped | square box of `max(w,h)*2.7` | Real faces score 0.000 — everyone rejected |
+
+The range one is the nastiest: upstream's `ToTensor` has its `.div(255)`
+commented out (`src/data_io/functional.py:59`) while the docstring still
+promises `[0.0, 1.0]`.
+
+If you export a variant trained with a different crop scale or normalisation,
+update `SPOOF_CROP_SCALE` and the `warpToTensor` call in
+`renderer/face-engine.js` to match, or the scores will be meaningless while
+still looking plausible.
+
+### Verified
+
+The exported model was checked end to end through the kiosk's own JS engine on
+upstream's three labelled samples, at the kiosk's `LIVENESS_THRESHOLD` of 0.65:
+
+| Sample | Expected | P(real) | Verdict |
+|---|---|---|---|
+| `image_T1.jpg` | real | 1.000 | real |
+| `image_F1.jpg` | spoof | 0.014 | spoof |
+| `image_F2.jpg` | spoof | 0.005 | spoof |
+
+ONNX also matches the PyTorch graph to 3.3e-06 max absolute logit difference.
+
+> **That is a correctness check, not a field validation. Still test against real
+> print and replay attempts on the actual kiosk hardware before trusting it.**
+> Anti-spoof accuracy depends heavily on the specific camera and lighting; a
+> model that scores well on its own benchmark can do poorly on one webcam under
+> office fluorescents. Hold a printed photo and a phone screen up to the camera
+> and confirm both are rejected.
 
 ## Why liveness is not optional
 

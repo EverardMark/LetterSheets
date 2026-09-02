@@ -20,7 +20,9 @@ PartOf=graphical-session.target
 
 [Service]
 Type=simple
-ExecStart=/opt/lettersheets-faceclock/LetterSheetsFaceClock
+# --kiosk is required: fullscreen and the close lock are opt-in, so without it
+# the terminal comes up as an ordinary closable window.
+ExecStart=/opt/lettersheets-faceclock/LetterSheetsFaceClock --kiosk
 
 # Point at a different deployment when commissioning against staging.
 # Environment=VITE_API_BASE=https://api.lettersheets.com

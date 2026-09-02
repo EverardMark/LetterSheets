@@ -10,9 +10,12 @@
     "start": "electron .",
     "dev": "electron . --dev",
     "selftest": "electron . --selftest",
-    "package:linux-arm64": "electron-packager . LetterSheetsFaceClock --platform=linux --arch=arm64 --out=dist --overwrite",
-    "package:win": "electron-packager . LetterSheetsFaceClock --platform=win32 --arch=x64 --out=dist --overwrite",
-    "package:mac": "electron-packager . LetterSheetsFaceClock --platform=darwin --arch=arm64 --out=dist --overwrite"
+    "kiosk": "electron . --kiosk",
+    "dev:macos": "open -n -a \"$PWD/node_modules/electron/dist/Electron.app\" --args \"$PWD\" --dev",
+    "package:linux-arm64": "electron-packager . LetterSheetsFaceClock --platform=linux --arch=arm64 --out=dist --overwrite --asar=false",
+    "package:win": "electron-packager . LetterSheetsFaceClock --platform=win32 --arch=x64 --out=dist --overwrite --asar=false",
+    "package:mac": "electron-packager . LetterSheetsFaceClock --platform=darwin --arch=arm64 --out=dist --overwrite --asar=false",
+    "postpackage:mac": "bash tools/sign-mac.sh"
   },
   "dependencies": {
     "onnxruntime-web": "^1.29.0"

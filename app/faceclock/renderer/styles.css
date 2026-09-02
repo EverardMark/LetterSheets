@@ -118,6 +118,11 @@ html, body {
 .btn-danger { border: 1px solid #fecaca; background: var(--red-tint); color: var(--red); font-weight: 500; }
 .btn-danger:hover { background: var(--red); color: #fff; }
 .full { width: 100%; }
+
+/* A destructive choice in a dropdown loses the red styling its own button
+   had, so the confirm button carries the warning instead. */
+.btn-p.is-danger { background: var(--red); }
+.btn-p.is-danger:hover:not(:disabled) { background: #dc2626; }
 .row-btns { display: flex; gap: 10px; margin-top: 16px; }
 .row-btns.wrap { flex-wrap: wrap; }
 
@@ -289,6 +294,40 @@ html, body {
 .em-consent { margin-top: 14px; padding: 11px 12px; background: #fafbfb; border: 1px solid var(--line-soft); border-radius: 8px; }
 .chk { display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; color: var(--ink-3); line-height: 1.45; cursor: pointer; }
 .chk input { margin-top: 2px; accent-color: var(--accent); width: 15px; height: 15px; flex-shrink: 0; }
+
+/* ---------------- Centred result banner ----------------
+   Sized to be read at arm's length by someone standing up, which is the whole
+   reason it is not just the small text under the camera. */
+.result-overlay {
+  position: fixed; inset: 0; z-index: 60;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(20, 32, 30, .55);
+  animation: result-in .18s ease-out;
+}
+@keyframes result-in { from { opacity: 0; } to { opacity: 1; } }
+
+.result-card {
+  background: var(--card); border-radius: 18px;
+  padding: 42px 64px; text-align: center; min-width: 460px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, .28);
+}
+.result-badge {
+  display: inline-block; padding: 7px 20px; border-radius: 22px;
+  font-size: 14px; font-weight: 700; letter-spacing: .06em;
+  background: #f5f6f6; color: var(--muted); margin-bottom: 18px;
+}
+.result-badge.in   { background: var(--accent-tint); color: var(--accent); }
+.result-badge.out  { background: #eef7fd; color: var(--blue); }
+.result-badge.done { background: #f5f6f6; color: var(--ink-3); }
+.result-badge.err  { background: var(--red-tint); color: var(--red); }
+
+.result-name { font-size: 40px; font-weight: 700; color: var(--ink); line-height: 1.15; }
+.result-text { font-size: 17px; color: var(--ink-3); margin-top: 10px; }
+
+@media (max-width: 1000px) {
+  .result-card { min-width: 0; width: 88vw; padding: 32px 28px; }
+  .result-name { font-size: 32px; }
+}
 
 /* ---------------- Toast ---------------- */
 .toast {

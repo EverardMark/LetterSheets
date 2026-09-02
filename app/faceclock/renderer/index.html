@@ -188,12 +188,29 @@
     <input id="amEmail" class="inp" type="email" autocomplete="off" />
     <label class="lbl" for="amPassword">Password</label>
     <input id="amPassword" class="inp" type="password" autocomplete="off" />
+    <label class="lbl" for="amAction">Action</label>
+    <select id="amAction" class="inp">
+      <option value="enroll">Manage enrollment</option>
+      <option value="fullscreen">Full screen</option>
+      <option value="exit">Exit kiosk</option>
+      <option value="signout">Sign out device</option>
+    </select>
+    <div id="amHint" class="hint"></div>
     <div id="amMsg" class="msg hidden"></div>
-    <div class="row-btns wrap">
-      <button id="amEnroll" class="btn-s">Manage enrollment</button>
-      <button id="amExit" class="btn-danger">Exit kiosk</button>
-      <button id="amSignOut" class="btn-danger">Sign out device</button>
+    <div class="row-btns">
+      <button id="amClose" class="btn-s">Cancel</button>
+      <button id="amGo" class="btn-p grow">Continue</button>
     </div>
+  </div>
+</div>
+
+<!-- Result banner: centred, so the outcome is readable from where someone
+     actually stands rather than tucked under the camera panel. -->
+<div id="resultOverlay" class="result-overlay hidden">
+  <div class="result-card">
+    <div id="resultBadge" class="result-badge">DONE</div>
+    <div id="resultName" class="result-name"></div>
+    <div id="resultText" class="result-text"></div>
   </div>
 </div>
 

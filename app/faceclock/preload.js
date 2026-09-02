@@ -17,6 +17,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('api', {
   // Config & models
   getConfig: () => ipcRenderer.invoke('config:get'),
+
+  // Fires once macOS answers the camera permission prompt, so the renderer can
+  // start the camera without the user restarting the app.
+  onCameraAccess: (cb) => ipcRenderer.on('camera:access', (_e, payload) => cb(payload)),
   modelStatus: () => ipcRenderer.invoke('models:status'),
   readModel: (name) => ipcRenderer.invoke('models:read', { name }),
 
@@ -26,6 +30,10 @@ contextBridge.exposeInMainWorld('api', {
   verifyAdmin: (email, password) => ipcRenderer.invoke('auth:verifyAdmin', { email, password }),
   signOut: () => ipcRenderer.invoke('auth:signOut'),
   exitApp: () => ipcRenderer.invoke('app:exit'),
+
+  // Window presentation
+  windowState: () => ipcRenderer.invoke('window:state'),
+  setFullScreen: (full) => ipcRenderer.invoke('window:fullscreen', { full }),
 
   // Roster & attendance
   listEmployees: () => ipcRenderer.invoke('employees:list'),

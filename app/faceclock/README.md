@@ -74,8 +74,32 @@ npm run selftest           # crypto, keyring, models, server reachability
 npm start
 ```
 
-`npm run dev` runs windowed with devtools instead of fullscreen kiosk.
-`VITE_API_BASE=http://localhost:8080 npm start` points at a local server.
+`npm start` opens a normal, closable window. **Fullscreen kiosk mode is opt-in
+via `--kiosk`** (`npm run kiosk`), which also disables the close button — the
+only exit then is `Ctrl+Shift+Alt+Q` → admin sign-in → Exit kiosk. The systemd
+unit passes `--kiosk`; nothing else does, so launching the app to look at it
+never traps you fullscreen.
+
+`npm run dev` adds devtools. `VITE_API_BASE=http://localhost:8080 npm start`
+points at a local server.
+
+#### macOS: the camera prompt only appears via LaunchServices
+
+On a Mac, run **`npm run dev:macos` the first time**. macOS attributes a camera
+request to the *responsible* process, and an Electron started straight from a
+shell inherits the terminal — which in a non-interactive shell cannot show a
+dialog, so the request is refused in ~20ms with **no prompt at all** and the
+kiosk reports "No camera" forever. `dev:macos` launches the same binary through
+LaunchServices (`open -n -a`), which gives it its own TCC identity and lets the
+dialog appear.
+
+Once permission is granted it persists, and plain `npm run dev` works from then
+on. (Note `systemPreferences.getMediaAccessStatus` still reports
+`not-determined` when shell-spawned — that is the attribution quirk above, not
+a real state; capture succeeds regardless.)
+
+This affects development only. A packaged app launched from Finder, or from the
+systemd unit on the Pi, is its own responsible process.
 
 > `npm install` may not fetch Electron's binary if npm is blocking install
 > scripts. If `npm start` reports Electron failed to install, run
@@ -138,6 +162,7 @@ appearing broken:
 | No camera | "No camera" chip, name-tap clocking |
 | Models missing | "Models missing" chip, name-tap clocking |
 | **Anti-spoof model missing** | Face sign-in **refuses**, name-tap clocking |
+| Camera blocked by the OS | Says so and names the settings pane, name-tap clocking |
 | Company key unavailable | Templates cannot be decrypted; name-tap clocking |
 | Templates from another model | Skipped with a count, and staff told to re-enroll |
 | Server unreachable | Clock actions fail loudly; nothing is queued |
@@ -234,10 +259,14 @@ during commissioning.
 Verified during development, on real portraits: SCRFD anchor counts against the
 model's true output shapes, landmark ordering and geometry, embedding
 determinism and unit norm, same-person-across-scale scoring well above
-threshold, and different-people scoring well below it. The anti-spoof model
-could not be exercised — it has to be exported by hand (see `models/README.md`)
-and **must be validated against real print and replay attempts on the actual
-kiosk hardware** before the deployment is trusted.
+threshold, and different-people scoring well below it. The anti-spoof model was exported with
+`tools/export-antispoof.py` and verified through the kiosk's own JS engine on
+upstream's labelled samples (real 1.000; spoofs 0.014 and 0.005, against a 0.65
+threshold), with ONNX matching PyTorch to 3.3e-06. Getting there required three
+corrections to preprocessing that fail silently rather than loudly — see the
+table in `models/README.md`. It **must still be validated against real print and
+replay attempts on the actual kiosk hardware** before the deployment is
+trusted.
 
 Not yet exercised on real hardware: a live webcam, a Pi 5 build, and end-to-end
 clock-in against a live company roster.

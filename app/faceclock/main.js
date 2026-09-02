@@ -15,14 +15,49 @@
  * it never sees the company key, the session token or the ciphertext.
  */
 
-const { app, BrowserWindow, ipcMain, Menu, safeStorage, session: electronSession } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, safeStorage, systemPreferences, session: electronSession } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
 const crypto = require('./lib/crypto');
 
+// ---------------------------------------------------------------------------
+// Logging.
+//
+// Console output is also written to userData/faceclock.log. A kiosk started by
+// LaunchServices (macOS) or systemd (the Pi) has no terminal attached, so
+// stdout goes nowhere — and diagnosing "it just says No camera" from a running
+// appliance is impossible without a log on disk.
+// ---------------------------------------------------------------------------
+let logStream = null;
+function openLog() {
+  try {
+    logStream = fs.createWriteStream(path.join(app.getPath('userData'), 'faceclock.log'), { flags: 'a' });
+    for (const level of ['log', 'warn', 'error']) {
+      const orig = console[level].bind(console);
+      console[level] = (...args) => {
+        orig(...args);
+        try {
+          logStream.write(`${new Date().toISOString()} [${level}] ` +
+            args.map((a) => (a instanceof Error ? a.stack : typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ') + '\n');
+        } catch { /* logging must never break the app */ }
+      };
+    }
+  } catch { /* no log file is survivable; a crash from logging is not */ }
+}
+
 const DEV = process.argv.includes('--dev');
 const SELFTEST = process.argv.includes('--selftest');
+
+// Fullscreen kiosk mode is OPT-IN, via --kiosk.
+//
+// It was the default, which meant every ordinary run of the packaged app
+// opened fullscreen with the close button disabled and the only exit behind an
+// admin sign-in the server had to verify. That is right for a wall-mounted
+// terminal and wrong for anyone launching the app to look at it. The appliance
+// asks for the lock (see deploy/faceclock.service); nothing else gets it by
+// surprise.
+const KIOSK = process.argv.includes('--kiosk');
 
 // Kiosk lock. Only the admin escape combo flips this and lets the app exit.
 let allowQuit = false;
@@ -163,6 +198,10 @@ async function restoreDeviceState() {
     session.expiresAt = state.expiresAt || null;
     if (state.companyKeyRaw) {
       session.companyKey = await crypto.importCompanyKey(state.companyKeyRaw);
+    } else {
+      // Distinguishes "this device was never given a key" from "the key failed
+      // to load", which look identical from the UI but need different fixes.
+      console.error('device state restored WITHOUT a company key — face sync will fail until setup is repeated');
     }
     return true;
   } catch (err) {
@@ -199,8 +238,21 @@ const EMBEDDING_DIMS = 512;
 
 function modelsDir() {
   if (process.env.FACECLOCK_MODELS) return process.env.FACECLOCK_MODELS;
-  if (app.isPackaged) return path.join(process.resourcesPath, 'models');
-  return path.join(__dirname, 'models');
+
+  // Both packaged layouts are checked rather than assumed. electron-packager
+  // puts the app under Resources/app/, so models ship at __dirname/models;
+  // a build using --extra-resource instead puts them at Resources/models,
+  // which is the layout that lets models be replaced without repacking.
+  // Guessing one and hardcoding it produces a "Models missing" kiosk that is
+  // carrying the models it says it lacks.
+  const candidates = [];
+  if (app.isPackaged) candidates.push(path.join(process.resourcesPath, 'models'));
+  candidates.push(path.join(__dirname, 'models'));
+
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, MODEL_FILES.recognizer))) return dir;
+  }
+  return candidates[candidates.length - 1];
 }
 
 function modelStatus() {
@@ -215,6 +267,46 @@ function modelStatus() {
 }
 
 // ---------------------------------------------------------------------------
+// Camera access (macOS).
+//
+// macOS gates the camera behind TCC, and Chromium inside Electron does NOT
+// raise the system prompt by itself — getUserMedia simply fails. Without this
+// the kiosk reports "No camera" on a Mac that has a perfectly good webcam,
+// which is indistinguishable from a real hardware fault.
+//
+// A no-op on Linux, so the Pi path is unaffected.
+// ---------------------------------------------------------------------------
+let cameraAccess = 'unknown';
+
+async function ensureCameraAccess() {
+  if (process.platform !== 'darwin') {
+    cameraAccess = 'granted';
+    return true;
+  }
+  cameraAccess = systemPreferences.getMediaAccessStatus('camera');
+  if (cameraAccess === 'granted') return true;
+
+  // "denied"/"restricted" cannot be re-prompted — only System Settings can
+  // change it, so asking again would just fail silently forever.
+  if (cameraAccess === 'denied' || cameraAccess === 'restricted') return false;
+
+  const ok = await systemPreferences.askForMediaAccess('camera');
+
+  // Re-read rather than trusting the boolean. TCC attributes a request to the
+  // *responsible* process, which for an Electron spawned from a shell is the
+  // terminal, not this bundle — so the ask returns false and the status stays
+  // "not-determined" while capture still succeeds. Recording 'denied' here
+  // would make the UI blame System Settings for a working camera.
+  //
+  // The corollary matters during development on macOS: the permission PROMPT
+  // only ever appears when the app is launched through LaunchServices
+  // (`open -n -a .../Electron.app --args "$PWD"`). Started straight from a
+  // shell it is refused instantly, with no dialog. See README.
+  cameraAccess = systemPreferences.getMediaAccessStatus('camera');
+  return ok || cameraAccess === 'granted';
+}
+
+// ---------------------------------------------------------------------------
 // Window
 // ---------------------------------------------------------------------------
 let win = null;
@@ -225,8 +317,8 @@ function createWindow() {
     height: 800,
     show: false,
     backgroundColor: '#f3f5f4',
-    kiosk: !DEV,
-    fullscreen: !DEV,
+    kiosk: KIOSK,
+    fullscreen: KIOSK,
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -240,15 +332,18 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.once('ready-to-show', () => win.show());
 
-  // Kiosk lock: the window cannot be closed except through the admin combo.
+  // The close lock is tied to --kiosk, not to the build type. Locking a window
+  // that is not fullscreen would leave a normal-looking window that refuses to
+  // close, which reads as a hang rather than as a policy.
   win.on('close', (e) => {
-    if (!allowQuit) e.preventDefault();
+    if (!allowQuit && KIOSK) e.preventDefault();
   });
 
   if (DEV) win.webContents.openDevTools({ mode: 'detach' });
 }
 
 app.whenReady().then(async () => {
+  openLog();
   // The camera is the only device this app needs. Everything else is denied
   // outright rather than left to Chromium's defaults, so a bug in renderer
   // code cannot reach the microphone or the display capture APIs.
@@ -263,13 +358,27 @@ app.whenReady().then(async () => {
   await restoreDeviceState();
   createWindow();
 
+  // Deliberately NOT awaited before createWindow: on macOS the permission
+  // dialog can sit unanswered indefinitely, and blocking on it would leave the
+  // kiosk with no window at all — a worse failure than having no camera.
+  // Request in the background and tell the renderer once the answer arrives so
+  // it can bring the camera up without a restart.
+  ensureCameraAccess().then((granted) => {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('camera:access', { granted, status: cameraAccess });
+    }
+  });
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin' || allowQuit) app.quit();
+  // On macOS an app normally outlives its last window; outside kiosk mode that
+  // would leave an invisible process holding the camera after the window is
+  // closed.
+  if (process.platform !== 'darwin' || allowQuit || !KIOSK) app.quit();
 });
 
 // ---------------------------------------------------------------------------
@@ -281,6 +390,7 @@ ipcMain.handle('config:get', () => ({
   userEmail: session.userEmail,
   hasCompanyKey: Boolean(session.companyKey),
   keyringUsable: keyringUsable(),
+  cameraAccess,
   serverUrl: SERVER_URL,
   models: modelStatus(),
   modelId: MODEL_ID,
@@ -340,13 +450,26 @@ ipcMain.handle('auth:selectCompany', async (_e, { userId, companyId, companyName
 
   // Without the company key the kiosk can authenticate but cannot read a
   // single template, so a failure here is reported rather than swallowed.
+  // Fingerprints only — no password, no key material. Enough to tell whether
+  // the kiosk received the same inputs the standalone checker succeeded with.
+  console.log('setup inputs: email=' + email +
+    ' | pwd len=' + String(password || '').length +
+    ' | salt len=' + String(salt || '').length +
+    ' | wrapped len=' + String(wrappedCompanyKey || '').length +
+    ' | wrapped head=' + String(wrappedCompanyKey || '').slice(0, 6) +
+    ' | company=' + companyName);
+
   let keyWarning = null;
   if (!wrappedCompanyKey) {
+    console.error('setup: server returned no wrapped_company_key for company', companyId);
     keyWarning = 'This account has no encryption key for that company, so face templates cannot be read.';
   } else {
     try {
       session.companyKey = await crypto.unlockCompanyKey(password, salt, wrappedCompanyKey);
-    } catch {
+      console.log('setup: company key unwrapped OK');
+    } catch (err) {
+      console.error('setup: company key did NOT unwrap —', err.message,
+        '| salt present:', Boolean(salt), '| wrapped bytes:', String(wrappedCompanyKey).length);
       keyWarning = 'The password did not unlock the company encryption key.';
     }
   }
@@ -383,6 +506,20 @@ ipcMain.handle('auth:verifyAdmin', async (_e, { email, password }) => {
     return { ok: false, error: 'That account is not an administrator.' };
   }
   return { ok: true, data: { role } };
+});
+
+// Full screen is a view change only — it deliberately does NOT engage the
+// close lock. The lock stays bound to --kiosk at launch, so an action reached
+// from a menu can always be undone from the same menu.
+ipcMain.handle('window:state', () => ({
+  ok: true,
+  data: { full: Boolean(win && !win.isDestroyed() && win.isFullScreen()), locked: KIOSK },
+}));
+
+ipcMain.handle('window:fullscreen', (_e, { full }) => {
+  if (!win || win.isDestroyed()) return { ok: false, error: 'No window.' };
+  win.setFullScreen(Boolean(full));
+  return { ok: true, data: { full: win.isFullScreen() } };
 });
 
 ipcMain.handle('app:exit', () => {
@@ -437,11 +574,17 @@ ipcMain.handle('attendance:clockOut', async (_e, { attendanceId }) =>
  */
 ipcMain.handle('face:sync', async () => {
   if (!session.companyKey) {
+    // Logged, not just returned: a kiosk that silently stops recognising
+    // people is the failure an operator has no way to diagnose from the UI.
+    console.error('face:sync failed — company key is not loaded on this device');
     return { ok: false, error: 'The company encryption key is not loaded on this device.' };
   }
 
   const r = await callApi('get_face_templates', {}, { auth: true });
-  if (!r.ok) return r;
+  if (!r.ok) {
+    console.error('face:sync failed — server said:', r.code || '-', r.error);
+    return r;
+  }
 
   const rows = r.data.face_templates || [];
   const templates = [];

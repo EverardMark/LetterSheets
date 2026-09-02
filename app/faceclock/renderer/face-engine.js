@@ -146,11 +146,15 @@ function invertAffine(M) {
 }
 
 /**
- * Warp an RGBA ImageData through a 2x3 affine into a size x size RGB float
- * plane set (CHW), sampling bilinearly. Equivalent to cv2.warpAffine followed
- * by blobFromImage, done in one pass so no intermediate canvas is needed.
+ * Warp an RGBA ImageData through a 2x3 affine into a size x size float plane
+ * set (CHW), sampling bilinearly. Equivalent to cv2.warpAffine followed by
+ * blobFromImage, done in one pass so no intermediate canvas is needed.
+ *
+ * `bgr` emits planes in B,G,R order. Canvas pixels are RGB, but a model
+ * trained on cv2.imread output expects BGR, and the two are NOT
+ * interchangeable — see spoofScore().
  */
-function warpToTensor(img, M, size, mean, std) {
+function warpToTensor(img, M, size, mean, std, bgr = false) {
   const inv = invertAffine(M);
   const out = new Float32Array(3 * size * size);
   if (!inv) return out;
@@ -179,9 +183,9 @@ function warpToTensor(img, M, size, mean, std) {
       }
 
       const o = y * size + x;
-      out[o] = (r - mean) / std;
+      out[o] = ((bgr ? b : r) - mean) / std;
       out[plane + o] = (g - mean) / std;
-      out[2 * plane + o] = (b - mean) / std;
+      out[2 * plane + o] = ((bgr ? r : b) - mean) / std;
     }
   }
   return out;
@@ -355,16 +359,45 @@ class FaceEngine {
   async spoofScore(img, face) {
     if (!this.antispoof) return null;
 
-    // Square context crop around the face centre.
-    const [x1, y1, x2, y2] = face.bbox;
-    const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
-    const side = Math.max(x2 - x1, y2 - y1) * SPOOF_CROP_SCALE;
-    const s = SPOOF_SIZE / side;
-    const M = [[s, 0, SPOOF_SIZE / 2 - s * cx], [0, s, SPOOF_SIZE / 2 - s * cy]];
+    // Reproduces Silent-Face's CropImage._get_new_box exactly. The geometry is
+    // not interchangeable with a plain square crop: width and height are
+    // scaled independently (so the box keeps the face's aspect ratio and is
+    // then squashed to 80x80), and a box running off an edge is SHIFTED back
+    // inside rather than clipped, which keeps the context area constant.
+    const [bx1, by1, bx2, by2] = face.bbox;
+    const boxW = bx2 - bx1, boxH = by2 - by1;
+    const srcW = img.width, srcH = img.height;
 
-    // MiniFASNet is trained on ToTensor() inputs, i.e. plain [0,1] — not the
-    // mean/std normalisation the other two models use.
-    const input = warpToTensor(img, M, SPOOF_SIZE, 0, 255);
+    const scale = Math.min((srcH - 1) / boxH, Math.min((srcW - 1) / boxW, SPOOF_CROP_SCALE));
+    const newW = boxW * scale, newH = boxH * scale;
+    const cx = bx1 + boxW / 2, cy = by1 + boxH / 2;
+
+    let ltx = cx - newW / 2, lty = cy - newH / 2;
+    let rbx = cx + newW / 2, rby = cy + newH / 2;
+    if (ltx < 0) { rbx -= ltx; ltx = 0; }
+    if (lty < 0) { rby -= lty; lty = 0; }
+    if (rbx > srcW - 1) { ltx -= rbx - srcW + 1; rbx = srcW - 1; }
+    if (rby > srcH - 1) { lty -= rby - srcH + 1; rby = srcH - 1; }
+    ltx = Math.trunc(ltx); lty = Math.trunc(lty);
+    rbx = Math.trunc(rbx); rby = Math.trunc(rby);
+
+    // The reference slices [lty:rby+1, ltx:rbx+1], hence the +1 on each span.
+    const sx = SPOOF_SIZE / (rbx - ltx + 1);
+    const sy = SPOOF_SIZE / (rby - lty + 1);
+    const M = [[sx, 0, -sx * ltx], [0, sy, -sy * lty]];
+
+    // Two preprocessing details that are easy to get wrong and impossible to
+    // notice from the output, both verified against the reference repo:
+    //
+    //  1. Raw [0,255], NOT [0,1]. Silent-Face's src/data_io/functional.py:59
+    //     has `img.float().div(255)` commented out while its docstring still
+    //     claims [0.0, 1.0]. Feeding [0,1] makes the network emit a near
+    //     constant vector regardless of input.
+    //  2. BGR, not RGB. It was trained on cv2.imread output. Fed RGB, the
+    //     reference repo's own spoof samples score P(real) = 0.96 and 0.99 —
+    //     i.e. the gate cheerfully accepts printed photographs while looking
+    //     like it works.
+    const input = warpToTensor(img, M, SPOOF_SIZE, 0, 1, true);
 
     const feeds = {};
     feeds[this.antispoof.inputNames[0]] = new ort.Tensor('float32', input, [1, 3, SPOOF_SIZE, SPOOF_SIZE]);
