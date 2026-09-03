@@ -204,6 +204,23 @@ html, body {
 .fc-badge.out { background: #eef7fd; color: var(--blue); }
 .fc-badge.err { background: var(--red-tint); color: var(--red); }
 
+/* Verification progress bar, flush along the bottom of the camera card. */
+.fc-progress {
+  height: 7px;
+  background: var(--line-soft);
+  border-radius: 0 0 var(--radius) var(--radius);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.fc-progress > div {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  /* Slightly slower than the ~140ms frame interval so the bar glides instead
+     of stepping, which makes the wait feel shorter than it is. */
+  transition: width .16s linear;
+}
+
 /* ---------------- Roster ---------------- */
 .roster-card { display: flex; flex-direction: column; overflow: hidden; }
 .roster-head {

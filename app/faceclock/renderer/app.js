@@ -523,7 +523,8 @@ async function tick() {
     evidence.push({ spoof, emb, moved });
 
     $('fcTitle').textContent = 'Hold still…';
-    $('fcHint').textContent = `Checking (${Math.min(evidence.length, EVIDENCE_FRAMES)}/${EVIDENCE_FRAMES})`;
+    $('fcHint').textContent = 'Verifying your face';
+    setProgress(evidence.length);
 
     if (evidence.length < EVIDENCE_FRAMES) return;
     await decide();
@@ -534,9 +535,22 @@ async function tick() {
   }
 }
 
+/** Verification progress. n = 0 hides the bar entirely. */
+function setProgress(n, total = EVIDENCE_FRAMES) {
+  const wrap = $('fcProgress');
+  if (!n) {
+    wrap.classList.add('hidden');
+    $('fcProgressBar').style.width = '0%';
+    return;
+  }
+  wrap.classList.remove('hidden');
+  $('fcProgressBar').style.width = Math.round((Math.min(n, total) / total) * 100) + '%';
+}
+
 function resetEvidence(title, hint) {
   evidence = [];
   temporal.reset();
+  setProgress(0);
   $('fcTitle').textContent = title;
   $('fcHint').textContent = hint;
   $('fcBadge').classList.add('hidden');
@@ -566,6 +580,7 @@ async function decide() {
   if (!modelSaysReal || !movementSeen) {
     evidence = [];
     temporal.reset();
+    setProgress(0);
     $('fcTitle').textContent = 'That looked like a photo';
     $('fcHint').textContent = 'Face sign-in needs a real person at the camera.';
     setBadge('err', 'Rejected');
@@ -585,6 +600,7 @@ async function decide() {
   const m = matchEmbedding(avg);
   evidence = [];
   temporal.reset();
+  setProgress(0);
 
   if (!m.matched) {
     $('fcTitle').textContent = m.reason === 'too close to another employee'
